@@ -1,0 +1,6 @@
+# Activated with: SPRING_PROFILES_ACTIVE=local
+# Convenience defaults for local docker-compose infra.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update   # convenient locally; use migrations (Flyway) before prod

@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Claude Code: share project settings, ignore personal/local
+.claude/settings.local.json
+
+# Build outputs (module-level .gitignore handles the rest)
+build/
+bin/
+.gradle/
+
+node_modules/

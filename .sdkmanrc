@@ -1,0 +1,3 @@
+# Enable auto-env through the sdkman_auto_env config
+# Then cd into this dir to auto-switch the JDK
+java=21.0.11-tem

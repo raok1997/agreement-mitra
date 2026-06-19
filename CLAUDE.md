@@ -1,0 +1,86 @@
+# AgreementMitra
+
+Online rental-agreement platform for India. Core capability: Aadhaar eSign
+(OTP-based) of rental agreements — generate agreement → render to PDF →
+create signing request → signer authenticates with Aadhaar + OTP → signed
+PDF + audit trail return to the app.
+
+This file is context for Claude Code. Keep it short and current. Deep detail
+lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`.
+
+## Architecture (decided — do not relitigate without a proposal)
+
+- **Backend**: Java 21 + Spring Boot 3.x, structured as a **modular monolith**
+  using Spring Modulith. One deployable. Modules have hard boundaries and talk
+  through public interfaces / events only — never reach into another module's
+  internal packages.
+- **Frontend**: Vue 3 + Vite + TypeScript + Tailwind. SPA that talks to the
+  backend over a JSON API.
+- **Data**: PostgreSQL for state + audit trail. Object storage (MinIO locally,
+  S3-compatible in prod) for PDF blobs — never store PDF bytes in Postgres.
+- **eSign**: integrated through an `EsignProvider` interface. First adapter is
+  Leegality (sandbox). Keep all vendor specifics behind the interface so Digio
+  (likely production choice for the KYC bundle) is a one-adapter swap.
+
+### Modules (`in.agreementmitra.*`)
+- `signing` — agreements, signing requests, status state machine, webhook
+  intake, `EsignProvider` + vendor adapters. The heart of the app.
+- `documents` — template → PDF rendering (headless Chromium via Playwright).
+- `identity` — KYC / DigiLocker (future feature; stub for now).
+- `rules` — multi-state legal-logic rules engine (future; Drools, JVM-native).
+
+## Conventions
+
+- Java: prefer records for DTOs/value objects; constructor injection (no field
+  `@Autowired`); package-private by default, `public` only on the module API.
+- One aggregate's state transitions go through its state machine, not ad-hoc
+  setters. Signing states: `DRAFT → PDF_GENERATED → SIGN_REQUESTED →
+  SIGNED | FAILED | EXPIRED`.
+- eSign is **asynchronous**: never block a request thread waiting on a
+  signature. Create the request, return the signing URL, let the webhook drive
+  completion. A scheduled reconciliation job is the fallback for missed hooks.
+- Tests: every module change must keep `ModularityTests` green (it verifies
+  module boundaries). Write a slice/integration test for new endpoints.
+- Frontend: composition API + `<script setup>`; Tailwind utilities for layout
+  (responsive is a CSS concern, not a JS one); keep API calls in `src/api/`.
+
+## Security & data handling (non-negotiable)
+
+- This is identity/legal infra. **Sandbox + dummy data only** in this repo.
+- **Never log** Aadhaar numbers, OTPs, virtual IDs, or full signer PII. Redact
+  before logging. Never echo a webhook payload to logs verbatim.
+- Secrets come from env vars only. Never commit `.env`, keys, or credentials.
+- Treat inbound webhooks as untrusted: verify signature/HMAC before acting.
+
+## Commands
+
+Backend (from `backend/`):
+- `./gradlew bootRun` — run the API (needs Postgres + MinIO; see below)
+- `./gradlew test` — run tests (includes module-boundary verification)
+- `./gradlew spotlessApply` — format Java
+
+Frontend (from `frontend/`):
+- `npm run dev` — Vite dev server
+- `npm run build` — production build
+- `npm run lint` / `npm run format`
+
+Local infra (from repo root):
+- `docker compose up -d` — Postgres + MinIO
+
+## Working with OpenSpec
+
+Features are built spec-first. Before implementing anything non-trivial:
+1. Propose a change (`/opsx:propose <slug>`), which writes
+   `openspec/changes/<slug>/` (proposal, specs, design, tasks).
+2. Review the proposal and spec deltas with me before code lands.
+3. Apply (`/opsx:apply`), then archive (`/opsx:archive`) when done.
+Project context for OpenSpec lives in `openspec/config.yaml` (the `context:`
+section), included automatically in every OpenSpec request.
+
+## Gotchas
+
+- The webhook listener needs a **public URL** in local dev — front it with a
+  cloudflared/ngrok tunnel or the aggregator's callback never arrives.
+- PDF rendering for vernacular/Indic scripts must use Chromium (Playwright),
+  not a pure-Java PDF lib — only Chromium shapes complex scripts correctly.
+  Bundle Noto fonts. (This is why `documents` is its own module.)

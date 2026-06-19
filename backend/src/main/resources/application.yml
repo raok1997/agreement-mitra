@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: agreementmitra
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra}
+    username: ${DB_USER:agreementmitra}
+    password: ${DB_PASSWORD:agreementmitra}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# eSign provider config (sandbox). Values come from env — never commit secrets.
+esign:
+  provider: leegality
+  leegality:
+    base-url: ${LEEGALITY_BASE_URL:}
+    auth-token: ${LEEGALITY_AUTH_TOKEN:}
+    webhook-secret: ${LEEGALITY_WEBHOOK_SECRET:}
+
+# Object storage for PDFs (MinIO locally / S3-compatible in prod)
+storage:
+  endpoint: ${S3_ENDPOINT:http://localhost:9000}
+  bucket: ${S3_BUCKET:agreements}
+  access-key: ${S3_ACCESS_KEY:}
+  secret-key: ${S3_SECRET_KEY:}
+
+logging:
+  level:
+    in.agreementmitra: DEBUG

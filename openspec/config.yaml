@@ -1,0 +1,53 @@
+schema: spec-driven
+
+# Project context — shown to AI when creating artifacts.
+context: |
+  AgreementMitra — online rental-agreement platform for India.
+  MVP: Aadhaar eSign (OTP) of rental agreements, with e-stamping.
+  Future: KYC/DigiLocker + fraud detection, a multi-state legal rules
+  engine (Drools), and multilingual documents.
+
+  Tech stack:
+  - Backend: Java 21, Spring Boot 3.x, Spring Modulith (modular monolith,
+    one deployable). Modules have hard boundaries and talk through public
+    interfaces / events only — never reach into another module's internals.
+  - Frontend: Vue 3, Vite, TypeScript, Tailwind. SPA over a JSON API.
+  - Data: PostgreSQL for state + audit trail; object storage (MinIO local /
+    S3-compatible prod) for PDF blobs — never store PDF bytes in Postgres.
+  - eSign via an `EsignProvider` interface; first adapter Leegality (sandbox);
+    Digio is the likely production swap (one-adapter change).
+  - Doc rendering: headless Chromium (Playwright) for complex-script support;
+    bundle Noto fonts.
+
+  Modules (`in.agreementmitra.*`):
+  - signing — agreements, signing requests, status FSM, webhook intake,
+    providers. The heart of the app.
+  - documents — template → PDF rendering.
+  - identity — KYC/DigiLocker (future).
+  - rules — legal-logic rules engine (future, Drools).
+
+  Conventions:
+  - Records for DTOs/value objects; constructor injection (no field
+    @Autowired); module internals package-private, `public` only on module API.
+  - Signing status FSM: DRAFT → PDF_GENERATED → SIGN_REQUESTED →
+    SIGNED | FAILED | EXPIRED. Transitions go through the state machine.
+  - eSign is asynchronous; never block a request thread on a signature.
+    Webhook drives completion; scheduled reconciliation is the fallback.
+  - Keep `ModularityTests` green on every change.
+
+  Hard constraints (non-negotiable):
+  - Sandbox + dummy data only in this repo.
+  - Never log Aadhaar numbers, OTPs, virtual IDs, or full signer PII; redact
+    before logging; never echo a webhook payload verbatim.
+  - Secrets via env vars only; never commit .env, keys, or credentials.
+  - Treat inbound webhooks as untrusted: verify signature/HMAC before acting.
+
+# Per-artifact rules.
+rules:
+  proposal:
+    - Every spec uses Given/When/Then scenarios.
+    - Note the signing-status FSM transition(s) the change touches.
+    - Flag any new outbound PII flow (Aadhaar/OTP/KYC) and how it is
+      redacted/secured.
+    - Include a sequence diagram for any change to the async signing/webhook
+      flow.
