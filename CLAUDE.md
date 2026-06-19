@@ -52,6 +52,35 @@ lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`.
 - Secrets come from env vars only. Never commit `.env`, keys, or credentials.
 - Treat inbound webhooks as untrusted: verify signature/HMAC before acting.
 
+## Testing & Scanning
+
+Every change that adds or modifies runnable behavior ships with tests, balanced
+as a **pyramid** — broad base, narrow top:
+
+- **Unit (many, fast):** pure logic in isolation — state-machine transitions, DTO
+  mapping, redaction helpers, validators. No Spring context, no I/O. The default;
+  most coverage lives here.
+- **Integration (fewer):** real wiring against real infra — Testcontainers
+  (Postgres + MinIO/S3), Spring Modulith slice/module tests, the `EsignProvider`
+  adapter against a sandbox/stub. Keep `ModularityTests` green here.
+- **End-to-end (few):** a thin top — full signing happy-path through the API.
+  Slow and brittle; reserve for the critical flow, don't multiply.
+
+The OpenSpec `tasks:` rule enforces this: a behavioral change must list both a
+unit and an integration test task (pure config/docs/harness changes are exempt,
+recorded with a one-line note atop `tasks.md`).
+
+**Scanning** (required build gates — implemented by later roadmap CRs):
+
+- **Dependency-vulnerability scan** of backend + frontend dependencies, failing
+  the build on high-severity findings.
+- **SAST** (static analysis) over the backend, failing on security-class defects.
+
+The local PII/secret edit guard (`.claude/hooks/pii-secret-guard.sh`) is
+**defense-in-depth — a reminder, not the authoritative control**: it can be
+evaded by encoded/split/downloaded secrets. A server-side pre-commit / CI secret
+scanner is the real enforcement.
+
 ## Commands
 
 Backend (from `backend/`):
