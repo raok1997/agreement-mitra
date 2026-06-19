@@ -142,7 +142,7 @@ the Execution model) is the primary defense; this is the backstop.
        - Module boundaries (Spring Modulith; keep ModularityTests green) .......... Stage 3
        - Backend conventions (records for DTOs; constructor injection; state machine) Stage 3
        - eSign/webhook caution (async flow, HMAC-verify hooks, redact PII) ........ Stages 0/1/3 + Operating mode
-       - Spec-review halting cap (≤2 rounds) ..................................... Stage 2
+       - Spec-review halting cap (≤5 rounds) ..................................... Stage 2
        - Git guardrails (no add/commit/push/branch) ............................. Git guardrails section
 
      When any of these change in CLAUDE.md or the auto-memory, update the copy here too. -->
@@ -189,7 +189,7 @@ Invoke the **openspec-propose** skill.
 Invoke the **review-spec** skill on the proposed change. It runs its own review
 subagent — consume the returned report and apply the Issue policy; do not re-wrap it.
 - **Front-load the load-bearing round-1 checks**: cross-CR continuity, audit destinations, lock interactions, transactions, write authority, idempotency vs vendor switch, ordering vs rejection, conditional config tasks, racing timeouts, model relations.
-- **Cap at 2 rounds.** Each round: review → address findings (in explore mode) → re-review. If the final round still surfaces only fresh prose-drift with no clear oracle, **stop reviewing** and default to "start implementing" — do not loop beyond the cap.
+- **Cap at 5 rounds.** Each round: review → address findings (in explore mode) → re-review. If the final round still surfaces only fresh prose-drift with no clear oracle, **stop reviewing** and default to "start implementing" — do not loop beyond the cap.
 - Address findings between rounds via the **openspec-explore** skill (edit the artifacts), not ad-hoc.
 
 ### 3. Apply (implement)
