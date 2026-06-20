@@ -1,6 +1,11 @@
 # Activated with: SPRING_PROFILES_ACTIVE=local
 # Convenience defaults for local docker-compose infra.
+#
+# No schema override here by design: since the persistence-foundation CR, Flyway owns the
+# schema in every environment (local/test/prod) and JPA stays ddl-auto: validate (set in
+# application.yml). Local schema comes from compose Postgres + Flyway on `bootRun`. If a prior
+# ddl-auto: update run left a dirty local schema, drop/recreate the DB (or the compose volume)
+# so Flyway starts clean. Add local-only overrides below as the app grows.
 spring:
-  jpa:
-    hibernate:
-      ddl-auto: update   # convenient locally; use migrations (Flyway) before prod
+  flyway:
+    enabled: true

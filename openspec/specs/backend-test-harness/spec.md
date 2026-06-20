@@ -9,9 +9,7 @@ Testcontainers-backed PostgreSQL + MinIO infra wired into Spring (Postgres via
 `@ApplicationModuleTest`; a `create-drop` test schema profile; a JaCoCo coverage gate wired
 into `check`; and a smoke test proving the whole thing boots green. Container-backed tests
 skip cleanly (not fail) when no Docker daemon is present.
-
 ## Requirements
-
 ### Requirement: Testcontainers-backed integration-test base
 The backend SHALL provide a reusable test base that starts a PostgreSQL container and a
 MinIO (S3-compatible) object-storage container for integration tests. The PostgreSQL
@@ -20,9 +18,10 @@ property wiring); the MinIO endpoint and credentials SHALL be surfaced to a test
 client (MinIO has no `@ServiceConnection` starter). The containers SHALL be shared across
 tests via the test context cache rather than re-declared per test, and integration tests
 SHALL obtain this infra by importing the shared test configuration rather than declaring
-containers themselves. A test
-profile SHALL provision the schema via `ddl-auto: create-drop` so JPA-backed tests build
-their schema per run without affecting production config. Containers SHALL use ephemeral,
+containers themselves. The test profile SHALL provision the schema via **Flyway-managed
+migrations** (the same `db/migration` migrations production runs), with JPA `ddl-auto:
+validate`, so JPA-backed tests build their schema from the real migration path rather than
+from Hibernate `create-drop`. Containers SHALL use ephemeral,
 container-default or random credentials and container-mapped (not fixed host) ports —
 never real or committed secrets; test storage properties SHALL win over any real `S3_*`
 environment values.
@@ -32,6 +31,11 @@ environment values.
 - **THEN** a PostgreSQL container and a MinIO container are running
 - **AND** the Spring context's datasource is wired to the PostgreSQL container via
   `@ServiceConnection`, with no manual `@DynamicPropertySource` for the datasource
+
+#### Scenario: Schema is provisioned by Flyway migrations
+- **WHEN** an integration test starts against the PostgreSQL container
+- **THEN** Flyway applies the `db/migration` migrations to build the test schema
+- **AND** JPA runs with `ddl-auto: validate` (no Hibernate `create-drop` generation)
 
 #### Scenario: Containers are shared, not re-declared, per test
 - **WHEN** a second integration test imports the same shared test configuration
@@ -93,3 +97,4 @@ stubbed signing API SHALL NOT be integration-tested in this change.
 - **WHEN** this change's test suite is reviewed
 - **THEN** it contains no integration test asserting behavior of the stubbed signing
   endpoints (which still throw `UnsupportedOperationException`)
+

@@ -1,11 +1,15 @@
 # Integration-test profile (activated by tests via @ActiveProfiles("test")).
-# Schema is built from JPA entities per run against the throwaway Testcontainers Postgres;
-# production stays on ddl-auto: validate. Real migration tooling (Flyway) is a future CR.
+# Schema is provisioned by Flyway (the same db/migration migrations production runs) against the
+# throwaway Testcontainers Postgres, with JPA ddl-auto: validate — matching prod. This makes tests
+# exercise the real migration path; a broken migration fails here, not in prod.
 spring:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     open-in-view: false
+  flyway:
+    enabled: true
+    clean-disabled: true
 
 # storage.* (endpoint, bucket, access-key, secret-key) is supplied at runtime by the
 # DynamicPropertyRegistrar bean in HarnessTestConfig, pointed at the MinIO container — so

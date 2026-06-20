@@ -63,6 +63,12 @@ dependencies {
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     runtimeOnly("org.postgresql:postgresql")
 
+    // Flyway: schema is migration-managed (single source of truth); JPA stays ddl-auto: validate.
+    // Flyway 10+ splits DB support into per-vendor modules — flyway-core alone lacks the Postgres
+    // dialect. Both are managed by the Spring Boot BOM (no explicit version).
+    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
+
     // Document rendering (headless Chromium). Uncomment when wiring `documents`:
     // implementation("com.microsoft.playwright:playwright:1.49.0")
 

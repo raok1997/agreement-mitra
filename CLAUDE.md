@@ -18,6 +18,12 @@ lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`.
   backend over a JSON API.
 - **Data**: PostgreSQL for state + audit trail. Object storage (MinIO locally,
   S3-compatible in prod) for PDF blobs — never store PDF bytes in Postgres.
+  Schema is **Flyway-managed** (single source of truth): forward-only migrations in
+  `backend/src/main/resources/db/migration` named `V<n>__<desc>.sql`, applied on
+  startup; JPA stays `ddl-auto: validate` in every env (local/test/prod) and
+  `flyway.clean` is disabled. Each feature CR ships its own migration; never edit an
+  applied one. Regenerate the Gradle lockfile after a dep change
+  (`./gradlew dependencies --write-locks`).
 - **eSign**: integrated through an `EsignProvider` interface. First adapter is
   Leegality (sandbox). Keep all vendor specifics behind the interface so Digio
   (likely production choice for the KYC bundle) is a one-adapter swap.

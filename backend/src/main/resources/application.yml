@@ -9,6 +9,13 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  # Flyway is the single source of schema truth: it migrates db/migration on startup, before
+  # JPA initializes; Hibernate only `validate`s (never generates). `clean-disabled: true` is
+  # Boot's default, set explicitly so the destructive `flyway.clean` can never wipe the schema
+  # of this audit-bearing, identity/legal data.
+  flyway:
+    enabled: true
+    clean-disabled: true
 
 server:
   port: ${SERVER_PORT:8090}
