@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs include filter for the SAST gate.
+  Scopes the fail decision to the FindSecBugs SECURITY bug category only, so
+  non-security SpotBugs categories (style, performance, correctness) do not fail
+  the build. Combined with reportLevel=HIGH (confidence) in build.gradle.kts,
+  the gate fails only on high-confidence security findings.
+-->
+<FindBugsFilter
+    xmlns="https://github.com/spotbugs/filter/3.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://github.com/spotbugs/filter/3.0.0 https://raw.githubusercontent.com/spotbugs/spotbugs/master/spotbugs/etc/findbugsfilter.xsd">
+    <Match>
+        <Bug category="SECURITY"/>
+    </Match>
+</FindBugsFilter>

@@ -70,11 +70,29 @@ The OpenSpec `tasks:` rule enforces this: a behavioral change must list both a
 unit and an integration test task (pure config/docs/harness changes are exempt,
 recorded with a one-line note atop `tasks.md`).
 
-**Scanning** (required build gates — implemented by later roadmap CRs):
+**Scanning** (required build gates):
 
-- **Dependency-vulnerability scan** of backend + frontend dependencies, failing
-  the build on high-severity findings.
-- **SAST** (static analysis) over the backend, failing on security-class defects.
+- **Backend dependency-vulnerability scan** — `OSV-Scanner` over the locked
+  Gradle graph (`backend/gradle.lockfile`). Runs as part of `./gradlew check`
+  (via the `securityScan` task). **Fails on any unsuppressed finding** (OSV has
+  no CVSS threshold); the gate is **fail-closed** — a missing `osv-scanner`
+  binary breaks the build. Install it: `brew install osv-scanner` (or see
+  google.github.io/osv-scanner/installation). To accept a finding, add an
+  `[[IgnoredVulns]]` entry to `backend/config/osv-scanner.toml` with a `reason`
+  AND an `ignoreUntil` expiry — suppressions are justified and time-boxed, never
+  permanent or wildcard. Regenerate the lockfile after dep changes:
+  `./gradlew dependencies --write-locks`.
+- **Backend SAST** — SpotBugs + FindSecBugs, also via `securityScan` in `check`.
+  Fails only on **FindSecBugs SECURITY-category findings at HIGH confidence**
+  (scoped by `backend/config/spotbugs-include.xml`); suppressions go in
+  `backend/config/spotbugs-exclude.xml` with a reason + expiry comment. Stock
+  FindSecBugs does **not** catch our own invariants (never-log-Aadhaar,
+  verify-HMAC) — those need custom rules / a PII-lint (candidate future CR).
+- **Run all gates:** `./gradlew securityScan` (or just `./gradlew check`).
+- **Not yet covered (follow-up CRs):** frontend dependency scanning, and CI that
+  runs these automatically (today they run only on local `./gradlew`). A current
+  baseline in `osv-scanner.toml` time-boxes pre-existing Spring Boot 3.4.2 CVEs
+  pending a dedicated dependency-bump CR.
 
 The local PII/secret edit guard (`.claude/hooks/pii-secret-guard.sh`) is
 **defense-in-depth — a reminder, not the authoritative control**: it can be

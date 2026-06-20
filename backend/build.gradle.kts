@@ -1,9 +1,14 @@
+import com.github.spotbugs.snom.Confidence
+import com.github.spotbugs.snom.Effort
+
 plugins {
     java
     jacoco
     id("org.springframework.boot") version "3.4.2"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "7.0.2"
+    // SAST: SpotBugs + FindSecBugs (security-category, high-confidence gate). See `securityScan`.
+    id("com.github.spotbugs") version "6.0.26"
 }
 
 group = "in.agreementmitra"
@@ -14,6 +19,10 @@ java {
 }
 
 repositories { mavenCentral() }
+
+// Dependency locking → a pinned, reproducible graph for the OSV dependency scan.
+// Regenerate with: ./gradlew dependencies --write-locks
+dependencyLocking { lockAllConfigurations() }
 
 extra["springModulithVersion"] = "1.3.4"
 
@@ -43,6 +52,9 @@ dependencies {
     testImplementation("org.testcontainers:minio")
     // MinIO Java client for the bucket round-trip (not managed by Boot's BOM).
     testImplementation("io.minio:minio:8.5.14")
+
+    // SAST plugin: FindSecBugs rules for SpotBugs (security bug patterns).
+    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
 }
 
 dependencyManagement {
@@ -100,3 +112,69 @@ tasks.jacocoTestCoverageVerification {
 }
 
 tasks.check { dependsOn(tasks.jacocoTestCoverageVerification) }
+
+// --- Security scanning (CR-4) ----------------------------------------------
+// Two gates behind a single `securityScan` task, wired into `check`:
+//   1. OSV-Scanner — dependency-vuln scan over the locked graph; fails on any
+//      unsuppressed finding (suppressions live in config/osv-scanner.toml,
+//      each with a reason + ignoreUntil expiry). Fail-closed if the binary is
+//      absent. OSV-Scanner has no native CVSS threshold; fail-on-any + curated
+//      ignores is its idiomatic, stricter model.
+//   2. SpotBugs + FindSecBugs — SAST; an include filter scopes the gate to the
+//      FindSecBugs SECURITY category at HIGH confidence so non-security bugs
+//      don't fail the build. Suppressions in config/spotbugs-exclude.xml.
+
+spotbugs {
+    toolVersion = "4.8.6"
+    effort = Effort.MAX
+    reportLevel = Confidence.HIGH
+    includeFilter = file("config/spotbugs-include.xml")
+    excludeFilter = file("config/spotbugs-exclude.xml")
+}
+
+// Gate production code only; test code uses dummy data and is noisy for SAST.
+tasks.named("spotbugsTest") { enabled = false }
+
+tasks.spotbugsMain {
+    reports.create("html") { required = true }
+    reports.create("xml") { required = true }
+}
+
+val osvScan =
+    tasks.register<Exec>("osvScan") {
+        group = "verification"
+        description = "Dependency-vulnerability scan (OSV-Scanner) over the locked graph."
+        val lockfile = layout.projectDirectory.file("gradle.lockfile")
+        val config = layout.projectDirectory.file("config/osv-scanner.toml")
+        inputs.file(lockfile)
+        inputs.file(config)
+        // Fail-closed: a missing scanner must break the build, not silently pass.
+        doFirst {
+            val onPath =
+                System.getenv("PATH").orEmpty().split(File.pathSeparator).any {
+                    File(it, "osv-scanner").canExecute()
+                }
+            if (!onPath) {
+                throw GradleException(
+                    "osv-scanner not found on PATH. Install it (e.g. `brew install osv-scanner`) " +
+                        "or see https://google.github.io/osv-scanner/installation/ — the dependency " +
+                        "scan is a required gate and fails closed.",
+                )
+            }
+        }
+        // OSV-Scanner exits non-zero on any unsuppressed finding → that is the gate.
+        commandLine(
+            "osv-scanner",
+            "scan",
+            "--config=${config.asFile.path}",
+            "--lockfile=${lockfile.asFile.path}",
+        )
+    }
+
+tasks.register("securityScan") {
+    group = "verification"
+    description = "All security gates: OSV dependency scan + SpotBugs/FindSecBugs SAST."
+    dependsOn(osvScan, tasks.named("spotbugsMain"))
+}
+
+tasks.check { dependsOn(tasks.named("securityScan")) }
