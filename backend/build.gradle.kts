@@ -4,7 +4,7 @@ import com.github.spotbugs.snom.Effort
 plugins {
     java
     jacoco
-    id("org.springframework.boot") version "3.4.2"
+    id("org.springframework.boot") version "3.5.15"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "7.0.2"
     // SAST: SpotBugs + FindSecBugs (security-category, high-confidence gate). See `securityScan`.
@@ -24,7 +24,7 @@ repositories { mavenCentral() }
 // Regenerate with: ./gradlew dependencies --write-locks
 dependencyLocking { lockAllConfigurations() }
 
-extra["springModulithVersion"] = "1.3.4"
+extra["springModulithVersion"] = "1.4.12"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
@@ -51,7 +51,12 @@ dependencies {
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:minio")
     // MinIO Java client for the bucket round-trip (not managed by Boot's BOM).
-    testImplementation("io.minio:minio:8.5.14")
+    // Pinned to 8.6.0 — the fixed version for GHSA-h7rh-xfpj-hpcm (the advisory's
+    // fix landed in 8.6.0, a minor bump; 8.5.x never carried it). Test scope only.
+    testImplementation("io.minio:minio:8.6.0")
+    // Force Bouncy Castle to the fixed 1.84 (minio 8.6.0 pulls vulnerable 1.81 —
+    // GHSA-c3fc-8qff-9hwx). Test scope only; remediated by upgrade per policy.
+    testImplementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
     // SAST plugin: FindSecBugs rules for SpotBugs (security bug patterns).
     spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
