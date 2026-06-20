@@ -5,9 +5,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Receives signing-completion callbacks from the aggregator. MUST be publicly
- * reachable in local dev (use a cloudflared/ngrok tunnel). Verify the signature
- * before doing anything with the payload — never log it verbatim.
+ * Receives signing-completion callbacks from the aggregator. MUST be publicly reachable in local
+ * dev (use a cloudflared/ngrok tunnel). Verify the signature before doing anything with the payload
+ * — never log it verbatim.
  */
 @RestController
 @RequestMapping("/api/webhooks/esign")

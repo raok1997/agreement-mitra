@@ -51,3 +51,14 @@ rules:
       redacted/secured.
     - Include a sequence diagram for any change to the async signing/webhook
       flow.
+    - Complete the PII/security review checklist - state explicitly whether the
+      change introduces or moves Aadhaar/OTP/VID/PII or secrets, how such data is
+      redacted/secured, and confirm sandbox + dummy data only is preserved (say
+      "none" with a one-line justification if no PII/secret flow is involved).
+  tasks:
+    - Any change that adds or modifies runnable backend or frontend behavior MUST
+      include explicit test tasks at BOTH the unit level and the integration level
+      for that behavior.
+    - Exemption - a pure config/docs/harness change that adds no runnable behavior
+      need not add unit/integration tests; record the exemption as a one-line note
+      at the top of tasks.md stating why it applies.

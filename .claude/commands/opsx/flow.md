@@ -9,7 +9,7 @@ tags: [workflow, orchestrator, lifecycle, experimental]
 > **UI wrapper for `openspec-flow`** — the skill is the authoritative source of logic.
 
 Take one requirement all the way through the OpenSpec lifecycle with minimal
-intervention: explore → propose → review (≤2 rounds) → apply →
+intervention: explore → propose → review (≤5 rounds) → apply →
 validate → fix → archive. Auto-advances stage to stage, gives a plain-English
 summary at the end of each stage, and **halts at the first real decision** (ambiguous requirement, non-minimal review/validation finding,
 signing-flow change, in-change-vs-new-CR scope call, or hard error).

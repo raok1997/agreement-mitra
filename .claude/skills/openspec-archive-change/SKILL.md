@@ -91,14 +91,23 @@ Archive a completed change in the experimental workflow.
    mkdir -p openspec/changes/archive
    ```
 
-   Generate target name using current date: `YYYY-MM-DD-<change-name>`
+   Generate target name using the current **GMT date + time** so the archive
+   records when it happened, not just the day. Compute it in UTC:
+   ```bash
+   STAMP="$(date -u +"%Y-%m-%d-%H%M%SZ")"   # e.g. 2026-06-20-143205Z
+   ```
+   Target name: `<STAMP>-<change-name>` (e.g. `2026-06-20-143205Z-add-auth`).
+   The `YYYY-MM-DD` date prefix and the `-<change-name>` suffix are preserved, so
+   date-prefix and suffix matching elsewhere still work; the GMT time component
+   also makes same-day collisions effectively impossible.
 
    **Check if target already exists:**
-   - If yes: Fail with error, suggest renaming existing archive or using different date
+   - If yes: Fail with error, suggest renaming existing archive (a fresh GMT
+     timestamp should otherwise avoid collisions)
    - If no: Move the change directory to archive
 
    ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   mv "openspec/changes/<name>" "openspec/changes/archive/${STAMP}-<name>"
    ```
 
 8. **Display summary**
@@ -118,7 +127,8 @@ Archive a completed change in the experimental workflow.
 
 **Change:** <change-name>
 **Schema:** <schema-name>
-**Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
+**Archived to:** openspec/changes/archive/<STAMP>-<name>/
+**Archived at (GMT):** <STAMP>  (the full UTC date-time the archive ran)
 **Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
 
 All artifacts complete. All tasks complete.

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs/FindSecBugs SAST suppression baseline.
+
+  Each suppression MUST be justified and time-boxed. SpotBugs exclude filters
+  have no native expiry field, so record the reason and an expiry date as a
+  comment immediately above each <Match>. Entries past their expiry are
+  out-of-policy and should be re-justified or removed at review.
+
+  Do NOT use open-ended package wildcards to mute whole areas — scope each entry
+  to a specific bug pattern + class so the gate keeps red-lining new findings.
+
+  Template:
+    <!- - reason: <why accepted>; expires: YYYY-MM-DD - ->
+    <Match>
+      <Class name="in.agreementmitra.<module>.<Class>"/>
+      <Bug pattern="<SPOTBUGS_PATTERN>"/>
+    </Match>
+
+  No suppressions yet — the tree is clean against the SECURITY gate.
+-->
+<FindBugsFilter
+    xmlns="https://github.com/spotbugs/filter/3.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://github.com/spotbugs/filter/3.0.0 https://raw.githubusercontent.com/spotbugs/spotbugs/master/spotbugs/etc/findbugsfilter.xsd">
+</FindBugsFilter>

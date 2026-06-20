@@ -1,0 +1,12 @@
+-- V1 — schema baseline (persistence-foundation CR).
+--
+-- This is the anchor of the Flyway migration chain. It is intentionally comment-only:
+-- Flyway still records it in flyway_schema_history, establishing the chain, and JPA runs
+-- ddl-auto: validate against it (validate tolerates an empty schema with no mapped entities).
+--
+-- Conventions for every later migration:
+--   * Location:  src/main/resources/db/migration
+--   * Naming:    V<n>__<snake_case_description>.sql   (forward-only)
+--   * Forward-only: never edit an applied migration; ship a corrective V<n+1> instead.
+--   * Feature tables (agreement, signing_request, ...) belong to the FEATURE CR that
+--     introduces them — NOT here. This baseline defines no feature schema and no DDL.

@@ -1,16 +1,16 @@
 ---
 name: review-spec
-description: Multi-persona review of OpenSpec artifacts — architect and senior engineer perspectives consolidated into a single actionable report. Security engineer persona included only when explicitly requested.
+description: Multi-persona review of OpenSpec artifacts — architect, senior engineer, and security engineer perspectives consolidated into a single actionable report.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: custom
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Review Spec Skill
 
-Perform a structured multi-persona review of OpenSpec artifacts or spec files, covering two perspectives by default: Principal Architect and Senior Backend Engineer. The Senior Application Security Engineer persona is included only when the user explicitly requests a security review.
+Perform a structured multi-persona review of OpenSpec artifacts or spec files, covering three perspectives by default: Principal Architect, Senior Backend Engineer, and Senior Application Security Engineer.
 
 A single agent reviews sequentially through all active personas in one pass.
 
@@ -37,8 +37,6 @@ Use **Glob** to detect which artifact files are present before reading anything.
 - The specified file(s)
 
 ## Step 2 — Run the review
-
-Check whether the user's invocation explicitly requested a security review (e.g. "with security", "include security", "security review"). Set `include_security = true` only if explicitly requested, otherwise `false`.
 
 Launch **one agent** with the full artifact content and this instruction:
 
@@ -85,7 +83,7 @@ Launch **one agent** with the full artifact content and this instruction:
 >
 > ---
 >
-> **Persona 3: Senior Application Security Engineer** *(include only if `include_security = true`)*
+> **Persona 3: Senior Application Security Engineer**
 > Reviews every feature for vulnerabilities before implementation. Follows OWASP Top 10, expert in common web-app vulnerability patterns.
 > Focus on:
 > - AuthN/AuthZ: are access rules defined correctly? Every endpoint protected?
@@ -117,7 +115,7 @@ Collect the agent's output and proceed to Step 3.
 
 ```
 ## Review Report: <change name or file>
-**Reviewers:** Principal Architect · Senior Backend Engineer<if include_security> · Senior Application Security Engineer</if>
+**Reviewers:** Principal Architect · Senior Backend Engineer · Senior Application Security Engineer
 
 ---
 
