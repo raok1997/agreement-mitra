@@ -22,9 +22,35 @@ repositories { mavenCentral() }
 
 // Dependency locking → a pinned, reproducible graph for the OSV dependency scan.
 // Regenerate with: ./gradlew dependencies --write-locks
-dependencyLocking { lockAllConfigurations() }
+//
+// Scope (policy): we lock — and therefore OSV scans — only the SHIPPING + TEST
+// configurations. Build/dev/tool classpaths (spotbugs, spotbugsPlugins, jacoco*,
+// developmentOnly, annotation processors) are excluded by design: they ship to no
+// one and execute only on the build host, so they are out of the product risk
+// surface. This is why we activate locking per-configuration instead of
+// lockAllConfigurations(). See CLAUDE.md (Testing & Scanning) and
+// config/osv-scanner.toml for the documented policy + the revisit-before-prod note.
+// (Lock mode stays Gradle's default; we simply activate locking per in-scope config.)
+listOf(
+    "compileClasspath",
+    "runtimeClasspath",
+    "productionRuntimeClasspath",
+    "testCompileClasspath",
+    "testRuntimeClasspath",
+).forEach { configName ->
+    configurations.named(configName) { resolutionStrategy.activateDependencyLocking() }
+}
 
 extra["springModulithVersion"] = "1.4.12"
+
+// commons-lang3 is pulled ONLY onto the test classpath (via commons-compress, a
+// Testcontainers/MinIO transitive); it is on no shipping configuration. The Spring
+// Boot BOM manages it to 3.17.0, which carries GHSA-j288-q9x7-2f5v (fixed in 3.18.0)
+// and would trip the now-in-scope test-classpath OSV scan. commons-compress already
+// requests 3.18.0, but io.spring.dependency-management forces the managed version
+// onto transitives (overriding a plain Gradle constraint), so we override the BOM
+// version property. Test-only in effect — does not touch the shipped graph.
+extra["commons-lang3.version"] = "3.18.0"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")

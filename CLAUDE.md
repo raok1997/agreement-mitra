@@ -82,6 +82,18 @@ recorded with a one-line note atop `tasks.md`).
   AND an `ignoreUntil` expiry — suppressions are justified and time-boxed, never
   permanent or wildcard. Regenerate the lockfile after dep changes:
   `./gradlew dependencies --write-locks`.
+  - **Scan scope (policy):** the gate locks + scans only the **shipping + test**
+    configurations (compile/runtime/productionRuntime + testCompile/testRuntime).
+    **Build/dev/tool classpaths are excluded by design** — `spotbugs`/
+    `spotbugsPlugins`, `jacocoAnt`/`jacocoAgent`, `developmentOnly`, and the
+    annotation-processor configs. They ship to no one and run only on the build
+    host, so they are out of the product risk surface (the per-config activation
+    lives in `build.gradle.kts`, replacing `lockAllConfigurations()`). Trade-off:
+    a CVE living *only* in a build tool won't be caught here — lower risk, but not
+    zero (the toolchain runs on the build host). **Revisit before any production /
+    real-PII deployment** (this is legal/identity infra); compensating control is
+    a periodic full-lockfile `osv-scanner` audit or an eventual SpotBugs/JaCoCo
+    plugin bump.
 - **Backend SAST** — SpotBugs + FindSecBugs, also via `securityScan` in `check`.
   Fails only on **FindSecBugs SECURITY-category findings at HIGH confidence**
   (scoped by `backend/config/spotbugs-include.xml`); suppressions go in
@@ -90,9 +102,10 @@ recorded with a one-line note atop `tasks.md`).
   verify-HMAC) — those need custom rules / a PII-lint (candidate future CR).
 - **Run all gates:** `./gradlew securityScan` (or just `./gradlew check`).
 - **Not yet covered (follow-up CRs):** frontend dependency scanning, and CI that
-  runs these automatically (today they run only on local `./gradlew`). A current
-  baseline in `osv-scanner.toml` time-boxes pre-existing Spring Boot 3.4.2 CVEs
-  pending a dedicated dependency-bump CR.
+  runs these automatically (today they run only on local `./gradlew`). The
+  `osv-scanner.toml` suppression baseline is currently **empty** — CR-8 remediated
+  the Spring Boot 3.4.2 CVEs by bumping to 3.5.15, and CR-9 cleared the residual
+  tool-classpath findings via the scan-scope policy above.
 
 The local PII/secret edit guard (`.claude/hooks/pii-secret-guard.sh`) is
 **defense-in-depth — a reminder, not the authoritative control**: it can be

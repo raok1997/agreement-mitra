@@ -6,45 +6,37 @@
 # are justified and time-boxed, not permanent mutes. Per the
 # `backend-security-scanning` "remediated, not renewed" requirement, a fixable
 # finding is cleared by UPGRADING the dependency — never by extending an expiry on
-# the same vulnerable version. An entry stays only for a finding with no fix in
-# any release, or one fixed only outside the project's accepted version policy.
+# the same vulnerable version. An entry stays only for an in-scope finding with no
+# fix in any release, or one fixed only outside the project's accepted version
+# policy.
 #
-# BASELINE (CR-8 bump-spring-boot-security-patches, 2026-06-20): the original
-# 52-entry CR-4 baseline (Spring Boot 3.4.2 BOM) was REMEDIATED here by bumping
-# Spring Boot 3.4.2 → 3.5.15 (+ Spring Modulith 1.4.12, minio 8.6.0, and a
-# bcprov 1.84 test pin). That cleared all 52 — every Critical/High incl. the
-# Tomcat RCEs and the spring-boot self-CVEs. (Remediation record: this change's
-# archived proposal/design + .flow-journal.md.)
+# SCAN SCOPE (policy — see build.gradle.kts `dependencyLocking` + CLAUDE.md
+# "Testing & Scanning"): the gate locks and scans only the SHIPPING + TEST
+# configurations (compile/runtime/productionRuntime + testCompile/testRuntime).
+# Build/dev/tool classpaths — `spotbugs`/`spotbugsPlugins` (SAST runner),
+# `jacocoAnt`/`jacocoAgent` (coverage), `developmentOnly` (devtools), and the
+# annotation-processor configs — are EXCLUDED BY DESIGN: they ship to no one and
+# run only on the build host, so they are out of the product risk surface. They
+# are therefore not in the lockfile OSV reads and produce no findings here.
+#   Caveat for a future engineer who re-widens scope: those excluded tool
+#   classpaths today still carry open advisories — the SpotBugs plugin (6.0.26)
+#   drags `log4j-core` 2.24.3 (GHSA-3pxv-7cmr-fjr4, -445c-vh5m-36rj,
+#   -6hg6-v5c8-fphq, -vc5p-v9hr-52mj) and a tool-side `commons-lang3` 3.17.0.
+#   Re-including those configs WILL re-surface them; remediate by bumping the
+#   SpotBugs plugin (and JaCoCo) rather than re-suppressing. This exclusion should
+#   be revisited before any production / real-PII deployment.
 #
-# The 5 entries below are ALL bound to the SpotBugs Gradle plugin's own classpath
-# (the `spotbugs` configuration — the SAST runner's transitive logging libs). They
-# are NOT in the application/production runtime, the shipped artifact, or the test
-# runtime; they ship to no one. They are all Medium severity. They are fixable only
-# by upgrading the SpotBugs plugin (6.0.26) so its transitives move — out of scope
-# for this dependency-security bump and tracked as a follow-up CR
-# (`bump-spotbugs-plugin`). Short expiry (2026-09-20) forces that revisit.
-
-[[IgnoredVulns]]
-id = "GHSA-j288-q9x7-2f5v"
-ignoreUntil = 2026-09-20T00:00:00Z
-reason = "org.apache.commons:commons-lang3@3.17.0 — present ONLY via the SpotBugs plugin's `spotbugs` tool classpath (SAST runner), not in app/production/test runtime or the shipped artifact. Medium (6.5). Fixed in 3.18.0 but only reachable by upgrading the SpotBugs plugin; tracked in follow-up CR bump-spotbugs-plugin. Sandbox-only."
-
-[[IgnoredVulns]]
-id = "GHSA-3pxv-7cmr-fjr4"
-ignoreUntil = 2026-09-20T00:00:00Z
-reason = "org.apache.logging.log4j:log4j-core@2.24.3 — present ONLY via the SpotBugs plugin's `spotbugs` tool classpath (SAST runner logging), not in app/production/test runtime or the shipped artifact. Medium (6.9). Fixed in 2.25.4 but only reachable by upgrading the SpotBugs plugin; tracked in follow-up CR bump-spotbugs-plugin. Sandbox-only."
-
-[[IgnoredVulns]]
-id = "GHSA-445c-vh5m-36rj"
-ignoreUntil = 2026-09-20T00:00:00Z
-reason = "org.apache.logging.log4j:log4j-core@2.24.3 — present ONLY via the SpotBugs plugin's `spotbugs` tool classpath (SAST runner logging), not in app/production/test runtime or the shipped artifact. Medium (6.9). Fixed in 2.25.4 but only reachable by upgrading the SpotBugs plugin; tracked in follow-up CR bump-spotbugs-plugin. Sandbox-only."
-
-[[IgnoredVulns]]
-id = "GHSA-6hg6-v5c8-fphq"
-ignoreUntil = 2026-09-20T00:00:00Z
-reason = "org.apache.logging.log4j:log4j-core@2.24.3 — present ONLY via the SpotBugs plugin's `spotbugs` tool classpath (SAST runner logging), not in app/production/test runtime or the shipped artifact. Medium (6.3). Fixed in 2.25.4 but only reachable by upgrading the SpotBugs plugin; tracked in follow-up CR bump-spotbugs-plugin. Sandbox-only."
-
-[[IgnoredVulns]]
-id = "GHSA-vc5p-v9hr-52mj"
-ignoreUntil = 2026-09-20T00:00:00Z
-reason = "org.apache.logging.log4j:log4j-core@2.24.3 — present ONLY via the SpotBugs plugin's `spotbugs` tool classpath (SAST runner logging), not in app/production/test runtime or the shipped artifact. Medium (6.3). Fixed in 2.25.3 but only reachable by upgrading the SpotBugs plugin; tracked in follow-up CR bump-spotbugs-plugin. Sandbox-only."
+# REMEDIATION HISTORY:
+# - CR-8 (bump-spring-boot-security-patches, 2026-06-20): the original 52-entry
+#   CR-4 baseline (Spring Boot 3.4.2 BOM) was REMEDIATED by bumping Spring Boot
+#   3.4.2 → 3.5.15 (+ Spring Modulith 1.4.12, minio 8.6.0, bcprov 1.84 test pin),
+#   clearing all 52 (incl. the Tomcat RCEs and spring-boot self-CVEs). It left 5
+#   tool-classpath suppressions (expiry 2026-09-20).
+# - CR-9 (bump-spotbugs-plugin, 2026-06-20): those 5 were CLEARED — the 4
+#   `log4j-core` findings by narrowing the scan scope so build-tool classpaths are
+#   no longer scanned (above), and the `commons-lang3` finding (which was also on
+#   the in-scope test classpath) by moving it 3.17.0 → 3.18.0. The baseline is now
+#   EMPTY: zero accepted risks.
+#
+# (No [[IgnoredVulns]] entries — the baseline is empty. Add one only for a genuine,
+#  in-scope, currently-unremediable finding, with a reason and a short expiry.)
