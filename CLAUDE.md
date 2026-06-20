@@ -91,6 +91,9 @@ Backend (from `backend/`):
 
 Integration tests use Testcontainers and need a **running Docker daemon**. Without
 Docker they skip cleanly (they do not fail the build); unit tests run regardless.
+Use `./run-tests.sh` (from `backend/`) to run them without remembering the
+Docker/Testcontainers env — it auto-detects the Docker socket and runs `check`
+(pass a task to override, e.g. `./run-tests.sh test`).
 
 Frontend (from `frontend/`):
 - `npm run dev` — Vite dev server
