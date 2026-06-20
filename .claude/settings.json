@@ -17,9 +17,6 @@
       "Bash(less .env*)",
       "Bash(more .env*)",
       "Bash(rm -rf*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
       "Bash(git branch:*)",
       "Bash(git checkout:*)",
       "Bash(git switch:*)"
@@ -28,7 +25,10 @@
       "Bash(./gradlew bootRun*)",
       "Bash(npm install*)",
       "Bash(npm i *)",
-      "Bash(docker compose down*)"
+      "Bash(docker compose down*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "allow": [
       "Read(./**)",
