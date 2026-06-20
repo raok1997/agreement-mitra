@@ -1,9 +1,9 @@
 package in.agreementmitra.signing;
 
 /**
- * Abstraction over an Aadhaar eSign aggregator. Implementations live in
- * provider-specific internal packages (e.g. {@code .leegality}). Swapping
- * vendors (Leegality - Digio) must be a new adapter, nothing more.
+ * Abstraction over an Aadhaar eSign aggregator. Implementations live in provider-specific internal
+ * packages (e.g. {@code .leegality}). Swapping vendors (Leegality - Digio) must be a new adapter,
+ * nothing more.
  */
 public interface EsignProvider {
 
@@ -17,8 +17,8 @@ public interface EsignProvider {
   SignedDocument download(String providerRequestId);
 
   /**
-   * Verify an inbound webhook is authentic before acting on it.
-   * Treat every webhook as untrusted until this returns true.
+   * Verify an inbound webhook is authentic before acting on it. Treat every webhook as untrusted
+   * until this returns true.
    */
   boolean verifyWebhook(String payload, String signatureHeader);
 }

@@ -86,7 +86,11 @@ scanner is the real enforcement.
 Backend (from `backend/`):
 - `./gradlew bootRun` — run the API (needs Postgres + MinIO; see below)
 - `./gradlew test` — run tests (includes module-boundary verification)
+- `./gradlew check` — tests + JaCoCo coverage gate
 - `./gradlew spotlessApply` — format Java
+
+Integration tests use Testcontainers and need a **running Docker daemon**. Without
+Docker they skip cleanly (they do not fail the build); unit tests run regardless.
 
 Frontend (from `frontend/`):
 - `npm run dev` — Vite dev server

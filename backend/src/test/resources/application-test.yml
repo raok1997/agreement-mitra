@@ -1,0 +1,19 @@
+# Integration-test profile (activated by tests via @ActiveProfiles("test")).
+# Schema is built from JPA entities per run against the throwaway Testcontainers Postgres;
+# production stays on ddl-auto: validate. Real migration tooling (Flyway) is a future CR.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+# storage.* (endpoint, bucket, access-key, secret-key) is supplied at runtime by the
+# DynamicPropertyRegistrar bean in HarnessTestConfig, pointed at the MinIO container — so
+# no credentials are hardcoded here, and those values win over any real S3_* env on the
+# runner. eSign secrets are pinned empty so the context boots without any real secret.
+esign:
+  provider: leegality
+  leegality:
+    base-url: ""
+    auth-token: ""
+    webhook-secret: ""

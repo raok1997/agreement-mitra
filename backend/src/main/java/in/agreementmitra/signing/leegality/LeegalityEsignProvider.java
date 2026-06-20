@@ -4,11 +4,11 @@ import in.agreementmitra.signing.*;
 import org.springframework.stereotype.Component;
 
 /**
- * Leegality (sandbox) adapter. Internal to the signing module — nothing outside
- * the module references this class directly; they depend on {@link EsignProvider}.
+ * Leegality (sandbox) adapter. Internal to the signing module — nothing outside the module
+ * references this class directly; they depend on {@link EsignProvider}.
  *
- * TODO: wire the Leegality sandbox REST API (create request, status, download)
- * and HMAC webhook verification. Read keys from env, never hardcode.
+ * <p>TODO: wire the Leegality sandbox REST API (create request, status, download) and HMAC webhook
+ * verification. Read keys from env, never hardcode.
  */
 @Component
 public class LeegalityEsignProvider implements EsignProvider {

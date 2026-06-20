@@ -5,9 +5,9 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.docs.Documenter;
 
 /**
- * Verifies module boundaries: no module reaches into another's internals.
- * Keep this green. It also generates C4-style module docs into
- * build/spring-modulith-docs when {@code writeDocumentation} runs.
+ * Verifies module boundaries: no module reaches into another's internals. Keep this green. It also
+ * generates C4-style module docs into build/spring-modulith-docs when {@code writeDocumentation}
+ * runs.
  */
 class ModularityTests {
 
