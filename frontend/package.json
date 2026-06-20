@@ -6,7 +6,8 @@
   "engines": { "node": ">=20.19.0" },
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "npm run security:scan && npm run test && vue-tsc -b && vite build",
+    "build:only": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
