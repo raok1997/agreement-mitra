@@ -47,6 +47,15 @@ lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`.
   completion. A scheduled reconciliation job is the fallback for missed hooks.
 - Tests: every module change must keep `ModularityTests` green (it verifies
   module boundaries). Write a slice/integration test for new endpoints.
+- Dates/times — two kinds, handled differently (app-wide):
+  - **Instants** (a moment in time: audit/`createdAt`, signing/webhook
+    timestamps) → store **UTC** (`timestamptz` / Java `Instant`), serialize
+    ISO-8601 with `Z`, render in the **viewer's timezone** in the UI.
+  - **Calendar dates** (a date with no time/zone: lease `startDate`/`endDate`)
+    → `date` / Java `LocalDate`. Store and show **as-is, never tz-converted**
+    (tz conversion shifts the calendar day — an off-by-one bug).
+  - One shared UI date format across the app unless a screen explicitly needs
+    customization. (Frontend renders viewer-tz + the shared formatter.)
 - Frontend: composition API + `<script setup>`; Tailwind utilities for layout
   (responsive is a CSS concern, not a JS one); keep API calls in `src/api/`.
 

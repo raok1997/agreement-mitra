@@ -45,15 +45,3 @@ own tables. The baseline MAY be comment-only (no executable DDL): Flyway still r
 - **WHEN** the baseline migration is inspected
 - **THEN** it contains no `agreement` or `signing_request` table definitions
 
-### Requirement: Schema validation stays green with no entities
-The Flyway baseline SHALL leave the schema in a state that `ddl-auto: validate` accepts, and the
-application context SHALL boot cleanly with Flyway having migrated and Hibernate validating
-(validate tolerates tables with no mapped entity, but fails on a mapped entity with no matching
-table). This is a **transitional** requirement, true only while the codebase has zero JPA entities:
-the first entity-bearing feature change supersedes its premise and is where `validate` and the
-Flyway-before-JPA ordering are first genuinely exercised.
-
-#### Scenario: Context boots against the migrated schema
-- **WHEN** the application context starts with Flyway-applied migrations and `ddl-auto: validate`
-- **THEN** the context boots without a schema-validation failure
-

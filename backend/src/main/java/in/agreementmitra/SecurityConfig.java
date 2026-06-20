@@ -47,6 +47,11 @@ class SecurityConfig {
                     // are denied by default. Tighten when an auth mechanism / real signing lands.
                     .requestMatchers(HttpMethod.POST, "/api/signing/*/request")
                     .permitAll()
+                    // Agreement create + fetch. permitAll is correct for this sandbox (no auth
+                    // yet, dummy data only); real authz arrives with identity/KYC — revisit then,
+                    // and before any non-sandbox deployment, since create is an anonymous write.
+                    .requestMatchers("/api/agreements/**")
+                    .permitAll()
                     .anyRequest()
                     .denyAll())
         // Keep Spring Security's default hardening response headers (nosniff, no-cache, etc.).
