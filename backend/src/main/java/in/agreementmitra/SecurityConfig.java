@@ -47,6 +47,13 @@ class SecurityConfig {
                     // are denied by default. Tighten when an auth mechanism / real signing lands.
                     .requestMatchers(HttpMethod.POST, "/api/signing/*/request")
                     .permitAll()
+                    // Sandbox agreement surface — scoped to the exact create + read-by-id paths
+                    // (NOT /api/agreements/**) so future sub-paths stay denied by default. These
+                    // are unauthenticated today; TEMPORARY — tighten when an auth mechanism lands.
+                    .requestMatchers(HttpMethod.POST, "/api/agreements")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/agreements/*")
+                    .permitAll()
                     .anyRequest()
                     .denyAll())
         // Keep Spring Security's default hardening response headers (nosniff, no-cache, etc.).
