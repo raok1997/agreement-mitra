@@ -12,6 +12,26 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # The security baseline permits the /error dispatch path (so a permitted endpoint that errors
+  # surfaces its real status instead of being masked as 403). Pin the error response to leak
+  # nothing — these are Boot defaults, made explicit because /error is reachable.
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: false
+
+# Actuator lockdown (CR-5): expose only health over HTTP, and never reveal component
+# detail to unauthenticated callers. Defense-in-depth with the SecurityFilterChain
+# (which denyAll's every non-health actuator path).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
 
 # eSign provider config (sandbox). Values come from env — never commit secrets.
 esign:

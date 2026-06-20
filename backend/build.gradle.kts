@@ -56,6 +56,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    // Default-deny HTTP security baseline (CR-5): one SecurityFilterChain, fail-closed.
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    // Actuator: only `health` exposed (see application.yml management.*).
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     runtimeOnly("org.postgresql:postgresql")
 
