@@ -11,7 +11,7 @@ spring:
     open-in-view: false
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:8090}
   # The security baseline permits the /error dispatch path (so a permitted endpoint that errors
   # surfaces its real status instead of being masked as 403). Pin the error response to leak
   # nothing — these are Boot defaults, made explicit because /error is reachable.
