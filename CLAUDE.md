@@ -101,8 +101,25 @@ recorded with a one-line note atop `tasks.md`).
   FindSecBugs does **not** catch our own invariants (never-log-Aadhaar,
   verify-HMAC) — those need custom rules / a PII-lint (candidate future CR).
 - **Run all gates:** `./gradlew securityScan` (or just `./gradlew check`).
-- **Not yet covered (follow-up CRs):** frontend dependency scanning, and CI that
-  runs these automatically (today they run only on local `./gradlew`). The
+
+- **Frontend dependency-vulnerability scan** — `OSV-Scanner` over the npm
+  lockfile (`frontend/package-lock.json`), run via `npm run security:scan` (from
+  `frontend/`; a cross-platform Node shim at `frontend/scripts/security-scan.mjs`).
+  **Fails on any unsuppressed finding** (OSV has no CVSS threshold); the gate is
+  **fail-closed** — a missing `osv-scanner` binary fails with an install hint, it
+  does not skip. **Scan scope:** the **whole lockfile — dev + production deps,
+  including transitives** (npm devDependencies are the dominant surface here; only
+  `vue` ships to the browser, and dev-tool install scripts/typosquatting are a real
+  supply-chain risk). This **deliberately differs** from the backend's
+  exclude-build-tooling scope. To accept a finding, add an `[[IgnoredVulns]]` entry
+  to `frontend/osv-scanner.toml` with a `reason` AND an `ignoreUntil` expiry —
+  justified and time-boxed, never permanent or wildcard. The baseline is currently
+  **empty** (graph is clean). **Not yet wired into CI** (local-only today; not
+  coupled to `npm run build` — a clean local run is not proof the build was gated);
+  CR-7 promotes it. The same `osv-scanner` binary as the backend gate
+  (`brew install osv-scanner`).
+- **Not yet covered (follow-up CRs):** CI that runs these gates automatically
+  (today they run only on local `./gradlew` / `npm run security:scan`). The backend
   `osv-scanner.toml` suppression baseline is currently **empty** — CR-8 remediated
   the Spring Boot 3.4.2 CVEs by bumping to 3.5.15, and CR-9 cleared the residual
   tool-classpath findings via the scan-scope policy above.

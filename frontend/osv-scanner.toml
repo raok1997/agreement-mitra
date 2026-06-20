@@ -1,0 +1,29 @@
+# Frontend OSV-Scanner dependency-scan suppression baseline (the risk-acceptance log).
+#
+# OSV-Scanner has no CVSS threshold: the gate fails on ANY unsuppressed finding in
+# the frontend npm dependency graph. To accept a finding below the team's risk
+# bar, add an [[IgnoredVulns]] entry. Every entry MUST carry a `reason` and an
+# `ignoreUntil` (expiry) so suppressions are justified and time-boxed, not
+# permanent mutes. A fixable finding is cleared by UPGRADING the dependency (or
+# adding an npm `overrides` pin) — never by extending an expiry on the same
+# vulnerable version. An entry stays only for a finding with no fix in any release,
+# or one fixed only outside the project's accepted version policy. No wildcards.
+#
+# SCAN SCOPE (policy — see scripts/security-scan.mjs + CLAUDE.md "Testing &
+# Scanning"): this gate scans the WHOLE lockfile — both `dependencies` and
+# `devDependencies`, including transitives. This DELIBERATELY DIFFERS from the
+# backend gate, which excludes build-tool classpaths. Rationale: npm
+# devDependencies (Vite, ESLint, Vitest, vue-tsc, ...) are this graph's dominant
+# surface (only `vue` ships to the browser) and are a primary supply-chain risk —
+# lifecycle install scripts and typosquatting execute on developer/build hosts. So
+# the full graph is in scope, strictest-reading, matching the fail-on-any posture.
+#
+# Baseline is EMPTY: the graph is currently clean (0 known vulnerabilities). Add an
+# entry only for a genuine, currently-unremediable finding, with a reason and a
+# short expiry.
+#
+# Example (do not leave uncommented without a real, expiring finding):
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = "2026-07-20"
+# reason = "No fixed release yet; dev-only transitive of <tool>; tracking <link>."
