@@ -2,15 +2,15 @@ package in.agreementmitra.signing.leegality;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import in.agreementmitra.signing.SignatureStatus;
+import in.agreementmitra.signing.InviteeStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Unit tests for the Leegality {@code document.status} → FSM mapping and the log-redaction helper.
- * Pure functions, no Spring, no network.
+ * Unit tests for the Leegality per-invitee status mapping and the log-redaction helper. Pure
+ * functions, no Spring, no network.
  */
 class LeegalityMappingTest {
 
@@ -18,25 +18,25 @@ class LeegalityMappingTest {
   @CsvSource({
     "COMPLETED,SIGNED",
     "SIGNED,SIGNED",
-    "REJECTED,FAILED",
-    "FAILED,FAILED",
-    "DECLINED,FAILED",
+    "REJECTED,REJECTED",
+    "FAILED,REJECTED",
+    "DECLINED,REJECTED",
     "EXPIRED,EXPIRED",
     "completed,SIGNED", // case-insensitive
   })
-  void terminalVendorStatusesMapToTerminalFsm(String vendor, SignatureStatus expected) {
-    assertThat(LeegalityEsignProvider.mapStatus(vendor)).isEqualTo(expected);
+  void terminalVendorStatusesMapToInviteeStatus(String vendor, InviteeStatus expected) {
+    assertThat(LeegalityEsignProvider.mapInviteeStatus(vendor)).isEqualTo(expected);
   }
 
   @ParameterizedTest
   @ValueSource(strings = {"DRAFT", "SENT", "IN_PROGRESS", "anything-unknown"})
-  void nonTerminalOrUnknownStatusesMapToSignRequested(String vendor) {
-    assertThat(LeegalityEsignProvider.mapStatus(vendor)).isEqualTo(SignatureStatus.SIGN_REQUESTED);
+  void nonTerminalOrUnknownStatusesMapToPending(String vendor) {
+    assertThat(LeegalityEsignProvider.mapInviteeStatus(vendor)).isEqualTo(InviteeStatus.PENDING);
   }
 
   @Test
-  void nullStatusIsTreatedAsInFlight() {
-    assertThat(LeegalityEsignProvider.mapStatus(null)).isEqualTo(SignatureStatus.SIGN_REQUESTED);
+  void nullStatusIsTreatedAsPending() {
+    assertThat(LeegalityEsignProvider.mapInviteeStatus(null)).isEqualTo(InviteeStatus.PENDING);
   }
 
   @Test

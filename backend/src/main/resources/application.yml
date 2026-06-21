@@ -46,6 +46,17 @@ management:
     health:
       show-details: never
 
+# Signing-request reconciliation fallback (CR-4). Bounded scan that recovers missed/failed
+# completions through the same path as the webhook. Tunable via env; disabled in the test profile.
+signing:
+  reconciliation:
+    enabled: ${SIGNING_RECONCILIATION_ENABLED:true}
+    interval: ${SIGNING_RECONCILIATION_INTERVAL:PT5M}
+    initial-delay: ${SIGNING_RECONCILIATION_INITIAL_DELAY:PT1M}
+    age-threshold: ${SIGNING_RECONCILIATION_AGE_THRESHOLD:PT15M}
+    grace: ${SIGNING_RECONCILIATION_GRACE:PT2M}
+    batch-size: ${SIGNING_RECONCILIATION_BATCH_SIZE:50}
+
 # eSign provider config (sandbox). Values come from env — never commit secrets.
 esign:
   provider: leegality

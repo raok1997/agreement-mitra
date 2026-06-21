@@ -1,88 +1,4 @@
-# signing-request Specification
-
-## Purpose
-
-Start an Aadhaar eSign for an existing agreement and drive it to completion. A
-persisted SigningRequest aggregate owns the signing-status FSM (SIGN_REQUESTED →
-SIGNED | FAILED | EXPIRED), keeping the Agreement aggregate status-less. Covers the
-create endpoint, the verified inbound webhook, Details-API-as-source-of-truth status
-resolution, the EsignProvider (Leegality) adapter seam, secrets/PII handling, and the
-Flyway-managed schema. (Created by archiving change `create-signing-request`.)
-## Requirements
-### Requirement: Create an eSign request for an agreement
-
-The system SHALL provide `POST /api/signing/{agreementId}/request` that starts an
-Aadhaar eSign for an existing agreement through the `EsignProvider` seam. It SHALL load
-the agreement, build a vendor-neutral request carrying every signer (name, email, and
-the data needed for Aadhaar eSign) plus the unsigned PDF, and respond `201 Created` with
-the provider document identifier and a per-signer signing URL (with its expiry).
-
-To avoid losing a completion, the system SHALL **persist the signing request before
-calling the provider** (in a pre-request state with no provider document id yet), then
-call the provider, then update the same row to `SIGN_REQUESTED` with the returned
-document id and per-signer URLs. The provider call SHALL NOT be made while holding an
-open database transaction (no transaction spans the outbound HTTP round-trip).
-
-The unsigned PDF bytes SHALL be **server-sourced**, not a client-settable field
-(anti-mass-assignment); for this capability they may be a fixed dummy fixture. The
-endpoint SHALL bound the request body size and reject an oversized body before doing
-provider work.
-
-The endpoint SHALL be **asynchronous by contract**: it SHALL return once the request is
-created and SHALL NOT block the request thread waiting for any signature. Completion is
-driven later by the webhook. An agreement MAY have more than one signing request over
-time; each create SHALL produce its own signing-request row.
-
-For an unknown `agreementId` the system SHALL respond `404 Not Found` as RFC 9457
-`application/problem+json` (per `api-error-handling`); a syntactically invalid id SHALL
-respond `400 Bad Request` as problem+json, not 404. The response SHALL NOT echo signer
-PII beyond the signing URLs needed by the caller.
-
-> Note (documented risk, deferred): this endpoint is currently **unauthenticated** —
-> consistent with the rest of the API (no auth mechanism exists yet). Because it now
-> triggers a real provider call (outbound signer PII + signing invites + quota use),
-> ownership-based authorization, rate-limiting, and security-event logging are deferred
-> to a dedicated follow-up `signing-auth` change. Sandbox + dummy data only mitigates
-> this in this repo.
-
-#### Scenario: Signing request is created for a valid agreement
-
-- **WHEN** a client POSTs `/api/signing/{agreementId}/request` for an existing
-  multi-party agreement
-- **THEN** the system persists a signing-request row before the provider call, calls the
-  provider once, and updates that row to `SIGN_REQUESTED` with the provider document id
-  and a signing URL plus expiry per signer
-- **AND** the system responds `201 Created` with the document id and the per-signer
-  signing URLs
-
-#### Scenario: Provider succeeds but persistence-update fails leaves a recoverable record
-
-- **WHEN** the provider create call succeeds but the subsequent persistence update fails
-- **THEN** a signing-request row for that agreement still exists (from the pre-request
-  persist) so the live provider document is not orphaned and can be reconciled later
-
-#### Scenario: Request thread does not block on signing
-
-- **WHEN** a signing request is created
-- **THEN** the response returns immediately after the provider create call, without
-  waiting for any signer to sign
-
-#### Scenario: Oversized request body is rejected
-
-- **WHEN** a client POSTs a body exceeding the configured size limit
-- **THEN** the system rejects it before performing provider work
-
-#### Scenario: Unknown agreement id returns 404
-
-- **WHEN** a client POSTs `/api/signing/{agreementId}/request` for an id that does not
-  exist
-- **THEN** the system responds `404 Not Found` as `application/problem+json` and
-  persists no signing request and calls no provider
-
-#### Scenario: Non-UUID agreement id returns 400
-
-- **WHEN** a client POSTs `/api/signing/not-a-uuid/request`
-- **THEN** the system responds `400 Bad Request` as `application/problem+json`
+## MODIFIED Requirements
 
 ### Requirement: Signing request owns the status FSM
 
@@ -149,53 +65,6 @@ or rejected without corrupting state.
 - **WHEN** at least one invitee is `REJECTED` (even if others have `SIGNED`)
 - **THEN** the request transitions to `FAILED`, taking precedence over any `EXPIRED`
   invitee
-
-### Requirement: Inbound webhook is verified before any side effect
-
-The system SHALL provide a single `POST /api/webhooks/esign` endpoint that accepts the
-provider's completion callback for both the success and error channels and handles them
-through one unified path. Because authoritative state is re-read from the Details API
-(see the next requirement), the endpoint SHALL NOT branch on any untrusted body field
-(e.g. a `webhookType` or status field) to decide the outcome — both channels run the
-same verify → Details → FSM path. The provider message authentication code (`mac`) SHALL
-be read from the
-**request body** (not an HTTP header) and verified before any state change. The `mac`
-is `HMAC-SHA1` computed over the document id using the configured webhook secret, and
-the comparison SHALL be **constant-time** (no early-exit timing oracle). The endpoint
-SHALL accept only a JSON request body (`application/json`) and SHALL bound the request
-body size, rejecting an oversized body.
-
-If verification fails (tampered or forged `mac`, or a `mac` over a different document
-id), the system SHALL reject the request and SHALL NOT change any signing request. The
-webhook body SHALL NOT be logged verbatim and SHALL NOT be echoed in any error response.
-
-After a successful verification, the endpoint's response SHALL NOT reveal whether a
-matching signing request exists (no existence oracle): a verified webhook SHALL return
-the same acknowledgement regardless of whether its document id is known.
-
-#### Scenario: Valid webhook is accepted
-
-- **WHEN** a webhook arrives whose body `mac` is the correct `HMAC-SHA1` of its document
-  id under the configured secret
-- **THEN** verification passes and the system proceeds to resolve authoritative status
-
-#### Scenario: Tampered or forged mac is rejected
-
-- **WHEN** a webhook arrives whose `mac` does not match `HMAC-SHA1` of its document id
-  (altered mac, or a mac computed for a different document id)
-- **THEN** the system rejects the request and makes no change to any signing request
-
-#### Scenario: Replay of a valid captured webhook is harmless
-
-- **WHEN** a previously-valid webhook is replayed (same body and `mac`)
-- **THEN** the system re-reads authoritative status and the transition is idempotent, so
-  a replay produces no additional state change beyond the legitimate one
-
-#### Scenario: Verified webhook for an unknown document id is acknowledged indistinguishably
-
-- **WHEN** a verified webhook references a document id with no matching signing request
-- **THEN** the system makes no state change and returns the same acknowledgement as for a
-  known document id (no internal detail leaked, no existence oracle)
 
 ### Requirement: Authoritative status comes from the Details API, not the webhook body
 
@@ -298,28 +167,6 @@ audit-trail bytes **each with its provider-declared content type** (default
 - **THEN** the provider returns the signed PDF bytes and the audit-trail bytes (no
   not-yet-supported error)
 
-### Requirement: Secrets, config, and PII handling
-
-The provider base URL, auth token, and webhook secret SHALL come from environment
-variables only; the dashboard `profileId` SHALL be non-secret configuration. The system
-SHALL NOT log Aadhaar numbers, OTPs, virtual IDs, signer PII, signing URLs, or webhook
-payloads verbatim — identifiers SHALL be redacted before logging. A signing URL SHALL be
-treated as a bearer capability (it grants access to the signing page) and SHALL NOT
-appear in logs. Tests and local development SHALL NOT require real Aadhaar/OTP or live
-provider credentials (sandbox + dummy data only).
-
-#### Scenario: Sensitive values are redacted in logs
-
-- **WHEN** the system logs around create, status read, or webhook handling
-- **THEN** signing URLs, signer PII, and the webhook payload do not appear verbatim;
-  only redacted identifiers are logged
-
-#### Scenario: Tests run without live credentials
-
-- **WHEN** the test suite runs with no real provider credentials configured
-- **THEN** every signing-request test passes against a stubbed provider, requiring no
-  real Aadhaar/OTP
-
 ### Requirement: Signing-request schema is Flyway-managed
 
 The `signing_request` table and its per-signer signing-URL child table SHALL be created
@@ -347,4 +194,3 @@ new columns SHALL be nullable so existing rows validate.
 
 - **WHEN** the signing-completion schema change is introduced
 - **THEN** it ships as a new `V4__signing_completion.sql` and V1–V3 are left unchanged
-

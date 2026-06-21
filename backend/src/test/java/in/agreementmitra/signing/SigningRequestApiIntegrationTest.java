@@ -112,9 +112,20 @@ class SigningRequestApiIntegrationTest {
   }
 
   private void stubDetails(String documentId, String status) {
+    // getStatus reads per-invitee statuses (data.invitees[]); emit the same vendor status for both
+    // invitees of the 2-signer agreements these tests create. document.status kept for
+    // completeness.
     WIREMOCK.stubFor(
         get(urlPathEqualTo("/api/v3.3/document/details"))
-            .willReturn(okJson("{\"data\":{\"document\":{\"status\":\"" + status + "\"}}}")));
+            .willReturn(
+                okJson(
+                    "{\"data\":{\"document\":{\"status\":\""
+                        + status
+                        + "\"},\"invitees\":[{\"inviteeId\":\"INV-1\",\"status\":\""
+                        + status
+                        + "\"},{\"inviteeId\":\"INV-2\",\"status\":\""
+                        + status
+                        + "\"}]}}")));
   }
 
   private void stubDetailsFailure() {

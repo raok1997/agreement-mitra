@@ -1,7 +1,10 @@
 package in.agreementmitra.signing.signingrequest;
 
+import in.agreementmitra.signing.InviteeStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -36,19 +39,43 @@ class SigningRequestInvitee {
   @Column(name = "expiry")
   private String expiry;
 
+  /** Create-time ordinal (provider-response order); the status-correlation fallback. */
+  @Column(name = "signing_order")
+  private Short signingOrder;
+
+  /** The provider's per-invitee identifier; the preferred status-correlation key (may be null). */
+  @Column(name = "provider_invitee_id")
+  private String providerInviteeId;
+
+  /** Per-invitee completion sub-state; driven off the authoritative Details read. */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "status", length = 16)
+  private InviteeStatus status = InviteeStatus.PENDING;
+
   protected SigningRequestInvitee() {
     // JPA
   }
 
-  private SigningRequestInvitee(UUID id, UUID signerId, String signUrl, String expiry) {
+  private SigningRequestInvitee(
+      UUID id,
+      UUID signerId,
+      String signUrl,
+      String expiry,
+      Short signingOrder,
+      String providerInviteeId) {
     this.id = id;
     this.signerId = signerId;
     this.signUrl = signUrl;
     this.expiry = expiry;
+    this.signingOrder = signingOrder;
+    this.providerInviteeId = providerInviteeId;
+    this.status = InviteeStatus.PENDING;
   }
 
-  static SigningRequestInvitee create(UUID signerId, String signUrl, String expiry) {
-    return new SigningRequestInvitee(UUID.randomUUID(), signerId, signUrl, expiry);
+  static SigningRequestInvitee create(
+      UUID signerId, String signUrl, String expiry, int signingOrder, String providerInviteeId) {
+    return new SigningRequestInvitee(
+        UUID.randomUUID(), signerId, signUrl, expiry, (short) signingOrder, providerInviteeId);
   }
 
   void attachTo(SigningRequest signingRequest) {
@@ -69,6 +96,25 @@ class SigningRequestInvitee {
 
   String expiry() {
     return expiry;
+  }
+
+  Short signingOrder() {
+    return signingOrder;
+  }
+
+  String providerInviteeId() {
+    return providerInviteeId;
+  }
+
+  InviteeStatus status() {
+    return status;
+  }
+
+  /**
+   * Set the per-invitee status (called by the aggregate during status correlation, not directly).
+   */
+  void updateStatus(InviteeStatus status) {
+    this.status = status;
   }
 
   @Override

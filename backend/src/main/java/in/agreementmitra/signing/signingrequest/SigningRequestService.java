@@ -1,10 +1,12 @@
 package in.agreementmitra.signing.signingrequest;
 
 import in.agreementmitra.ResourceNotFoundException;
+import in.agreementmitra.signing.BlobStore;
+import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
-import in.agreementmitra.signing.SignatureStatus;
+import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse;
@@ -44,14 +46,17 @@ public class SigningRequestService {
   private final AgreementService agreementService;
   private final EsignProvider esignProvider;
   private final SigningRequestPersistence persistence;
+  private final BlobStore blobStore;
 
   SigningRequestService(
       AgreementService agreementService,
       EsignProvider esignProvider,
-      SigningRequestPersistence persistence) {
+      SigningRequestPersistence persistence,
+      BlobStore blobStore) {
     this.agreementService = agreementService;
     this.esignProvider = esignProvider;
     this.persistence = persistence;
+    this.blobStore = blobStore;
   }
 
   /**
@@ -84,12 +89,20 @@ public class SigningRequestService {
 
     List<SigningRequestInvitee> rows = new ArrayList<>();
     List<InviteeView> views = new ArrayList<>();
-    for (SignSession.InviteeSession invitee : session.invitees()) {
+    List<SignSession.InviteeSession> invitees = session.invitees();
+    for (int ordinal = 0; ordinal < invitees.size(); ordinal++) {
+      SignSession.InviteeSession invitee = invitees.get(ordinal);
       UUID signerId = signerIdByEmail.get(invitee.email().toLowerCase(Locale.ROOT));
       if (signerId == null) {
         throw new IllegalStateException("Provider returned a URL for an unknown signer");
       }
-      rows.add(SigningRequestInvitee.create(signerId, invitee.signUrl(), invitee.expiryDate()));
+      rows.add(
+          SigningRequestInvitee.create(
+              signerId,
+              invitee.signUrl(),
+              invitee.expiryDate(),
+              ordinal,
+              invitee.providerInviteeId()));
       views.add(
           new InviteeView(signerId, invitee.email(), invitee.signUrl(), invitee.expiryDate()));
     }
@@ -104,9 +117,9 @@ public class SigningRequestService {
   /**
    * Handle an inbound webhook. Returns {@code true} if the webhook is authentic (and was acted on
    * or safely ignored), {@code false} if verification failed. A verified webhook is acknowledged
-   * indistinguishably whether or not its document is known, and a Details-API failure is acked too
-   * (completion is left to the reconciliation fallback) — neither leaks internal state nor induces
-   * vendor re-delivery storms.
+   * indistinguishably whether or not its document is known, and a Details-API / download failure is
+   * acked too (completion is left to the reconciliation fallback) — neither leaks internal state
+   * nor induces vendor re-delivery storms.
    */
   public boolean handleWebhook(String payload) {
     Optional<String> documentId = esignProvider.verifyWebhook(payload);
@@ -114,13 +127,42 @@ public class SigningRequestService {
       return false; // rejected — no side effect
     }
     try {
-      SignatureStatus authoritative = esignProvider.getStatus(documentId.get());
-      persistence.applyAuthoritativeStatus(documentId.get(), authoritative);
+      completeDocument(documentId.get());
     } catch (RuntimeException e) {
-      // Details API failed — ack and defer to reconciliation (no transition). No payload logged.
-      log.warn("Webhook acked without transition: authoritative status read failed");
+      // Details/download step failed — ack and defer to reconciliation. No payload logged.
+      log.warn("Webhook acked without completion: status/download step failed");
     }
     return true;
+  }
+
+  /**
+   * The shared completion path, reused by the webhook handler and the reconciliation job: re-read
+   * authoritative per-invitee status (the webhook body is untrusted), apply it + aggregate the FSM
+   * (tx_a), then — if now {@code SIGNED} with artifacts not yet stored — download + store them
+   * outside any transaction (the D9 split), idempotently. An unknown document id is an
+   * indistinguishable no-op.
+   */
+  public void completeDocument(String providerDocumentId) {
+    DocumentStatusView view = esignProvider.getStatus(providerDocumentId);
+    persistence
+        .applyAuthoritativeStatus(providerDocumentId, view)
+        .ifPresent(
+            signingRequestId -> fetchAndStoreArtifacts(signingRequestId, providerDocumentId));
+  }
+
+  /**
+   * Download the signed artifacts and store them under deterministic, internal-id-derived keys,
+   * then record the keys (tx_b). Network calls happen outside any transaction; a failure here
+   * leaves the row {@code SIGNED} with null keys for the reconciliation fallback to retry.
+   */
+  private void fetchAndStoreArtifacts(UUID signingRequestId, String providerDocumentId) {
+    SignedDocument document = esignProvider.download(providerDocumentId);
+    String signedPdfKey = "signed/" + signingRequestId + ".pdf";
+    String auditTrailKey = "audit/" + signingRequestId;
+    blobStore.put(signedPdfKey, document.signedPdf(), document.signedPdfContentType());
+    blobStore.put(auditTrailKey, document.auditTrail(), document.auditTrailContentType());
+    persistence.storeArtifactKeys(signingRequestId, signedPdfKey, auditTrailKey);
+    log.debug("Stored artifacts for signing request {}", signingRequestId);
   }
 
   private SignRequest buildSignRequest(AgreementResponse agreement) {

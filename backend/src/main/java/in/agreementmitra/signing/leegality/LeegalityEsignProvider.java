@@ -2,11 +2,13 @@ package in.agreementmitra.signing.leegality;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
+import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
-import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SignedDocument;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -93,7 +95,8 @@ class LeegalityEsignProvider implements EsignProvider {
           new SignSession.InviteeSession(
               request.invitees().get(i).email(),
               respInvitees.get(i).signUrl(),
-              respInvitees.get(i).expiryDate()));
+              respInvitees.get(i).expiryDate(),
+              respInvitees.get(i).inviteeId()));
     }
     log.debug(
         "Leegality created document {} with {} URL(s)", redact(data.documentId()), sessions.size());
@@ -101,7 +104,7 @@ class LeegalityEsignProvider implements EsignProvider {
   }
 
   @Override
-  public SignatureStatus getStatus(String providerDocumentId) {
+  public DocumentStatusView getStatus(String providerDocumentId) {
     DetailsResponse response =
         client
             .get()
@@ -109,21 +112,67 @@ class LeegalityEsignProvider implements EsignProvider {
             .retrieve()
             .body(DetailsResponse.class);
 
-    String vendorStatus =
-        response != null && response.data() != null && response.data().document() != null
-            ? response.data().document().status()
-            : null;
-    SignatureStatus mapped = mapStatus(vendorStatus);
+    List<RespInvitee> invitees =
+        response != null && response.data() != null && response.data().invitees() != null
+            ? response.data().invitees()
+            : List.of();
+    List<DocumentStatusView.InviteeStatusView> views = new ArrayList<>();
+    for (int i = 0; i < invitees.size(); i++) {
+      RespInvitee invitee = invitees.get(i);
+      views.add(
+          new DocumentStatusView.InviteeStatusView(
+              invitee.inviteeId(), i, mapInviteeStatus(invitee.status())));
+    }
     log.debug(
-        "Leegality document {} authoritative status -> {}", redact(providerDocumentId), mapped);
-    return mapped;
+        "Leegality document {} authoritative status -> {} invitee(s)",
+        redact(providerDocumentId),
+        views.size());
+    return new DocumentStatusView(views);
   }
 
   @Override
   public SignedDocument download(String providerDocumentId) {
-    // OUT OF SCOPE for CR-3: signed-PDF + audit-trail download and object storage are a later CR
-    // (alongside stamp-composition / documents). Kept an explicit not-yet-supported stub.
-    throw new UnsupportedOperationException("TODO: Leegality signed-document download (later CR)");
+    DetailsResponse response =
+        client
+            .get()
+            .uri(uri -> uri.path(DETAILS_PATH).queryParam("documentId", providerDocumentId).build())
+            .retrieve()
+            .body(DetailsResponse.class);
+
+    DocumentInfo document =
+        response != null && response.data() != null ? response.data().document() : null;
+    if (document == null || document.signedUrl() == null) {
+      throw new IllegalStateException("Leegality details missing signed-document URL");
+    }
+    byte[] signedPdf = fetchArtifact(document.signedUrl());
+    byte[] auditTrail =
+        document.auditTrailUrl() != null ? fetchArtifact(document.auditTrailUrl()) : new byte[0];
+    log.debug("Leegality document {} artifacts downloaded", redact(providerDocumentId));
+    return new SignedDocument(
+        providerDocumentId,
+        signedPdf,
+        MediaType.APPLICATION_PDF_VALUE,
+        auditTrail,
+        MediaType.APPLICATION_OCTET_STREAM_VALUE);
+  }
+
+  /**
+   * Fetch an artifact from a provider-supplied URL after host-pinning it to the configured provider
+   * host (SSRF guard — never fetch an arbitrary URL taken from the response).
+   */
+  private byte[] fetchArtifact(String url) {
+    requireProviderHost(url);
+    byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
+    return bytes == null ? new byte[0] : bytes;
+  }
+
+  /** Reject any artifact URL whose host is not the configured provider host (SSRF guard). */
+  private void requireProviderHost(String url) {
+    URI artifact = URI.create(url);
+    URI base = URI.create(properties.baseUrl());
+    if (artifact.getHost() == null || !artifact.getHost().equalsIgnoreCase(base.getHost())) {
+      throw new IllegalStateException("Artifact URL host is not the configured provider host");
+    }
   }
 
   @Override
@@ -153,20 +202,19 @@ class LeegalityEsignProvider implements EsignProvider {
   }
 
   /**
-   * Map a Leegality {@code document.status} to our vendor-neutral FSM status. Terminal outcomes map
-   * to {@link SignatureStatus#SIGNED}/{@link SignatureStatus#FAILED}/{@link
-   * SignatureStatus#EXPIRED}; any in-flight or unknown value maps to the non-terminal {@link
-   * SignatureStatus#SIGN_REQUESTED} (a safe no-op for the FSM driver).
+   * Map a Leegality per-invitee status to our vendor-neutral {@link InviteeStatus}. Any in-flight
+   * or unknown value maps to {@link InviteeStatus#PENDING} (a safe non-terminal). The aggregate FSM
+   * decision is derived from the multiset of these by the {@code SigningRequest} aggregate.
    */
-  static SignatureStatus mapStatus(String vendorStatus) {
+  static InviteeStatus mapInviteeStatus(String vendorStatus) {
     if (vendorStatus == null) {
-      return SignatureStatus.SIGN_REQUESTED;
+      return InviteeStatus.PENDING;
     }
     return switch (vendorStatus.trim().toUpperCase(Locale.ROOT)) {
-      case "COMPLETED", "SIGNED" -> SignatureStatus.SIGNED;
-      case "REJECTED", "FAILED", "DECLINED" -> SignatureStatus.FAILED;
-      case "EXPIRED" -> SignatureStatus.EXPIRED;
-      default -> SignatureStatus.SIGN_REQUESTED; // DRAFT / SENT / in-flight / unknown
+      case "COMPLETED", "SIGNED" -> InviteeStatus.SIGNED;
+      case "REJECTED", "FAILED", "DECLINED" -> InviteeStatus.REJECTED;
+      case "EXPIRED" -> InviteeStatus.EXPIRED;
+      default -> InviteeStatus.PENDING; // DRAFT / SENT / in-flight / unknown
     };
   }
 
@@ -219,11 +267,11 @@ class LeegalityEsignProvider implements EsignProvider {
 
   private record CreateData(String documentId, List<RespInvitee> invitees) {}
 
-  private record RespInvitee(String signUrl, String expiryDate) {}
+  private record RespInvitee(String inviteeId, String signUrl, String expiryDate, String status) {}
 
   private record DetailsResponse(DetailsData data) {}
 
-  private record DetailsData(DocumentInfo document) {}
+  private record DetailsData(DocumentInfo document, List<RespInvitee> invitees) {}
 
-  private record DocumentInfo(String status) {}
+  private record DocumentInfo(String status, String signedUrl, String auditTrailUrl) {}
 }

@@ -69,6 +69,16 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 
+    // Object storage (MinIO local / S3-compatible prod) for signed-artifact blobs — the BlobStore
+    // adapter is shipping code (CR-4). Pinned to 8.6.0 (fixed for GHSA-h7rh-xfpj-hpcm; the fix
+    // landed in 8.6.0). Not managed by Boot's BOM. Now on the SHIPPING classpath, so it is in the
+    // OSV scan's shipping scope — kept at the fixed version.
+    implementation("io.minio:minio:8.6.0")
+    // Force Bouncy Castle to the fixed 1.84 (minio 8.6.0 pulls vulnerable 1.81 —
+    // GHSA-c3fc-8qff-9hwx). A direct shipping dependency so the override applies to the shipped
+    // graph, not just tests (remediated by upgrade per policy).
+    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+
     // Document rendering (headless Chromium). Uncomment when wiring `documents`:
     // implementation("com.microsoft.playwright:playwright:1.49.0")
 
@@ -86,13 +96,8 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:minio")
-    // MinIO Java client for the bucket round-trip (not managed by Boot's BOM).
-    // Pinned to 8.6.0 — the fixed version for GHSA-h7rh-xfpj-hpcm (the advisory's
-    // fix landed in 8.6.0, a minor bump; 8.5.x never carried it). Test scope only.
-    testImplementation("io.minio:minio:8.6.0")
-    // Force Bouncy Castle to the fixed 1.84 (minio 8.6.0 pulls vulnerable 1.81 —
-    // GHSA-c3fc-8qff-9hwx). Test scope only; remediated by upgrade per policy.
-    testImplementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    // io.minio + bouncycastle are now shipping `implementation` deps (above) — the BlobStore
+    // adapter is production code — so they are already on the test classpath; no test-scope entry.
 
     // WireMock — stubs the Leegality REST API for adapter + endpoint integration tests (no live
     // sandbox). The `-standalone` fat jar shades its Jetty/Jackson transitives, so it neither

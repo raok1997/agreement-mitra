@@ -17,6 +17,9 @@ public record SignSession(String providerDocumentId, List<InviteeSession> invite
    * @param email the invitee this URL belongs to (used to map back to the canonical signer)
    * @param signUrl the URL to show that signer — a bearer capability; never log it
    * @param expiryDate when the signing URL expires (vendor-formatted string)
+   * @param providerInviteeId the provider's per-invitee identifier (persisted for later
+   *     status-correlation), or {@code null} if the provider does not expose one
    */
-  public record InviteeSession(String email, String signUrl, String expiryDate) {}
+  public record InviteeSession(
+      String email, String signUrl, String expiryDate, String providerInviteeId) {}
 }

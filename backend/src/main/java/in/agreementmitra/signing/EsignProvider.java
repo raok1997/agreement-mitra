@@ -15,14 +15,19 @@ public interface EsignProvider {
   SignSession createSignRequest(SignRequest request);
 
   /**
-   * Read the authoritative status from the vendor for a document. Used both by the webhook path (as
-   * the source of truth, since the webhook itself is only a trigger) and by the reconciliation
-   * fallback for missed hooks. A still-in-flight document maps to the non-terminal {@link
-   * SignatureStatus#SIGN_REQUESTED}.
+   * Read the authoritative per-invitee status from the vendor for a document. Used both by the
+   * webhook path (as the source of truth, since the webhook itself is only a trigger) and by the
+   * reconciliation fallback for missed hooks. Returns one entry per invitee; the aggregate FSM
+   * decision is computed by aggregating these (a still-in-flight invitee maps to {@link
+   * InviteeStatus#PENDING}).
    */
-  SignatureStatus getStatus(String providerDocumentId);
+  DocumentStatusView getStatus(String providerDocumentId);
 
-  /** Download the completed signed document + audit trail. */
+  /**
+   * Download the completed signed document + audit trail (each with its provider-declared content
+   * type). If the provider exposes the artifacts via a URL, the adapter MUST host-pin that URL to
+   * the configured provider domain before fetching (no arbitrary outbound fetch).
+   */
   SignedDocument download(String providerDocumentId);
 
   /**

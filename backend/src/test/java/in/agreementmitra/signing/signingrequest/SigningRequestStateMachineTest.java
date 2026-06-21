@@ -28,7 +28,9 @@ class SigningRequestStateMachineTest {
     UUID signerId = UUID.randomUUID();
 
     request.markRequested(
-        "DOC-1", List.of(SigningRequestInvitee.create(signerId, "https://sign/abc", "2026-12-31")));
+        "DOC-1",
+        List.of(
+            SigningRequestInvitee.create(signerId, "https://sign/abc", "2026-12-31", 0, "INV-1")));
 
     assertThat(request.status()).isEqualTo(SignatureStatus.SIGN_REQUESTED);
     assertThat(request.providerDocumentId()).isEqualTo("DOC-1");

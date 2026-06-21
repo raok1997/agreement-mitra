@@ -1,5 +1,8 @@
 package in.agreementmitra.signing.signingrequest;
 
+import in.agreementmitra.signing.DocumentStatusView;
+import in.agreementmitra.signing.DocumentStatusView.InviteeStatusView;
+import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignatureStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -20,6 +23,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Persistable;
@@ -72,6 +76,14 @@ class SigningRequest implements Persistable<UUID> {
   @OneToMany(mappedBy = "signingRequest", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<SigningRequestInvitee> invitees = new ArrayList<>();
 
+  /** Object-storage key for the signed PDF; null until the SIGNED transition stores it. */
+  @Column(name = "signed_pdf_key")
+  private String signedPdfKey;
+
+  /** Object-storage key for the audit trail; null until the SIGNED transition stores it. */
+  @Column(name = "audit_trail_key")
+  private String auditTrailKey;
+
   @Transient private boolean isNew = true;
 
   protected SigningRequest() {
@@ -120,6 +132,71 @@ class SigningRequest implements Persistable<UUID> {
     invitees.add(invitee);
   }
 
+  /**
+   * Apply the authoritative per-invitee statuses: persist each onto its matching invitee row (for
+   * display, correlated by provider id with an ordinal fallback), then aggregate the multiset to a
+   * terminal FSM state and transition. The terminal decision is computed from the view's status
+   * counts (correlation-independent), so a correlation mismatch can never corrupt the FSM outcome.
+   */
+  void applyInviteeStatuses(DocumentStatusView view) {
+    for (InviteeStatusView v : view.invitees()) {
+      correlate(v).ifPresent(row -> row.updateStatus(v.status()));
+    }
+    aggregate(view).ifPresent(this::transitionTo);
+  }
+
+  /** Match a view entry to a persisted invitee row: provider id first, ordinal as fallback. */
+  private Optional<SigningRequestInvitee> correlate(InviteeStatusView v) {
+    if (v.providerInviteeId() != null) {
+      Optional<SigningRequestInvitee> byId =
+          invitees.stream()
+              .filter(i -> v.providerInviteeId().equals(i.providerInviteeId()))
+              .findFirst();
+      if (byId.isPresent()) {
+        return byId;
+      }
+    }
+    return invitees.stream()
+        .filter(i -> i.signingOrder() != null && i.signingOrder() == (short) v.ordinal())
+        .findFirst();
+  }
+
+  /**
+   * Aggregate the per-invitee statuses to a terminal FSM target, or empty for a no-op: any {@code
+   * REJECTED} → {@code FAILED} (outranks expiry); else any {@code EXPIRED} → {@code EXPIRED}; else
+   * all invitees {@code SIGNED} (and the view covers every invitee) → {@code SIGNED}; else empty.
+   */
+  private Optional<SignatureStatus> aggregate(DocumentStatusView view) {
+    List<InviteeStatus> statuses = view.invitees().stream().map(InviteeStatusView::status).toList();
+    if (statuses.isEmpty()) {
+      return Optional.empty();
+    }
+    if (statuses.contains(InviteeStatus.REJECTED)) {
+      return Optional.of(SignatureStatus.FAILED);
+    }
+    if (statuses.contains(InviteeStatus.EXPIRED)) {
+      return Optional.of(SignatureStatus.EXPIRED);
+    }
+    boolean coversAll = statuses.size() >= invitees.size();
+    if (coversAll && statuses.stream().allMatch(s -> s == InviteeStatus.SIGNED)) {
+      return Optional.of(SignatureStatus.SIGNED);
+    }
+    return Optional.empty();
+  }
+
+  /**
+   * True once SIGNED but artifacts not yet stored — the trigger for the download-on-SIGNED step.
+   */
+  boolean needsArtifacts() {
+    return status == SignatureStatus.SIGNED && signedPdfKey == null;
+  }
+
+  /** Record the object-storage keys for the downloaded artifacts (the atomic completion pair). */
+  void storeArtifactKeys(String signedPdfKey, String auditTrailKey) {
+    this.signedPdfKey = signedPdfKey;
+    this.auditTrailKey = auditTrailKey;
+  }
+
   @Override
   public UUID getId() {
     return id;
@@ -154,6 +231,14 @@ class SigningRequest implements Persistable<UUID> {
 
   List<SigningRequestInvitee> invitees() {
     return Collections.unmodifiableList(invitees);
+  }
+
+  String signedPdfKey() {
+    return signedPdfKey;
+  }
+
+  String auditTrailKey() {
+    return auditTrailKey;
   }
 
   @Override
