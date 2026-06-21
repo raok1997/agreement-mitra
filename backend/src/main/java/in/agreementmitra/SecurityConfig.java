@@ -56,6 +56,11 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*")
                     .permitAll()
+                    // Draft upload — scoped to the exact sub-path (NOT /api/agreements/**) so the
+                    // posture stays fail-closed. Unauthenticated today; ownership authorization +
+                    // rate-limiting on upload/overwrite are deferred to the signing-auth change.
+                    .requestMatchers(HttpMethod.POST, "/api/agreements/*/draft")
+                    .permitAll()
                     .anyRequest()
                     .denyAll())
         // Keep Spring Security's default hardening response headers (nosniff, no-cache, etc.).

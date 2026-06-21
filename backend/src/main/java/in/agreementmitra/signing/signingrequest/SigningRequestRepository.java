@@ -16,6 +16,9 @@ interface SigningRequestRepository extends JpaRepository<SigningRequest, UUID> {
   /** Look up by the vendor document id (unique). Used by the webhook + reconciliation paths. */
   Optional<SigningRequest> findByProviderDocumentId(String providerDocumentId);
 
+  /** True if any signing request exists for the agreement. Drives the draft freeze (CR-5). */
+  boolean existsByAgreementId(UUID agreementId);
+
   /**
    * Recoverable rows for the reconciliation scan, oldest-first and bounded by {@code pageable}:
    * stale {@code SIGN_REQUESTED} rows (a possibly-missed webhook) past {@code staleBefore}, plus

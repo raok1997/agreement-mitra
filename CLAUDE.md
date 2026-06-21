@@ -138,7 +138,11 @@ scanner is the real enforcement.
 ## Commands
 
 Backend (from `backend/`):
-- `./gradlew bootRun` — run the API (needs Postgres + MinIO; see below)
+- `./gradlew bootRun` — run the API (needs Postgres + MinIO; see below). Requires
+  `S3_ACCESS_KEY`/`S3_SECRET_KEY` in the env (default empty → MinioClient fails to start).
+- `./start_local.sh` — run the API against the compose infra without remembering env
+  vars: supplies the compose MinIO creds (defaults only; a real env wins) + the `local`
+  profile, then `bootRun`. Run `docker compose up -d` first.
 - `./gradlew test` — run tests (includes module-boundary verification)
 - `./gradlew check` — tests + JaCoCo coverage gate
 - `./gradlew spotlessApply` — format Java

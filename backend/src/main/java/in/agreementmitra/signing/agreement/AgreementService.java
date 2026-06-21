@@ -44,6 +44,16 @@ public class AgreementService {
     return repository.findById(id).map(this::toResponse);
   }
 
+  /**
+   * The agreement's draft object-storage key, or empty if the agreement has no draft (or does not
+   * exist). Internal accessor for the signing flow — the key is server-internal and is deliberately
+   * NOT exposed on the public {@link AgreementResponse}.
+   */
+  @Transactional(readOnly = true)
+  public Optional<String> draftPdfKey(UUID id) {
+    return repository.findById(id).map(Agreement::draftPdfKey);
+  }
+
   private AgreementResponse toResponse(Agreement agreement) {
     var signers =
         agreement.signers().stream()

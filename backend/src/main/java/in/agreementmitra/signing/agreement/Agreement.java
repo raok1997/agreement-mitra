@@ -48,6 +48,14 @@ class Agreement implements Persistable<UUID> {
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
+  /**
+   * Object-storage key of the uploaded draft PDF; null until a draft is attached. Server-managed —
+   * never client-settable (set only via {@link #attachDraft}). The bytes live in object storage,
+   * never here.
+   */
+  @Column(name = "draft_pdf_key")
+  private String draftPdfKey;
+
   @OneToMany(mappedBy = "agreement", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<Signer> signers = new ArrayList<>();
 
@@ -88,6 +96,11 @@ class Agreement implements Persistable<UUID> {
     signers.add(Signer.create(this, name, email, role));
   }
 
+  /** Attach (or replace) the uploaded draft's object-storage key. Server-managed only. */
+  void attachDraft(String draftPdfKey) {
+    this.draftPdfKey = draftPdfKey;
+  }
+
   @Override
   public UUID getId() {
     return id;
@@ -122,6 +135,10 @@ class Agreement implements Persistable<UUID> {
 
   Instant createdAt() {
     return createdAt;
+  }
+
+  String draftPdfKey() {
+    return draftPdfKey;
   }
 
   List<Signer> signers() {

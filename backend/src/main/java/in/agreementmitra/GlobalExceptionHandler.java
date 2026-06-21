@@ -16,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
@@ -46,6 +47,11 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_MISMATCH = "urn:agreementmitra:problem:type-mismatch";
   private static final String TYPE_CONSTRAINT = "urn:agreementmitra:problem:constraint-violation";
   private static final String TYPE_NOT_FOUND = "urn:agreementmitra:problem:resource-not-found";
+  private static final String TYPE_DRAFT_FROZEN = "urn:agreementmitra:problem:draft-frozen";
+  private static final String TYPE_DRAFT_REQUIRED = "urn:agreementmitra:problem:draft-required";
+  private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
+  private static final String TYPE_PAYLOAD_TOO_LARGE =
+      "urn:agreementmitra:problem:payload-too-large";
 
   @Override
   protected ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -109,6 +115,56 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         TYPE_CONSTRAINT,
         "Constraint violation",
         "A request parameter is invalid.");
+  }
+
+  @ExceptionHandler(ConflictException.class)
+  ProblemDetail handleConflict(ConflictException ex) {
+    // Distinct type URN per conflict kind so clients can disambiguate; constant detail (never the
+    // exception message or any input).
+    return switch (ex.kind()) {
+      case DRAFT_FROZEN ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_DRAFT_FROZEN,
+              "Draft finalized",
+              "The draft cannot be changed after signing has been requested.");
+      case DRAFT_REQUIRED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_DRAFT_REQUIRED,
+              "Draft required",
+              "A draft must be uploaded before signing can be requested.");
+    };
+  }
+
+  @ExceptionHandler(InvalidUploadException.class)
+  ProblemDetail handleInvalidUpload(InvalidUploadException ex) {
+    // Constant detail — never the exception message or the attacker-controlled filename/content.
+    return problem(
+        HttpStatus.BAD_REQUEST,
+        TYPE_INVALID_UPLOAD,
+        "Invalid upload",
+        "The upload must be a single PDF file.");
+  }
+
+  @Override
+  protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+      MaxUploadSizeExceededException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    // Override the superclass hook (ResponseEntityExceptionHandler already maps this type — a
+    // second @ExceptionHandler would be ambiguous). Oversized multipart → 400 (default is 500).
+    return handleExceptionInternal(ex, payloadTooLarge(), headers, HttpStatus.BAD_REQUEST, request);
+  }
+
+  /** Constant 400 body for an oversized upload. Package-private for direct unit testing. */
+  ProblemDetail payloadTooLarge() {
+    return problem(
+        HttpStatus.BAD_REQUEST,
+        TYPE_PAYLOAD_TOO_LARGE,
+        "Upload too large",
+        "The uploaded file exceeds the maximum allowed size.");
   }
 
   /**

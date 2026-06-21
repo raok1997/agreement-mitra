@@ -7,6 +7,13 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  # Draft-PDF upload bound (CR-5). max-file-size is the 10 MiB ceiling; max-request-size is pinned
+  # just above it so the multipart envelope can't multiply the limit. Exceeding either throws
+  # MaxUploadSizeExceededException, mapped to 400 problem+json by GlobalExceptionHandler.
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra}
     username: ${DB_USER:agreementmitra}

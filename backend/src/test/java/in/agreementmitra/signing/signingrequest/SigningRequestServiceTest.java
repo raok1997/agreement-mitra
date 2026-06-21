@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.DocumentStatusView;
@@ -62,12 +63,20 @@ class SigningRequestServiceTest {
             new SignerResponse(UUID.randomUUID(), "Tara Tenant", "tara@example.com", Role.TENANT)));
   }
 
+  /** Stub the agreement's stored draft so the unsigned PDF can be sourced. */
+  private void stubDraft(UUID agreementId) {
+    String key = "drafts/" + agreementId + ".pdf";
+    when(agreementService.draftPdfKey(agreementId)).thenReturn(Optional.of(key));
+    when(blobStore.get(key)).thenReturn("%PDF-1.4 draft".getBytes());
+  }
+
   @Test
   void createPersistsPendingBeforeCallingProviderThenMarksRequested() {
     UUID agreementId = UUID.randomUUID();
     UUID signingRequestId = UUID.randomUUID();
     when(agreementService.findById(agreementId))
         .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    stubDraft(agreementId);
     when(persistence.createPending(agreementId)).thenReturn(signingRequestId);
     when(esignProvider.createSignRequest(any()))
         .thenReturn(
@@ -109,6 +118,7 @@ class SigningRequestServiceTest {
     UUID agreementId = UUID.randomUUID();
     when(agreementService.findById(agreementId))
         .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    stubDraft(agreementId);
     when(persistence.createPending(agreementId)).thenReturn(UUID.randomUUID());
     when(esignProvider.createSignRequest(any()))
         .thenThrow(new IllegalStateException("vendor down"));
@@ -118,6 +128,49 @@ class SigningRequestServiceTest {
 
     verify(persistence).createPending(agreementId);
     verify(persistence, never()).markRequested(any(), any(), anyList());
+  }
+
+  @Test
+  void createWithoutAnUploadedDraftIsConflictAndTouchesNothing() {
+    UUID agreementId = UUID.randomUUID();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    when(agreementService.draftPdfKey(agreementId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service().create(agreementId))
+        .isInstanceOfSatisfying(
+            ConflictException.class,
+            e -> assertThat(e.kind()).isEqualTo(ConflictException.Kind.DRAFT_REQUIRED));
+
+    verify(persistence, never()).createPending(any());
+    verify(esignProvider, never()).createSignRequest(any());
+  }
+
+  @Test
+  void createSourcesUnsignedPdfFromTheStoredDraft() {
+    UUID agreementId = UUID.randomUUID();
+    String key = "drafts/" + agreementId + ".pdf";
+    byte[] draftBytes = "%PDF-1.4 the-real-draft".getBytes();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    when(agreementService.draftPdfKey(agreementId)).thenReturn(Optional.of(key));
+    when(blobStore.get(key)).thenReturn(draftBytes);
+    when(persistence.createPending(agreementId)).thenReturn(UUID.randomUUID());
+    when(esignProvider.createSignRequest(any()))
+        .thenReturn(
+            new SignSession(
+                "DOC-1",
+                List.of(
+                    new SignSession.InviteeSession(
+                        "asha@example.com", "https://sign/a", "2026", "INV-1"),
+                    new SignSession.InviteeSession(
+                        "tara@example.com", "https://sign/t", "2026", "INV-2"))));
+
+    service().create(agreementId);
+
+    var captor = org.mockito.ArgumentCaptor.forClass(in.agreementmitra.signing.SignRequest.class);
+    verify(esignProvider).createSignRequest(captor.capture());
+    assertThat(captor.getValue().unsignedPdf()).isEqualTo(draftBytes);
   }
 
   @Test

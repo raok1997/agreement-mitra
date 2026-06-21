@@ -83,7 +83,15 @@ class SigningRequestApiIntegrationTest {
 
   // --- helpers ---------------------------------------------------------------
 
+  /** A persisted agreement WITH an uploaded draft — the precondition for requesting signing. */
   private UUID createAgreement() {
+    UUID id = createBareAgreement();
+    uploadDraft(id);
+    return id;
+  }
+
+  /** A persisted agreement with NO draft yet — used to exercise the draft-required 409. */
+  private UUID createBareAgreement() {
     Map<String, Object> body =
         Map.of(
             "propertyAddress", "12 MG Road, Bengaluru",
@@ -98,6 +106,27 @@ class SigningRequestApiIntegrationTest {
     ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     return UUID.fromString((String) created.getBody().get("id"));
+  }
+
+  private void uploadDraft(UUID agreementId) {
+    byte[] pdf = "%PDF-1.4 integration draft".getBytes(StandardCharsets.UTF_8);
+    var form = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+    form.add(
+        "file",
+        new org.springframework.core.io.ByteArrayResource(pdf) {
+          @Override
+          public String getFilename() {
+            return "draft.pdf";
+          }
+        });
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+    ResponseEntity<String> resp =
+        rest.postForEntity(
+            "/api/agreements/" + agreementId + "/draft",
+            new HttpEntity<>(form, headers),
+            String.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
   }
 
   private void stubCreate(String documentId) {
@@ -231,6 +260,24 @@ class SigningRequestApiIntegrationTest {
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     assertThat(resp.getHeaders().getContentType())
         .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+  }
+
+  @Test
+  void createWithoutAnUploadedDraftReturns409AndCallsNoProvider() {
+    UUID agreementId = createBareAgreement();
+    long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
+
+    ResponseEntity<String> resp =
+        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(resp.getHeaders().getContentType())
+        .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    assertThat(resp.getBody()).contains("draft-required");
+    // No signing-request row created, and the provider was never called.
+    assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class))
+        .isEqualTo(before);
+    WIREMOCK.verify(0, postRequestedFor(urlEqualTo("/api/v3.0/sign/request")));
   }
 
   @Test

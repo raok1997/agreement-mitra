@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.signingrequest;
 
+import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.DocumentStatusView;
@@ -11,7 +12,6 @@ import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse.InviteeView;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -38,11 +38,6 @@ public class SigningRequestService {
 
   private static final Logger log = LoggerFactory.getLogger(SigningRequestService.class);
 
-  // Server-sourced placeholder document for this tracer bullet (sandbox/dummy only). Real PDF
-  // rendering via the documents module lands in a later CR. Never a client-supplied field.
-  private static final byte[] DUMMY_PDF =
-      "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n".getBytes(StandardCharsets.UTF_8);
-
   private final AgreementService agreementService;
   private final EsignProvider esignProvider;
   private final SigningRequestPersistence persistence;
@@ -64,6 +59,7 @@ public class SigningRequestService {
    * record the document id + per-signer URLs and move to {@code SIGN_REQUESTED}.
    *
    * @throws ResourceNotFoundException if no such agreement exists (mapped to 404)
+   * @throws ConflictException if the agreement has no uploaded draft (mapped to 409)
    */
   public SigningRequestResponse create(UUID agreementId) {
     AgreementResponse agreement =
@@ -72,12 +68,17 @@ public class SigningRequestService {
             .orElseThrow(
                 () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
 
+    // Server-sourced unsigned PDF: the agreement's uploaded draft (anti-mass-assignment). Loaded
+    // BEFORE persisting any row or calling the provider, so a missing draft is a clean 409 with no
+    // signing-request row and no provider call.
+    byte[] unsignedPdf = loadDraft(agreementId);
+
     // tx1: persist intent before the provider call (recoverable if the later steps fail).
     UUID signingRequestId = persistence.createPending(agreementId);
 
     // Provider call — OUTSIDE any transaction. On failure the pre-request row remains for
     // reconciliation; the exception propagates to the caller.
-    SignSession session = esignProvider.createSignRequest(buildSignRequest(agreement));
+    SignSession session = esignProvider.createSignRequest(buildSignRequest(agreement, unsignedPdf));
 
     Map<String, UUID> signerIdByEmail =
         agreement.signers().stream()
@@ -165,10 +166,17 @@ public class SigningRequestService {
     log.debug("Stored artifacts for signing request {}", signingRequestId);
   }
 
-  private SignRequest buildSignRequest(AgreementResponse agreement) {
+  /** Load the agreement's uploaded draft bytes, or 409 if none has been uploaded. */
+  private byte[] loadDraft(UUID agreementId) {
+    String key =
+        agreementService.draftPdfKey(agreementId).orElseThrow(ConflictException::draftRequired);
+    return blobStore.get(key);
+  }
+
+  private SignRequest buildSignRequest(AgreementResponse agreement, byte[] unsignedPdf) {
     Function<AgreementResponse.SignerResponse, SignRequest.Invitee> toInvitee =
         s -> new SignRequest.Invitee(s.name(), s.email(), null, true);
     List<SignRequest.Invitee> invitees = agreement.signers().stream().map(toInvitee).toList();
-    return new SignRequest(agreement.id().toString(), DUMMY_PDF, invitees);
+    return new SignRequest(agreement.id().toString(), unsignedPdf, invitees);
   }
 }

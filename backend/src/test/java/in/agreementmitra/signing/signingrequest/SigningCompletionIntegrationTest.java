@@ -114,7 +114,30 @@ class SigningCompletionIntegrationTest {
     @SuppressWarnings("unchecked")
     ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-    return UUID.fromString((String) created.getBody().get("id"));
+    UUID id = UUID.fromString((String) created.getBody().get("id"));
+    uploadDraft(id); // signing now requires an uploaded draft (CR-5)
+    return id;
+  }
+
+  private void uploadDraft(UUID agreementId) {
+    var form = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+    form.add(
+        "file",
+        new org.springframework.core.io.ByteArrayResource(
+            "%PDF-1.4 completion draft".getBytes(StandardCharsets.UTF_8)) {
+          @Override
+          public String getFilename() {
+            return "draft.pdf";
+          }
+        });
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+    ResponseEntity<String> resp =
+        rest.postForEntity(
+            "/api/agreements/" + agreementId + "/draft",
+            new HttpEntity<>(form, headers),
+            String.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
   }
 
   private void stubCreate(String documentId) {

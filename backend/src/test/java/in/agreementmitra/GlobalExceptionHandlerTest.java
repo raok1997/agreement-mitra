@@ -107,4 +107,44 @@ class GlobalExceptionHandlerTest {
     assertThat(problem.getDetail()).isEqualTo("Resource not found");
     assertThat(problem.getDetail()).doesNotContain(requestedId);
   }
+
+  @Test
+  void draftFrozenConflictMapsTo409WithItsOwnTypeUrn() {
+    ProblemDetail problem = handler.handleConflict(ConflictException.draftFrozen());
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getType().toString()).isEqualTo("urn:agreementmitra:problem:draft-frozen");
+    assertThat(problem.getDetail())
+        .isEqualTo("The draft cannot be changed after signing has been requested.");
+  }
+
+  @Test
+  void draftRequiredConflictMapsTo409WithADistinctTypeUrn() {
+    ProblemDetail problem = handler.handleConflict(ConflictException.draftRequired());
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:draft-required")
+        .isNotEqualTo("urn:agreementmitra:problem:draft-frozen");
+  }
+
+  @Test
+  void invalidUploadMapsTo400WithConstantDetailNotReflectingMessage() {
+    var ex = new InvalidUploadException("filename=evil.exe magic-byte mismatch");
+
+    ProblemDetail problem = handler.handleInvalidUpload(ex);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getDetail()).isEqualTo("The upload must be a single PDF file.");
+    assertThat(problem.getDetail()).doesNotContain("evil.exe");
+  }
+
+  @Test
+  void oversizedUploadMapsTo400() {
+    ProblemDetail problem = handler.payloadTooLarge();
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:payload-too-large");
+  }
 }

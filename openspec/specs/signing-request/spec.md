@@ -24,9 +24,13 @@ document id and per-signer URLs. The provider call SHALL NOT be made while holdi
 open database transaction (no transaction spans the outbound HTTP round-trip).
 
 The unsigned PDF bytes SHALL be **server-sourced**, not a client-settable field
-(anti-mass-assignment); for this capability they may be a fixed dummy fixture. The
-endpoint SHALL bound the request body size and reject an oversized body before doing
-provider work.
+(anti-mass-assignment). The bytes SHALL be loaded from the agreement's **stored draft**
+in object storage (the `draftPdfKey` set by the draft-ingestion flow). The system SHALL
+require that a draft has been uploaded: when the agreement has **no stored draft**, the
+system SHALL respond `409 Conflict` as RFC 9457 `application/problem+json` and SHALL NOT
+persist a signing request or call the provider. The system SHALL NOT fall back to a
+placeholder document. The endpoint SHALL bound the request body size and reject an
+oversized body before doing provider work.
 
 The endpoint SHALL be **asynchronous by contract**: it SHALL return once the request is
 created and SHALL NOT block the request thread waiting for any signature. Completion is
@@ -48,12 +52,19 @@ PII beyond the signing URLs needed by the caller.
 #### Scenario: Signing request is created for a valid agreement
 
 - **WHEN** a client POSTs `/api/signing/{agreementId}/request` for an existing
-  multi-party agreement
-- **THEN** the system persists a signing-request row before the provider call, calls the
-  provider once, and updates that row to `SIGN_REQUESTED` with the provider document id
-  and a signing URL plus expiry per signer
+  multi-party agreement **that has an uploaded draft**
+- **THEN** the system loads the stored draft bytes, persists a signing-request row before
+  the provider call, calls the provider once, and updates that row to `SIGN_REQUESTED`
+  with the provider document id and a signing URL plus expiry per signer
 - **AND** the system responds `201 Created` with the document id and the per-signer
   signing URLs
+
+#### Scenario: Agreement without an uploaded draft is rejected
+
+- **WHEN** a client POSTs `/api/signing/{agreementId}/request` for an existing agreement
+  that has **no stored draft**
+- **THEN** the system responds `409 Conflict` as `application/problem+json` and persists
+  no signing request and calls no provider
 
 #### Scenario: Provider succeeds but persistence-update fails leaves a recoverable record
 
