@@ -94,6 +94,11 @@ dependencies {
     // GHSA-c3fc-8qff-9hwx). Test scope only; remediated by upgrade per policy.
     testImplementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
+    // WireMock — stubs the Leegality REST API for adapter + endpoint integration tests (no live
+    // sandbox). The `-standalone` fat jar shades its Jetty/Jackson transitives, so it neither
+    // collides with Boot's test classpath nor widens the OSV lockfile surface. Test scope only.
+    testImplementation("org.wiremock:wiremock-standalone:3.9.2")
+
     // SAST plugin: FindSecBugs rules for SpotBugs (security bug patterns).
     spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
 }

@@ -19,5 +19,6 @@ esign:
   provider: leegality
   leegality:
     base-url: ""
+    profile-id: "test-profile"
     auth-token: ""
     webhook-secret: ""

@@ -51,6 +51,8 @@ esign:
   provider: leegality
   leegality:
     base-url: ${LEEGALITY_BASE_URL:}
+    # Non-credential config (a dashboard-created profile reference) — env-overridable.
+    profile-id: ${LEEGALITY_PROFILE_ID:}
     auth-token: ${LEEGALITY_AUTH_TOKEN:}
     webhook-secret: ${LEEGALITY_WEBHOOK_SECRET:}
 

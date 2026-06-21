@@ -157,6 +157,7 @@ org.testcontainers:junit-jupiter:1.21.4=testCompileClasspath,testRuntimeClasspat
 org.testcontainers:minio:1.21.4=testCompileClasspath,testRuntimeClasspath
 org.testcontainers:postgresql:1.21.4=testCompileClasspath,testRuntimeClasspath
 org.testcontainers:testcontainers:1.21.4=testCompileClasspath,testRuntimeClasspath
+org.wiremock:wiremock-standalone:3.9.2=testCompileClasspath,testRuntimeClasspath
 org.xerial.snappy:snappy-java:1.1.10.7=testCompileClasspath,testRuntimeClasspath
 org.xmlunit:xmlunit-core:2.10.4=testCompileClasspath,testRuntimeClasspath
 org.yaml:snakeyaml:2.4=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath

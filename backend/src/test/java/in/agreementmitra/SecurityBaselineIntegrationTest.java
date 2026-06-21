@@ -65,17 +65,19 @@ class SecurityBaselineIntegrationTest {
     ResponseEntity<String> resp =
         rest.exchange(
             "/api/webhooks/esign", HttpMethod.POST, new HttpEntity<>("{}", json), String.class);
-    // 500 = the filter permitted it (no CSRF token needed) and it reached the controller, whose
-    // HMAC verifier is a stub that throws. A 403 would mean the filter (or the /error re-dispatch)
-    // blocked it — that regression is exactly what this asserts against.
-    assertThat(resp.getStatusCode().value()).isEqualTo(500);
+    // 401 = the filter permitted it (no CSRF token needed) and it reached the controller, whose
+    // body-MAC verifier rejected the unsigned `{}` payload. A 403 would mean the filter (or the
+    // /error re-dispatch) blocked it — that regression is exactly what this asserts against.
+    assertThat(resp.getStatusCode().value()).isEqualTo(401);
   }
 
   @Test
   void signingRequestStubIsPermittedAndReachesTheController() {
     ResponseEntity<String> resp =
         rest.postForEntity("/api/signing/abc/request", null, String.class);
-    assertThat(resp.getStatusCode().value()).isEqualTo(500);
+    // 400 = permitted past security and reached MVC, which rejected the non-UUID path var. A 403
+    // would mean security blocked it before dispatch — the regression this guards against.
+    assertThat(resp.getStatusCode().value()).isEqualTo(400);
   }
 
   @Test
