@@ -2,6 +2,8 @@ package in.agreementmitra.signing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.support.HarnessTestConfig;
 import java.math.BigDecimal;
@@ -13,7 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,6 +38,28 @@ class AgreementApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  private final ObjectMapper mapper = new ObjectMapper();
+
+  private JsonNode assertProblemJson(ResponseEntity<String> resp, HttpStatus expected) {
+    assertThat(resp.getStatusCode()).isEqualTo(expected);
+    assertThat(resp.getHeaders().getContentType())
+        .isNotNull()
+        .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    try {
+      JsonNode body = mapper.readTree(resp.getBody());
+      assertThat(body.path("status").asInt()).isEqualTo(expected.value());
+      return body;
+    } catch (Exception e) {
+      throw new AssertionError("response body is not valid JSON: " + resp.getBody(), e);
+    }
+  }
+
+  private static void assertNoLeak(String body, String mustBeAbsent) {
+    assertThat(body).doesNotContain(mustBeAbsent);
+    // No stack trace / internals.
+    assertThat(body).doesNotContain("Exception").doesNotContain("\tat ");
+  }
 
   private static Map<String, Object> signer(String name, String email, String role) {
     return Map.of("name", name, "email", email, "role", role);
@@ -107,7 +134,10 @@ class AgreementApiIntegrationTest {
 
     ResponseEntity<String> resp = rest.postForEntity("/api/agreements", body, String.class);
 
-    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    JsonNode problem = assertProblemJson(resp, HttpStatus.BAD_REQUEST);
+    assertThat(problem.path("errors")).isNotEmpty();
+    // Cross-field rule: a duplicate email must not be echoed back in the error body.
+    assertNoLeak(resp.getBody(), "dup@example.com");
     assertThat(count("agreement")).isEqualTo(agreementsBefore);
     assertThat(count("signer")).isEqualTo(signersBefore);
   }
@@ -145,15 +175,59 @@ class AgreementApiIntegrationTest {
 
     ResponseEntity<String> resp = rest.postForEntity("/api/agreements", body, String.class);
 
-    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    JsonNode problem = assertProblemJson(resp, HttpStatus.BAD_REQUEST);
+    // Cross-field signer-set rule maps to the stable "signers" field token.
+    assertThat(problem.path("errors"))
+        .anySatisfy(e -> assertThat(e.path("field").asText()).isEqualTo("signers"));
   }
 
   @Test
-  void unknownIdReturns404() {
-    ResponseEntity<String> resp =
-        rest.getForEntity("/api/agreements/" + UUID.randomUUID(), String.class);
+  void invalidEmailIsRejectedWith400AndDoesNotEchoEmail() {
+    String badEmail = "not-a-valid-email-value";
+    Map<String, Object> body =
+        validBody(
+            List.of(
+                signer("Asha Owner", badEmail, "OWNER"),
+                signer("Tara Tenant", "tara-ok@example.com", "TENANT")));
 
-    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    ResponseEntity<String> resp = rest.postForEntity("/api/agreements", body, String.class);
+
+    assertProblemJson(resp, HttpStatus.BAD_REQUEST);
+    assertNoLeak(resp.getBody(), badEmail);
+  }
+
+  @Test
+  void unknownIdReturns404ProblemJsonWithoutReflectingId() {
+    UUID missing = UUID.randomUUID();
+
+    ResponseEntity<String> resp = rest.getForEntity("/api/agreements/" + missing, String.class);
+
+    assertProblemJson(resp, HttpStatus.NOT_FOUND);
+    // Constant detail — the requested id must not be reflected.
+    assertNoLeak(resp.getBody(), missing.toString());
+  }
+
+  @Test
+  void nonUuidIdIsRejectedWith400AndDoesNotEchoValue() {
+    ResponseEntity<String> resp = rest.getForEntity("/api/agreements/not-a-uuid", String.class);
+
+    assertProblemJson(resp, HttpStatus.BAD_REQUEST);
+    assertNoLeak(resp.getBody(), "not-a-uuid");
+  }
+
+  @Test
+  void malformedJsonIsRejectedWith400WithoutEchoingPayload() {
+    String embeddedValue = "secret-leak-value";
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    // Missing closing brace → unparseable; carries a PII-looking value that must not be echoed.
+    HttpEntity<String> request =
+        new HttpEntity<>("{\"propertyAddress\":\"" + embeddedValue + "\"", headers);
+
+    ResponseEntity<String> resp = rest.postForEntity("/api/agreements", request, String.class);
+
+    assertProblemJson(resp, HttpStatus.BAD_REQUEST);
+    assertNoLeak(resp.getBody(), embeddedValue);
   }
 
   @Test

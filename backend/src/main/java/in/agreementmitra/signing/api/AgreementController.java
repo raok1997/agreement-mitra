@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.agreement.AgreementService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -35,10 +36,9 @@ public class AgreementController {
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<AgreementResponse> get(@PathVariable UUID id) {
+  public AgreementResponse get(@PathVariable UUID id) {
     return agreementService
         .findById(id)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + id));
   }
 }

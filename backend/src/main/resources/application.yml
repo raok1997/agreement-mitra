@@ -1,6 +1,12 @@
 spring:
   application:
     name: agreementmitra
+  # RFC 9457 ProblemDetail for un-overridden built-in MVC exceptions. GlobalExceptionHandler owns
+  # the bodies it overrides (this flag is inert there); the flag covers only the message-safe
+  # built-ins we do not handle, so no error path falls back to Boot's legacy shape.
+  mvc:
+    problemdetails:
+      enabled: true
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra}
     username: ${DB_USER:agreementmitra}
