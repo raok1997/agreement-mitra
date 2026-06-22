@@ -52,6 +52,7 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
   private static final String TYPE_PAYLOAD_TOO_LARGE =
       "urn:agreementmitra:problem:payload-too-large";
+  private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
 
   @Override
   protected ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -145,6 +146,17 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         TYPE_INVALID_UPLOAD,
         "Invalid upload",
         "The upload must be a single PDF file.");
+  }
+
+  @ExceptionHandler(StampFailedException.class)
+  ProblemDetail handleStampFailed(StampFailedException ex) {
+    // 422: the stored draft was accepted at upload but cannot be processed (parsed/stamped) now.
+    // Constant detail — never the exception message or any draft content (fail closed, no leak).
+    return problem(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        TYPE_STAMP_FAILED,
+        "Stamping failed",
+        "The uploaded draft could not be stamped.");
   }
 
   @Override

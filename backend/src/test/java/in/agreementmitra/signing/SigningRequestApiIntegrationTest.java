@@ -75,6 +75,7 @@ class SigningRequestApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private in.agreementmitra.signing.BlobStore blobStore;
 
   @BeforeEach
   void resetStubs() {
@@ -109,7 +110,11 @@ class SigningRequestApiIntegrationTest {
   }
 
   private void uploadDraft(UUID agreementId) {
-    byte[] pdf = "%PDF-1.4 integration draft".getBytes(StandardCharsets.UTF_8);
+    // A real, parseable PDF — since CR-6 the signing flow stamps (parses) the draft with PDFBox.
+    uploadDraft(agreementId, in.agreementmitra.support.TestPdfs.singlePage());
+  }
+
+  private void uploadDraft(UUID agreementId, byte[] pdf) {
     var form = new org.springframework.util.LinkedMultiValueMap<String, Object>();
     form.add(
         "file",
@@ -202,6 +207,13 @@ class SigningRequestApiIntegrationTest {
         "SELECT status FROM signing_request WHERE id = ?", String.class, signingRequestId);
   }
 
+  private String statusOfDoc(String providerDocumentId) {
+    return jdbc.queryForObject(
+        "SELECT status FROM signing_request WHERE provider_document_id = ?",
+        String.class,
+        providerDocumentId);
+  }
+
   // --- create ----------------------------------------------------------------
 
   @Test
@@ -235,6 +247,79 @@ class SigningRequestApiIntegrationTest {
             Long.class,
             "DOC-CREATE-1");
     assertThat(invitees).isEqualTo(2);
+  }
+
+  @Test
+  void createAutoStampsStoresStampedPdfAndPersistsStampInfo() throws Exception {
+    UUID agreementId = createAgreement();
+    stubCreate("DOC-STAMP-1");
+
+    ResponseEntity<String> resp =
+        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+    // Stamp DATA persisted on the agreement (internal columns; jurisdiction "KA", no real duty).
+    Map<String, Object> row =
+        jdbc.queryForMap(
+            "SELECT stamp_serial, stamped_pdf_key, stamp_denomination, stamp_jurisdiction,"
+                + " stamp_duty_paid FROM agreement WHERE id = ?",
+            agreementId);
+    String serial = (String) row.get("stamp_serial");
+    assertThat(serial).matches("BW \\d{10}");
+    assertThat(row.get("stamp_jurisdiction")).isEqualTo("KA");
+    assertThat(row.get("stamp_denomination")).isEqualTo(100);
+    assertThat(row.get("stamp_duty_paid")).isEqualTo(false);
+    assertThat(row.get("stamped_pdf_key")).isEqualTo("stamped/" + agreementId + ".pdf");
+
+    // The stamped PDF (what was handed to the provider) is stored in MinIO: stamp page prepended
+    // (1 + 1 draft page = 2) and the serial overlay present.
+    byte[] stamped = blobStore.get("stamped/" + agreementId + ".pdf");
+    try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(stamped)) {
+      assertThat(doc.getNumberOfPages()).isEqualTo(2);
+      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(serial);
+    }
+
+    // FSM advanced PDF_GENERATED → STAMPED → SIGN_REQUESTED (final state observed).
+    assertThat(statusOfDoc("DOC-STAMP-1")).isEqualTo("SIGN_REQUESTED");
+  }
+
+  @Test
+  void unparseableDraftReturns422StampFailedAndCallsNoProvider() {
+    UUID agreementId = createBareAgreement();
+    // Passes the upload magic-byte check but is not a real PDF — fails at the stamp step.
+    uploadDraft(agreementId, "%PDF-1.4 not a real pdf".getBytes(StandardCharsets.UTF_8));
+
+    ResponseEntity<String> resp =
+        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    assertThat(resp.getHeaders().getContentType())
+        .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    // The body never echoes draft content.
+    assertThat(resp.getBody()).contains("stamp-failed").doesNotContain("not a real pdf");
+    // The request landed in STAMP_FAILED and the provider was never called.
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM signing_request WHERE agreement_id = ?",
+                String.class,
+                agreementId))
+        .isEqualTo("STAMP_FAILED");
+    WIREMOCK.verify(0, postRequestedFor(urlEqualTo("/api/v3.0/sign/request")));
+  }
+
+  @Test
+  void stampInfoIsNotExposedOnTheAgreementResponse() {
+    UUID agreementId = createAgreement();
+    stubCreate("DOC-STAMP-2");
+    rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+
+    ResponseEntity<String> get = rest.getForEntity("/api/agreements/" + agreementId, String.class);
+
+    assertThat(get.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(get.getBody())
+        .doesNotContain("stamp")
+        .doesNotContain("stamped")
+        .doesNotContain("BW ");
   }
 
   @Test

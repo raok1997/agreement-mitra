@@ -69,6 +69,12 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 
+    // PDF composition (CR-6): prepend the synthetic e-stamp page + overlay the per-page serial
+    // onto the uploaded draft. PDFBox (pure-JVM) is correct here — page-prepend/ASCII overlay is
+    // not Indic-script *shaping* (the Chromium-only rule is about rendering complex scripts). A
+    // shipping dependency → in the OSV/SpotBugs scan scope; pinned to a fixed release.
+    implementation("org.apache.pdfbox:pdfbox:3.0.5")
+
     // Object storage (MinIO local / S3-compatible prod) for signed-artifact blobs — the BlobStore
     // adapter is shipping code (CR-4). Pinned to 8.6.0 (fixed for GHSA-h7rh-xfpj-hpcm; the fix
     // landed in 8.6.0). Not managed by Boot's BOM. Now on the SHIPPING classpath, so it is in the

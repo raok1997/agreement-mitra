@@ -1,6 +1,8 @@
 package in.agreementmitra.signing.signingrequest;
 
 import in.agreementmitra.signing.DocumentStatusView;
+import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.StampInfo;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,9 +24,12 @@ class SigningRequestPersistence {
   private static final Logger log = LoggerFactory.getLogger(SigningRequestPersistence.class);
 
   private final SigningRequestRepository repository;
+  private final AgreementService agreementService;
 
-  SigningRequestPersistence(SigningRequestRepository repository) {
+  SigningRequestPersistence(
+      SigningRequestRepository repository, AgreementService agreementService) {
     this.repository = repository;
+    this.agreementService = agreementService;
   }
 
   /**
@@ -34,6 +39,42 @@ class SigningRequestPersistence {
   UUID createPending(UUID agreementId) {
     SigningRequest request = SigningRequest.createPending(agreementId);
     return repository.save(request).getId();
+  }
+
+  /**
+   * Stamp step (fresh procurement): attach the procured stamp data to the agreement and advance the
+   * request to {@code STAMPED} in one short transaction (so both commit together), <em>after</em>
+   * the stamped PDF has already been written to object storage outside any transaction (D9 — no tx
+   * spans the blob put or the later provider call).
+   */
+  @Transactional
+  void markStamped(UUID signingRequestId, UUID agreementId, StampInfo stampInfo) {
+    agreementService.attachStamp(agreementId, stampInfo);
+    markStamped(signingRequestId);
+  }
+
+  /** Stamp step (reuse of an already-stamped agreement): advance the request to {@code STAMPED}. */
+  @Transactional
+  void markStamped(UUID signingRequestId) {
+    SigningRequest request = load(signingRequestId);
+    request.markStamped();
+    repository.save(request);
+  }
+
+  /**
+   * Drive the request to the terminal {@code STAMP_FAILED} (stamping failed; provider not called).
+   */
+  @Transactional
+  void markStampFailed(UUID signingRequestId) {
+    SigningRequest request = load(signingRequestId);
+    request.markStampFailed();
+    repository.save(request);
+  }
+
+  private SigningRequest load(UUID id) {
+    return repository
+        .findById(id)
+        .orElseThrow(() -> new IllegalStateException("Signing request vanished: " + id));
   }
 
   /** tx2: attach the provider document id + per-signer URLs and move to {@code SIGN_REQUESTED}. */

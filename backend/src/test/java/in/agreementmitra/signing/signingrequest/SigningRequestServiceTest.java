@@ -18,9 +18,12 @@ import in.agreementmitra.signing.SignSession;
 import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.agreement.Role;
+import in.agreementmitra.signing.agreement.StampInfo;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.AgreementResponse.SignerResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse;
+import in.agreementmitra.signing.stamp.StampProvider;
+import in.agreementmitra.signing.stamp.StampResult;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -43,11 +46,22 @@ class SigningRequestServiceTest {
 
   @Mock private AgreementService agreementService;
   @Mock private EsignProvider esignProvider;
+  @Mock private StampProvider stampProvider;
   @Mock private SigningRequestPersistence persistence;
   @Mock private BlobStore blobStore;
 
+  private static final byte[] STAMPED_PDF = "%PDF-1.4 stamped".getBytes();
+
   private SigningRequestService service() {
-    return new SigningRequestService(agreementService, esignProvider, persistence, blobStore);
+    return new SigningRequestService(
+        agreementService, esignProvider, stampProvider, persistence, blobStore);
+  }
+
+  /** Stub a fresh stamp procurement: agreement has no stamp yet → provider composites one. */
+  private void stubStamp(UUID agreementId) {
+    when(agreementService.stampInfo(agreementId)).thenReturn(Optional.empty());
+    when(stampProvider.procure(eq(agreementId), any()))
+        .thenReturn(new StampResult("BW 0000000001", "KA", 100, false, STAMPED_PDF));
   }
 
   private static AgreementResponse agreementWithTwoSigners(UUID id) {
@@ -77,6 +91,7 @@ class SigningRequestServiceTest {
     when(agreementService.findById(agreementId))
         .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
     stubDraft(agreementId);
+    stubStamp(agreementId);
     when(persistence.createPending(agreementId)).thenReturn(signingRequestId);
     when(esignProvider.createSignRequest(any()))
         .thenReturn(
@@ -119,6 +134,7 @@ class SigningRequestServiceTest {
     when(agreementService.findById(agreementId))
         .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
     stubDraft(agreementId);
+    stubStamp(agreementId);
     when(persistence.createPending(agreementId)).thenReturn(UUID.randomUUID());
     when(esignProvider.createSignRequest(any()))
         .thenThrow(new IllegalStateException("vendor down"));
@@ -147,15 +163,17 @@ class SigningRequestServiceTest {
   }
 
   @Test
-  void createSourcesUnsignedPdfFromTheStoredDraft() {
+  void createStampsTheDraftAndSubmitsTheStampedPdfNotTheRawDraft() {
     UUID agreementId = UUID.randomUUID();
+    UUID signingRequestId = UUID.randomUUID();
     String key = "drafts/" + agreementId + ".pdf";
     byte[] draftBytes = "%PDF-1.4 the-real-draft".getBytes();
     when(agreementService.findById(agreementId))
         .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
     when(agreementService.draftPdfKey(agreementId)).thenReturn(Optional.of(key));
     when(blobStore.get(key)).thenReturn(draftBytes);
-    when(persistence.createPending(agreementId)).thenReturn(UUID.randomUUID());
+    stubStamp(agreementId);
+    when(persistence.createPending(agreementId)).thenReturn(signingRequestId);
     when(esignProvider.createSignRequest(any()))
         .thenReturn(
             new SignSession(
@@ -168,9 +186,85 @@ class SigningRequestServiceTest {
 
     service().create(agreementId);
 
+    // The raw draft is what gets stamped...
+    var procureCaptor = org.mockito.ArgumentCaptor.forClass(byte[].class);
+    verify(stampProvider).procure(eq(agreementId), procureCaptor.capture());
+    assertThat(procureCaptor.getValue()).isEqualTo(draftBytes);
+
+    // ...the stamped PDF is stored under the agreement-scoped key...
+    verify(blobStore)
+        .put(eq("stamped/" + agreementId + ".pdf"), eq(STAMPED_PDF), eq("application/pdf"));
+
+    // ...the agreement's stamp data is attached and the request advanced to STAMPED...
+    var infoCaptor = org.mockito.ArgumentCaptor.forClass(StampInfo.class);
+    verify(persistence).markStamped(eq(signingRequestId), eq(agreementId), infoCaptor.capture());
+    StampInfo info = infoCaptor.getValue();
+    assertThat(info.serial()).isEqualTo("BW 0000000001");
+    assertThat(info.stampedPdfKey()).isEqualTo("stamped/" + agreementId + ".pdf");
+    assertThat(info.jurisdiction()).isEqualTo("KA");
+    assertThat(info.denomination()).isEqualTo(100);
+    assertThat(info.dutyPaid()).isFalse();
+
+    // ...and the provider receives the STAMPED pdf, not the bare draft.
     var captor = org.mockito.ArgumentCaptor.forClass(in.agreementmitra.signing.SignRequest.class);
     verify(esignProvider).createSignRequest(captor.capture());
-    assertThat(captor.getValue().unsignedPdf()).isEqualTo(draftBytes);
+    assertThat(captor.getValue().unsignedPdf()).isEqualTo(STAMPED_PDF).isNotEqualTo(draftBytes);
+  }
+
+  @Test
+  void alreadyStampedAgreementIsReusedNotReStamped() {
+    // Forward-looking / dormant under v1 lock-forever: constructed populated-stampInfo state.
+    UUID agreementId = UUID.randomUUID();
+    UUID signingRequestId = UUID.randomUUID();
+    String stampedKey = "stamped/" + agreementId + ".pdf";
+    byte[] reused = "%PDF-1.4 already-stamped".getBytes();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    when(agreementService.draftPdfKey(agreementId)).thenReturn(Optional.of("drafts/x.pdf"));
+    when(blobStore.get("drafts/x.pdf")).thenReturn("draft".getBytes());
+    when(agreementService.stampInfo(agreementId))
+        .thenReturn(
+            Optional.of(
+                new StampInfo("BW 0000000002", stampedKey, 100, "KA", false, Instant.now())));
+    when(blobStore.get(stampedKey)).thenReturn(reused);
+    when(persistence.createPending(agreementId)).thenReturn(signingRequestId);
+    when(esignProvider.createSignRequest(any()))
+        .thenReturn(
+            new SignSession(
+                "DOC-RU",
+                List.of(
+                    new SignSession.InviteeSession("asha@example.com", "u", "2026", "INV-1"),
+                    new SignSession.InviteeSession("tara@example.com", "u", "2026", "INV-2"))));
+
+    service().create(agreementId);
+
+    verify(stampProvider, never()).procure(any(), any());
+    verify(persistence).markStamped(signingRequestId); // reuse overload, no attach
+    verify(persistence, never()).markStamped(any(), any(), any());
+    verify(blobStore, never()).put(any(), any(), any());
+    var captor = org.mockito.ArgumentCaptor.forClass(in.agreementmitra.signing.SignRequest.class);
+    verify(esignProvider).createSignRequest(captor.capture());
+    assertThat(captor.getValue().unsignedPdf()).isEqualTo(reused);
+  }
+
+  @Test
+  void unparseableDraftDrivesStampFailedAndNoProviderCall() {
+    UUID agreementId = UUID.randomUUID();
+    UUID signingRequestId = UUID.randomUUID();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    stubDraft(agreementId);
+    when(persistence.createPending(agreementId)).thenReturn(signingRequestId);
+    when(agreementService.stampInfo(agreementId)).thenReturn(Optional.empty());
+    when(stampProvider.procure(eq(agreementId), any()))
+        .thenThrow(new in.agreementmitra.StampFailedException("bad pdf"));
+
+    assertThatThrownBy(() -> service().create(agreementId))
+        .isInstanceOf(in.agreementmitra.StampFailedException.class);
+
+    verify(persistence).markStampFailed(signingRequestId);
+    verify(esignProvider, never()).createSignRequest(any());
+    verify(persistence, never()).markRequested(any(), any(), anyList());
   }
 
   @Test

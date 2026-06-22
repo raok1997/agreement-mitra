@@ -19,6 +19,7 @@ class SigningRequestAggregationTest {
 
   private static SigningRequest twoInviteeRequest() {
     SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
+    request.markStamped();
     request.markRequested(
         "DOC-1",
         List.of(

@@ -25,6 +25,7 @@ class SigningRequestStateMachineTest {
   @Test
   void markRequestedRecordsDocumentIdUrlsAndAdvancesToSignRequested() {
     SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
+    request.markStamped();
     UUID signerId = UUID.randomUUID();
 
     request.markRequested(
@@ -76,8 +77,41 @@ class SigningRequestStateMachineTest {
     assertThat(request.status()).isEqualTo(SignatureStatus.SIGNED);
   }
 
+  @Test
+  void stampStepPrecedesTheRequestTransition() {
+    SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
+
+    request.markStamped();
+    assertThat(request.status()).isEqualTo(SignatureStatus.STAMPED);
+
+    request.markRequested("DOC", List.of());
+    assertThat(request.status()).isEqualTo(SignatureStatus.SIGN_REQUESTED);
+  }
+
+  @Test
+  void stampFailedIsTerminalAndBlocksSignRequested() {
+    SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
+
+    request.markStampFailed();
+    assertThat(request.status()).isEqualTo(SignatureStatus.STAMP_FAILED);
+
+    assertThatThrownBy(() -> request.markRequested("DOC", List.of()))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(request.status()).isEqualTo(SignatureStatus.STAMP_FAILED);
+  }
+
+  @Test
+  void cannotRequestSigningBeforeStamping() {
+    SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
+    // PDF_GENERATED must go through STAMPED first.
+    assertThatThrownBy(() -> request.markRequested("DOC", List.of()))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(request.status()).isEqualTo(SignatureStatus.PDF_GENERATED);
+  }
+
   private static SigningRequest requested() {
     SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
+    request.markStamped();
     request.markRequested("DOC", List.of());
     return request;
   }

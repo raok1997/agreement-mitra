@@ -49,12 +49,18 @@ class SigningRequest implements Persistable<UUID> {
   /** Legal forward transitions. Terminal-to-same-terminal is handled separately (idempotent). */
   private static final Map<SignatureStatus, Set<SignatureStatus>> ALLOWED =
       Map.of(
-          SignatureStatus.PDF_GENERATED, EnumSet.of(SignatureStatus.SIGN_REQUESTED),
+          SignatureStatus.PDF_GENERATED,
+              EnumSet.of(SignatureStatus.STAMPED, SignatureStatus.STAMP_FAILED),
+          SignatureStatus.STAMPED, EnumSet.of(SignatureStatus.SIGN_REQUESTED),
           SignatureStatus.SIGN_REQUESTED,
               EnumSet.of(SignatureStatus.SIGNED, SignatureStatus.FAILED, SignatureStatus.EXPIRED));
 
   private static final Set<SignatureStatus> TERMINAL =
-      EnumSet.of(SignatureStatus.SIGNED, SignatureStatus.FAILED, SignatureStatus.EXPIRED);
+      EnumSet.of(
+          SignatureStatus.SIGNED,
+          SignatureStatus.FAILED,
+          SignatureStatus.EXPIRED,
+          SignatureStatus.STAMP_FAILED);
 
   @Id private UUID id;
 
@@ -118,6 +124,16 @@ class SigningRequest implements Persistable<UUID> {
           "Illegal signing-request transition: " + status + " -> " + target);
     }
     this.status = target;
+  }
+
+  /** Move to {@code STAMPED}: a stamp is confirmed attached to this request's instrument. */
+  void markStamped() {
+    transitionTo(SignatureStatus.STAMPED);
+  }
+
+  /** Move to the terminal {@code STAMP_FAILED}: stamping failed; the provider is not called. */
+  void markStampFailed() {
+    transitionTo(SignatureStatus.STAMP_FAILED);
   }
 
   /** Record the provider document id + per-invitee URLs and move to {@code SIGN_REQUESTED}. */

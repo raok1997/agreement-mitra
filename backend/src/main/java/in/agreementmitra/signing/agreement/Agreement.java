@@ -2,6 +2,7 @@ package in.agreementmitra.signing.agreement;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
@@ -56,6 +57,12 @@ class Agreement implements Persistable<UUID> {
   @Column(name = "draft_pdf_key")
   private String draftPdfKey;
 
+  /**
+   * Server-managed stamp data; null until a stamp is procured (during the first signing request).
+   * Descriptive data only — the signing status lives on the signing-request FSM, not here.
+   */
+  @Embedded private StampInfo stampInfo;
+
   @OneToMany(mappedBy = "agreement", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<Signer> signers = new ArrayList<>();
 
@@ -101,6 +108,11 @@ class Agreement implements Persistable<UUID> {
     this.draftPdfKey = draftPdfKey;
   }
 
+  /** Attach (or replace) the procured stamp data. Server-managed only. */
+  void attachStamp(StampInfo stampInfo) {
+    this.stampInfo = stampInfo;
+  }
+
   @Override
   public UUID getId() {
     return id;
@@ -139,6 +151,10 @@ class Agreement implements Persistable<UUID> {
 
   String draftPdfKey() {
     return draftPdfKey;
+  }
+
+  StampInfo stampInfo() {
+    return stampInfo;
   }
 
   List<Signer> signers() {

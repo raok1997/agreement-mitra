@@ -54,6 +54,31 @@ public class AgreementService {
     return repository.findById(id).map(Agreement::draftPdfKey);
   }
 
+  /**
+   * The agreement's procured stamp data, or empty if none has been procured (or the agreement does
+   * not exist). Internal accessor for the signing flow — deliberately NOT on the public {@link
+   * AgreementResponse}, mirroring {@link #draftPdfKey}.
+   */
+  @Transactional(readOnly = true)
+  public Optional<StampInfo> stampInfo(UUID id) {
+    return repository.findById(id).map(Agreement::stampInfo);
+  }
+
+  /**
+   * Attach server-procured stamp data to the agreement. Server-managed only (never
+   * client-settable). Joins the caller's transaction (REQUIRED) so the stamp-attach and the
+   * signing-request {@code STAMPED} transition commit together.
+   */
+  @Transactional
+  public void attachStamp(UUID id, StampInfo stampInfo) {
+    Agreement agreement =
+        repository
+            .findById(id)
+            .orElseThrow(() -> new IllegalStateException("Agreement vanished: " + id));
+    agreement.attachStamp(stampInfo);
+    repository.save(agreement);
+  }
+
   private AgreementResponse toResponse(Agreement agreement) {
     var signers =
         agreement.signers().stream()

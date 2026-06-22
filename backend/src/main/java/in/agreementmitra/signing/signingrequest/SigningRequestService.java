@@ -2,6 +2,7 @@ package in.agreementmitra.signing.signingrequest;
 
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
+import in.agreementmitra.StampFailedException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
@@ -9,9 +10,13 @@ import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
 import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.StampInfo;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse.InviteeView;
+import in.agreementmitra.signing.stamp.StampProvider;
+import in.agreementmitra.signing.stamp.StampResult;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -40,16 +45,19 @@ public class SigningRequestService {
 
   private final AgreementService agreementService;
   private final EsignProvider esignProvider;
+  private final StampProvider stampProvider;
   private final SigningRequestPersistence persistence;
   private final BlobStore blobStore;
 
   SigningRequestService(
       AgreementService agreementService,
       EsignProvider esignProvider,
+      StampProvider stampProvider,
       SigningRequestPersistence persistence,
       BlobStore blobStore) {
     this.agreementService = agreementService;
     this.esignProvider = esignProvider;
+    this.stampProvider = stampProvider;
     this.persistence = persistence;
     this.blobStore = blobStore;
   }
@@ -71,14 +79,19 @@ public class SigningRequestService {
     // Server-sourced unsigned PDF: the agreement's uploaded draft (anti-mass-assignment). Loaded
     // BEFORE persisting any row or calling the provider, so a missing draft is a clean 409 with no
     // signing-request row and no provider call.
-    byte[] unsignedPdf = loadDraft(agreementId);
+    byte[] draft = loadDraft(agreementId);
 
     // tx1: persist intent before the provider call (recoverable if the later steps fail).
     UUID signingRequestId = persistence.createPending(agreementId);
 
+    // Stamp step (auto, transparent): composite the e-stamp onto the draft and move to STAMPED
+    // before the provider call. The document submitted to the provider is the STAMPED PDF, never
+    // the bare draft. A stamp failure drives STAMP_FAILED and stops here (no provider call).
+    byte[] stampedPdf = ensureStamped(agreement, signingRequestId, draft);
+
     // Provider call — OUTSIDE any transaction. On failure the pre-request row remains for
     // reconciliation; the exception propagates to the caller.
-    SignSession session = esignProvider.createSignRequest(buildSignRequest(agreement, unsignedPdf));
+    SignSession session = esignProvider.createSignRequest(buildSignRequest(agreement, stampedPdf));
 
     Map<String, UUID> signerIdByEmail =
         agreement.signers().stream()
@@ -164,6 +177,48 @@ public class SigningRequestService {
     blobStore.put(auditTrailKey, document.auditTrail(), document.auditTrailContentType());
     persistence.storeArtifactKeys(signingRequestId, signedPdfKey, auditTrailKey);
     log.debug("Stored artifacts for signing request {}", signingRequestId);
+  }
+
+  /**
+   * Ensure a stamp is attached and return the stamped PDF bytes. If the agreement has no stamp yet,
+   * procure one, store the stamped PDF (object storage, no tx), then attach the stamp data + move
+   * the request to {@code STAMPED} (one short tx). If a stamp already exists, reuse it
+   * (idempotent).
+   *
+   * <p>The reuse branch is dormant under v1 lock-forever (exactly one signing request per agreement
+   * ⇒ stamp info is always empty here); it defaults to safe reuse for the future supersede flow. A
+   * procurement/composition failure drives the request to the terminal {@code STAMP_FAILED} and
+   * rethrows (the provider is never called).
+   */
+  private byte[] ensureStamped(AgreementResponse agreement, UUID signingRequestId, byte[] draft) {
+    UUID agreementId = agreement.id();
+    Optional<StampInfo> existing = agreementService.stampInfo(agreementId);
+    if (existing.isPresent() && existing.get().stampedPdfKey() != null) {
+      persistence.markStamped(signingRequestId); // reuse — dormant in v1
+      return blobStore.get(existing.get().stampedPdfKey());
+    }
+
+    StampResult result;
+    try {
+      result = stampProvider.procure(agreementId, draft);
+    } catch (StampFailedException e) {
+      persistence.markStampFailed(signingRequestId);
+      throw e;
+    }
+
+    String stampedKey = "stamped/" + agreementId + ".pdf";
+    blobStore.put(stampedKey, result.stampedPdf(), "application/pdf"); // network — no tx
+    StampInfo info =
+        new StampInfo(
+            result.serial(),
+            stampedKey,
+            result.denomination(),
+            result.jurisdiction(),
+            result.dutyPaid(),
+            Instant.now());
+    persistence.markStamped(signingRequestId, agreementId, info); // short tx: attach + transition
+    log.debug("Stamped agreement {} for signing request {}", agreementId, signingRequestId);
+    return result.stampedPdf();
   }
 
   /** Load the agreement's uploaded draft bytes, or 409 if none has been uploaded. */

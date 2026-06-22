@@ -124,7 +124,7 @@ class SigningCompletionIntegrationTest {
     form.add(
         "file",
         new org.springframework.core.io.ByteArrayResource(
-            "%PDF-1.4 completion draft".getBytes(StandardCharsets.UTF_8)) {
+            in.agreementmitra.support.TestPdfs.singlePage()) {
           @Override
           public String getFilename() {
             return "draft.pdf";
@@ -299,6 +299,26 @@ class SigningCompletionIntegrationTest {
             jdbc.queryForObject(
                 "SELECT status FROM signing_request WHERE id = ?", String.class, orphanId))
         .isEqualTo("PDF_GENERATED");
+  }
+
+  @Test
+  void reconciliationDoesNotSweepStampFailed() {
+    // A STAMP_FAILED row is terminal and must never be picked up by the reconciliation scan
+    // (which selects only stale SIGN_REQUESTED and SIGNED-with-null-keys).
+    UUID stampFailedId = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO signing_request (id, agreement_id, provider_document_id, status, version, created_at)"
+            + " VALUES (?, ?, NULL, 'STAMP_FAILED', 0, ?)",
+        stampFailedId,
+        createAgreement(),
+        Timestamp.from(Instant.now().minusSeconds(3600)));
+
+    reconciliationJob.reconcile();
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM signing_request WHERE id = ?", String.class, stampFailedId))
+        .isEqualTo("STAMP_FAILED");
   }
 
   @Test
