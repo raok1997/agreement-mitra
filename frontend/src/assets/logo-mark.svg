@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="AgreementMitra">
+  <defs>
+    <linearGradient id="am-tile" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#313984" />
+      <stop offset="1" stop-color="#4d5bb8" />
+    </linearGradient>
+    <!-- one continuous check: the vertex is a clean line-join, so there are no
+         colliding round caps to leave a stray nub -->
+    <path id="am-check" d="M17 34 L27 45 L47 19" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- recolor the long arm + vertex saffron; white stays the short tick to the
+         left of this seam, so nothing white sits below the saffron -->
+    <clipPath id="am-longarm"><rect x="25.5" y="0" width="38.5" height="64" /></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#am-tile)" />
+  <use href="#am-check" stroke="#ffffff" />
+  <use href="#am-check" stroke="#f6a026" clip-path="url(#am-longarm)" />
+</svg>

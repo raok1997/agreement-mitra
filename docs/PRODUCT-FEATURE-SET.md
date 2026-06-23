@@ -171,3 +171,39 @@ eSahayak (`esahayak.io/service/rent-agreement`; invoice via Scribd), RentPaper
 (`bookmyagreement.co.in`, `erentagreement.com`, `housewise.in`), WhatsApp-eSign infra
 (`leegality.com/features/whatsapp-pings`, `zoho.com/sign`, `zoopsign.com`, `signdesk.com`),
 and Meta WhatsApp Business API 2026 policy. Full per-claim source list in the research run.
+
+---
+
+## 9. Brand & UI foundation (decided)
+
+Scaffolded ahead of the frontend signing-flow proposal; lives in `frontend/` (theme tokens,
+logo, header). Expresses the §1 positioning visually — warmth as *tone*, correctness as
+*substance*.
+
+- **Theme — warm-trust.** Deep-indigo "trust" + saffron "mitra" warmth + a reserved
+  verified-green for status/signed/audit (the transparency wedge made visible) + warm-gray
+  neutrals. The palette is a **single source of truth**: CSS vars in `src/style.css` (RGB
+  channels) consumed by Tailwind and readable by the PDF templates. Bilingual font stack
+  (Inter + Noto Sans Devanagari) ties the UI to the same Chromium/Noto Indic-shaping
+  decision the `documents` module already made.
+- **Logo.** Two-tone check — white tick + saffron sweep — on an indigo tile; camelCase
+  wordmark "Agreement"(indigo)·"Mitra"(saffron). Mark / wordmark / favicon in
+  `frontend/src/assets/`.
+- **Tagline — calibrate claims to what the backend can prove** (extends §1 and §6). "Mitra"
+  raises the trust expectation, so warmth must not outrun substance, and any
+  legal-correctness claim is liability / unauthorized-practice-of-law territory until the
+  `rules` engine funds it.
+  - ✅ safe now: **"Rental agreements made simple"** (current), "Your rental-agreement mitra"
+  - ⚠️ earn first (needs rules engine + multi-state): "Legally correct in your state"
+  - ❌ never: implies personal legal advice / "we're your lawyers". ("Done right" reads as a
+    correctness claim — deliberately avoided.)
+
+**Follow-ups (not yet built):**
+
+- **Self-host fonts** (`@fontsource/inter` + `@fontsource/noto-sans-devanagari`) to drop the
+  Google Fonts CDN runtime fetch — small hardening CR (identity infra; aligns with the
+  frontend supply-chain posture in CLAUDE.md).
+- **Re-skin `SignDemo`** off the legacy `slate` / `blue` utilities onto the `brand` /
+  `accent` / `success` / `ink` tokens when the signing-flow UI is built.
+- **Outline the wordmark text** for any distributed / print art (in-app it renders live via
+  Inter).
