@@ -16,6 +16,23 @@ the working context Claude Code loads each session.
 - JDK 21
 - Node.js >= 20.19 (required by both Vite and the OpenSpec CLI)
 - Docker (for local Postgres + MinIO)
+- OpenSpec CLI — for spec-driven development. No separate install needed if you
+  use `npx openspec` (see [Wire up OpenSpec](#wire-up-openspec)); to install it
+  globally instead, run `npm install -g openspec` (then use `openspec` directly).
+
+### Windows
+
+The repo's day-to-day commands assume a POSIX shell. On Windows:
+
+
+- Run all commands from **Git Bash** or **WSL2** (not `cmd`/PowerShell). The
+  helper scripts (`backend/start_local.sh`, `backend/run-tests.sh`) and the
+  Claude Code hooks (`.claude/hooks/*.sh`) are bash-only and won't run otherwise.
+- Use the bundled `gradlew.bat` if you do invoke Gradle from `cmd`/PowerShell —
+  e.g. `gradlew.bat test` in place of `./gradlew test`.
+- Substitute `copy` for `cp` (e.g. `copy .env.example .env`), or just use Git
+  Bash where the `cp` commands below work as written.
+- Run Docker Desktop with the **WSL2 backend** for Postgres + MinIO.
 
 ## First-time setup
 
