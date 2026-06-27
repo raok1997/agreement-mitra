@@ -6,7 +6,9 @@ create signing request → signer authenticates with Aadhaar + OTP → signed
 PDF + audit trail return to the app.
 
 This file is context for Claude Code. Keep it short and current. Deep detail
-lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`.
+lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`. The
+team-shared roadmap (what's done / what's next) is `docs/ROADMAP.md`; vendor
+specifics live in `docs/integrations/` (e.g. Leegality sandbox/pricing).
 
 ## Architecture (decided — do not relitigate without a proposal)
 
