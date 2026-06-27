@@ -40,8 +40,9 @@ lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`.
 - Java: prefer records for DTOs/value objects; constructor injection (no field
   `@Autowired`); package-private by default, `public` only on the module API.
 - One aggregate's state transitions go through its state machine, not ad-hoc
-  setters. Signing states: `DRAFT → PDF_GENERATED → SIGN_REQUESTED →
-  SIGNED | FAILED | EXPIRED`.
+  setters. Signing states: `DRAFT → PDF_GENERATED → STAMPED → SIGN_REQUESTED →
+  SIGNED | FAILED | EXPIRED`, with `STAMP_FAILED` as a terminal branch off the
+  stamp step (`PDF_GENERATED → STAMP_FAILED`).
 - eSign is **asynchronous**: never block a request thread waiting on a
   signature. Create the request, return the signing URL, let the webhook drive
   completion. A scheduled reconciliation job is the fallback for missed hooks.
@@ -138,7 +139,11 @@ scanner is the real enforcement.
 ## Commands
 
 Backend (from `backend/`):
-- `./gradlew bootRun` — run the API (needs Postgres + MinIO; see below)
+- `./gradlew bootRun` — run the API (needs Postgres + MinIO; see below). Requires
+  `S3_ACCESS_KEY`/`S3_SECRET_KEY` in the env (default empty → MinioClient fails to start).
+- `./start_local.sh` — run the API against the compose infra without remembering env
+  vars: supplies the compose MinIO creds (defaults only; a real env wins) + the `local`
+  profile, then `bootRun`. Run `docker compose up -d` first.
 - `./gradlew test` — run tests (includes module-boundary verification)
 - `./gradlew check` — tests + JaCoCo coverage gate
 - `./gradlew spotlessApply` — format Java

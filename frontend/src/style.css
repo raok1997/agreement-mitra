@@ -1,3 +1,69 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * AgreementMitra design tokens — single source of truth.
+ *
+ * Theme: warm-trust. Deep-indigo "trust" + saffron "mitra" warmth + a reserved
+ * verified-green for status/audit/signed states. Values are space-separated RGB
+ * channels so Tailwind can apply opacity (rgb(var(--token) / <alpha-value>)) and
+ * non-Tailwind contexts (the PDF templates) can read the same vars directly,
+ * e.g. color: rgb(var(--am-brand-600)).
+ */
+@layer base {
+  :root {
+    /* brand — deep indigo "trust" */
+    --am-brand-50: 238 240 251;
+    --am-brand-100: 218 222 246;
+    --am-brand-200: 187 194 236;
+    --am-brand-300: 147 157 223;
+    --am-brand-400: 108 120 205;
+    --am-brand-500: 77 91 184;
+    --am-brand-600: 60 70 160;
+    --am-brand-700: 49 57 132;
+    --am-brand-800: 42 48 104;
+    --am-brand-900: 35 40 81;
+
+    /* accent — saffron "mitra" warmth (CTAs) */
+    --am-accent-50: 255 248 237;
+    --am-accent-100: 253 236 200;
+    --am-accent-200: 251 214 139;
+    --am-accent-300: 249 187 79;
+    --am-accent-400: 246 160 38;
+    --am-accent-500: 233 133 13;
+    --am-accent-600: 199 104 7;
+    --am-accent-700: 158 78 12;
+    --am-accent-800: 128 63 16;
+    --am-accent-900: 106 53 17;
+
+    /* success — verified / signed / audit-trail */
+    --am-success-50: 236 253 243;
+    --am-success-100: 209 250 223;
+    --am-success-200: 166 244 197;
+    --am-success-300: 108 233 166;
+    --am-success-400: 50 213 131;
+    --am-success-500: 18 183 106;
+    --am-success-600: 3 152 85;
+    --am-success-700: 2 122 72;
+    --am-success-800: 5 96 58;
+    --am-success-900: 5 79 49;
+
+    /* ink — warm-gray neutrals */
+    --am-ink-50: 250 249 247;
+    --am-ink-100: 242 240 234;
+    --am-ink-200: 230 225 216;
+    --am-ink-300: 211 204 190;
+    --am-ink-400: 171 163 146;
+    --am-ink-500: 132 123 106;
+    --am-ink-600: 101 93 79;
+    --am-ink-700: 77 71 60;
+    --am-ink-800: 54 49 42;
+    --am-ink-900: 33 30 25;
+  }
+
+  body {
+    @apply bg-ink-50 text-ink-800 antialiased;
+    font-family: theme("fontFamily.sans");
+  }
+}

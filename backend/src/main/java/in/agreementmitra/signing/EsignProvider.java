@@ -1,24 +1,42 @@
 package in.agreementmitra.signing;
 
+import java.util.Optional;
+
 /**
  * Abstraction over an Aadhaar eSign aggregator. Implementations live in provider-specific internal
  * packages (e.g. {@code .leegality}). Swapping vendors (Leegality - Digio) must be a new adapter,
- * nothing more.
+ * nothing more — all vendor specifics (URLs, auth, payload shapes, MAC algorithm) stay behind here.
  */
 public interface EsignProvider {
 
-  /** Create a signing request with the vendor; returns the signing URL. */
+  /**
+   * Create a signing request with the vendor; returns the document id + per-invitee signing URLs.
+   */
   SignSession createSignRequest(SignRequest request);
 
-  /** Fetch current status from the vendor (reconciliation fallback). */
-  SignatureStatus getStatus(String providerRequestId);
-
-  /** Download the completed signed document + audit trail. */
-  SignedDocument download(String providerRequestId);
+  /**
+   * Read the authoritative per-invitee status from the vendor for a document. Used both by the
+   * webhook path (as the source of truth, since the webhook itself is only a trigger) and by the
+   * reconciliation fallback for missed hooks. Returns one entry per invitee; the aggregate FSM
+   * decision is computed by aggregating these (a still-in-flight invitee maps to {@link
+   * InviteeStatus#PENDING}).
+   */
+  DocumentStatusView getStatus(String providerDocumentId);
 
   /**
-   * Verify an inbound webhook is authentic before acting on it. Treat every webhook as untrusted
-   * until this returns true.
+   * Download the completed signed document + audit trail (each with its provider-declared content
+   * type). If the provider exposes the artifacts via a URL, the adapter MUST host-pin that URL to
+   * the configured provider domain before fetching (no arbitrary outbound fetch).
    */
-  boolean verifyWebhook(String payload, String signatureHeader);
+  SignedDocument download(String providerDocumentId);
+
+  /**
+   * Verify an inbound webhook is authentic and, if so, return the document id it concerns. The MAC
+   * lives in the JSON body (not an HTTP header), so the adapter parses both the MAC and the
+   * document id from the payload. The MAC covers only the document id — the rest of the body is
+   * untrusted, so callers MUST re-read authoritative state via {@link #getStatus(String)} rather
+   * than trusting any status field in the payload. Returns empty when verification fails (treat
+   * every webhook as untrusted until this returns a value).
+   */
+  Optional<String> verifyWebhook(String payload);
 }

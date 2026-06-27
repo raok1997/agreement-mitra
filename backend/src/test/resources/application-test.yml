@@ -11,6 +11,12 @@ spring:
     enabled: true
     clean-disabled: true
 
+# The reconciliation scheduler is disabled in tests so it never fires against unrelated test
+# fixtures; reconciliation behaviour is tested by invoking the job method directly.
+signing:
+  reconciliation:
+    enabled: false
+
 # storage.* (endpoint, bucket, access-key, secret-key) is supplied at runtime by the
 # DynamicPropertyRegistrar bean in HarnessTestConfig, pointed at the MinIO container — so
 # no credentials are hardcoded here, and those values win over any real S3_* env on the
@@ -19,5 +25,6 @@ esign:
   provider: leegality
   leegality:
     base-url: ""
+    profile-id: "test-profile"
     auth-token: ""
     webhook-secret: ""

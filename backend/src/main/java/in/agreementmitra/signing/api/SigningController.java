@@ -1,28 +1,36 @@
 package in.agreementmitra.signing.api;
 
-import in.agreementmitra.signing.EsignProvider;
-import in.agreementmitra.signing.SignSession;
-import org.springframework.web.bind.annotation.*;
+import in.agreementmitra.signing.signingrequest.SigningRequestService;
+import java.util.UUID;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Triggers a signing request and returns the signing URL. The request thread returns immediately —
- * completion arrives later via {@link WebhookController}.
+ * Starts an eSign request for an agreement and returns the per-signer signing URLs. The request
+ * thread returns immediately — completion arrives later via {@link WebhookController}.
+ *
+ * <p>A non-UUID {@code agreementId} yields a 400 ProblemDetail (type mismatch, handled centrally);
+ * an unknown agreement yields a 404 ProblemDetail (via {@code ResourceNotFoundException}). This
+ * endpoint is unauthenticated today (no auth mechanism exists yet) — ownership authorization and
+ * rate-limiting are deferred to a follow-up change.
  */
 @RestController
 @RequestMapping("/api/signing")
 public class SigningController {
 
-  private final EsignProvider esignProvider;
+  private final SigningRequestService signingRequestService;
 
-  public SigningController(EsignProvider esignProvider) {
-    this.esignProvider = esignProvider;
+  public SigningController(SigningRequestService signingRequestService) {
+    this.signingRequestService = signingRequestService;
   }
 
-  // TODO: accept an agreementId, load + render the PDF via the documents module,
-  // persist a signing request row in DRAFT->PDF_GENERATED->SIGN_REQUESTED, then:
   @PostMapping("/{agreementId}/request")
-  public SignSession requestSignature(@PathVariable String agreementId) {
-    throw new UnsupportedOperationException(
-        "Spec this with OpenSpec: /opsx:propose create-signing-request");
+  public ResponseEntity<SigningRequestResponse> requestSignature(@PathVariable UUID agreementId) {
+    SigningRequestResponse response = signingRequestService.create(agreementId);
+    return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }
 }

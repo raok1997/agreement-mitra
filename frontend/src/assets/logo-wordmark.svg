@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 72" width="360" height="72" role="img" aria-label="AgreementMitra">
+  <defs>
+    <linearGradient id="am-tile-w" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#313984" />
+      <stop offset="1" stop-color="#4d5bb8" />
+    </linearGradient>
+    <!-- one continuous check (clean line-join at the vertex, no colliding caps) -->
+    <path id="am-check-w" d="M17 34 L27 45 L47 19" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- long arm + vertex saffron; white short tick stays left of the seam -->
+    <clipPath id="am-longarm-w"><rect x="25.5" y="0" width="38.5" height="64" /></clipPath>
+  </defs>
+  <!-- mark -->
+  <g transform="translate(8,8) scale(0.875)">
+    <rect width="64" height="64" rx="16" fill="url(#am-tile-w)" />
+    <use href="#am-check-w" stroke="#ffffff" />
+    <use href="#am-check-w" stroke="#f6a026" clip-path="url(#am-longarm-w)" />
+  </g>
+  <!-- wordmark: camelCase two-tone — "Agreement" indigo, "Mitra" saffron.
+       Renders with Inter where loaded; outline the text for distributed/print art. -->
+  <text x="86" y="47" font-family="Inter, 'Noto Sans Devanagari', system-ui, sans-serif" font-size="34" font-weight="600" letter-spacing="-0.5">
+    <tspan fill="#232851">Agreement</tspan><tspan fill="#c76807">Mitra</tspan>
+  </text>
+</svg>

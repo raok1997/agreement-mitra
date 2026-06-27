@@ -1,6 +1,19 @@
 spring:
   application:
     name: agreementmitra
+  # RFC 9457 ProblemDetail for un-overridden built-in MVC exceptions. GlobalExceptionHandler owns
+  # the bodies it overrides (this flag is inert there); the flag covers only the message-safe
+  # built-ins we do not handle, so no error path falls back to Boot's legacy shape.
+  mvc:
+    problemdetails:
+      enabled: true
+  # Draft-PDF upload bound (CR-5). max-file-size is the 10 MiB ceiling; max-request-size is pinned
+  # just above it so the multipart envelope can't multiply the limit. Exceeding either throws
+  # MaxUploadSizeExceededException, mapped to 400 problem+json by GlobalExceptionHandler.
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra}
     username: ${DB_USER:agreementmitra}
@@ -40,11 +53,24 @@ management:
     health:
       show-details: never
 
+# Signing-request reconciliation fallback (CR-4). Bounded scan that recovers missed/failed
+# completions through the same path as the webhook. Tunable via env; disabled in the test profile.
+signing:
+  reconciliation:
+    enabled: ${SIGNING_RECONCILIATION_ENABLED:true}
+    interval: ${SIGNING_RECONCILIATION_INTERVAL:PT5M}
+    initial-delay: ${SIGNING_RECONCILIATION_INITIAL_DELAY:PT1M}
+    age-threshold: ${SIGNING_RECONCILIATION_AGE_THRESHOLD:PT15M}
+    grace: ${SIGNING_RECONCILIATION_GRACE:PT2M}
+    batch-size: ${SIGNING_RECONCILIATION_BATCH_SIZE:50}
+
 # eSign provider config (sandbox). Values come from env — never commit secrets.
 esign:
   provider: leegality
   leegality:
     base-url: ${LEEGALITY_BASE_URL:}
+    # Non-credential config (a dashboard-created profile reference) — env-overridable.
+    profile-id: ${LEEGALITY_PROFILE_ID:}
     auth-token: ${LEEGALITY_AUTH_TOKEN:}
     webhook-secret: ${LEEGALITY_WEBHOOK_SECRET:}
 

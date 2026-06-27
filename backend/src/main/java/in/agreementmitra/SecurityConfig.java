@@ -17,8 +17,9 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>No authentication mechanism exists yet; this is a posture, not an authenticator. Denied
  * requests return 403 (there is no {@code AuthenticationEntryPoint}, so no 401 challenge). The
  * webhook is permitted here because the aggregator cannot present credentials — its real
- * authorization is HMAC verification in the controller, which is deferred (not yet implemented), so
- * no webhook side-effect may ship before that lands.
+ * authorization is the body-MAC (HMAC-SHA1) verification in the signing service, which runs before
+ * any side effect. The signing create-request route is permitted but unauthenticated; ownership
+ * authorization + rate-limiting on it are deferred to a follow-up change.
  */
 @Configuration
 class SecurityConfig {
@@ -39,13 +40,26 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health")
                     .permitAll()
-                    // Aggregator can't bearer-auth; authorized at the app layer via HMAC
-                    // (deferred).
+                    // Aggregator can't bearer-auth; authorized at the app layer via the body-MAC
+                    // verification in the signing service (HMAC-SHA1 over the document id).
                     .requestMatchers(HttpMethod.POST, "/api/webhooks/esign")
                     .permitAll()
-                    // Exact stub path only — NOT /api/signing/** — so future signing sub-paths
-                    // are denied by default. Tighten when an auth mechanism / real signing lands.
+                    // Exact create-request path only — NOT /api/signing/** — so future signing
+                    // sub-paths are denied by default. This route is unauthenticated today;
+                    // ownership authorization + rate-limiting are deferred to a follow-up change.
                     .requestMatchers(HttpMethod.POST, "/api/signing/*/request")
+                    .permitAll()
+                    // Sandbox agreement surface — scoped to the exact create + read-by-id paths
+                    // (NOT /api/agreements/**) so future sub-paths stay denied by default. These
+                    // are unauthenticated today; TEMPORARY — tighten when an auth mechanism lands.
+                    .requestMatchers(HttpMethod.POST, "/api/agreements")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/agreements/*")
+                    .permitAll()
+                    // Draft upload — scoped to the exact sub-path (NOT /api/agreements/**) so the
+                    // posture stays fail-closed. Unauthenticated today; ownership authorization +
+                    // rate-limiting on upload/overwrite are deferred to the signing-auth change.
+                    .requestMatchers(HttpMethod.POST, "/api/agreements/*/draft")
                     .permitAll()
                     .anyRequest()
                     .denyAll())
