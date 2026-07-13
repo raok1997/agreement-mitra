@@ -38,6 +38,13 @@ Signing slice: `persistence-foundation`, `agreement-aggregate`,
 `validation-error-responses`, `create-signing-request`, `signing-completion`,
 `draft-ingestion`, `stamp-composition`.
 
+Guided rental-agreement flow: `rich-agreement-capture` (structured tenant/owner details —
+first/last/father name + current address — tenancy start/end dates with a derived duration
+in months, full name as per Aadhaar, contact optional at draft; Vue capture screen). Next
+in the arc: `agreement-document-render` (CR-3, proposed) — embed the captured data into one
+bundled rental template and preview it via a Gotenberg render service. `mobile-otp-auth`
+(optional login to save/resume) and a searchable template catalog are proposed-but-parked.
+
 ## Vendor status (Leegality) — read before planning live work
 
 See `docs/integrations/leegality.md` for full detail. The load-bearing facts:

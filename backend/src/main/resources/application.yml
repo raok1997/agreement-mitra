@@ -81,6 +81,15 @@ storage:
   access-key: ${S3_ACCESS_KEY:}
   secret-key: ${S3_SECRET_KEY:}
 
+# Document rendering (CR-3a): Gotenberg (headless Chromium) HTML->PDF service. Base URL comes
+# from env like the S3 endpoint; default is the local docker-compose service. Non-secret.
+gotenberg:
+  url: ${GOTENBERG_URL:http://localhost:3000}
+  # Cap concurrent renders in-app (Chromium's memory lives in Gotenberg, not the JVM) and bound
+  # each render with a client read timeout so a stuck render surfaces as a clean failure.
+  max-concurrent-renders: ${GOTENBERG_MAX_CONCURRENT_RENDERS:4}
+  request-timeout: ${GOTENBERG_REQUEST_TIMEOUT:PT30S}
+
 logging:
   level:
     in.agreementmitra: DEBUG

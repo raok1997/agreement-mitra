@@ -48,11 +48,28 @@ public class SignerSetValidator
         hasTenant = true;
       }
       String email = signer.email();
-      if (email != null && !seenEmails.add(email.toLowerCase(Locale.ROOT))) {
+      if (email != null && !email.isBlank() && !seenEmails.add(email.toLowerCase(Locale.ROOT))) {
         duplicateEmail = true;
       }
     }
 
-    return hasOwner && hasTenant && !duplicateEmail;
+    if (hasOwner && hasTenant && !duplicateEmail) {
+      return true;
+    }
+
+    // Emit a specific, user-friendly message per failed rule (a public, all-India app: the error
+    // must read plainly), instead of one combined message that names conditions that did not fail.
+    context.disableDefaultConstraintViolation();
+    if (!hasOwner || !hasTenant) {
+      context
+          .buildConstraintViolationWithTemplate("Add at least one owner and one tenant.")
+          .addConstraintViolation();
+    }
+    if (duplicateEmail) {
+      context
+          .buildConstraintViolationWithTemplate("Each person needs a different email address.")
+          .addConstraintViolation();
+    }
+    return false;
   }
 }

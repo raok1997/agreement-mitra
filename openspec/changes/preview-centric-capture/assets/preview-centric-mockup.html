@@ -1,0 +1,466 @@
+<title>Preview-Centric Capture — Design Proposal</title>
+<style>
+  :root {
+    --bg: #eceef4; --surface: #ffffff; --surface-2: #f5f6fb; --ink: #1b1e26; --muted: #565b6b;
+    --faint: #868ca0; --border: #e1e4ee; --border-strong: #ccd1e0;
+    --paper: #f9f7f1; --paper-ink: #23252c; --paper-muted: #6a6e79; --paper-line: #d8d4c7; --paper-ph: #b1701f;
+    --accent: #3b4db3; --accent-deep: #2b3990; --accent-soft: #e9ecfb;
+    --brass: #a4741a; --brass-soft: #f4ecd6; --ok: #1f9d6b; --ok-soft: #e2f4ec; --warn: #c9801f; --warn-soft: #faecd4;
+    --shadow-sm: 0 1px 2px rgba(24,28,48,.06), 0 1px 3px rgba(24,28,48,.05);
+    --shadow-md: 0 2px 6px rgba(24,28,48,.08), 0 8px 24px rgba(24,28,48,.10);
+    --shadow-paper: 0 1px 0 rgba(0,0,0,.04), 0 10px 30px rgba(24,28,48,.14);
+    --r: 10px; --r-sm: 7px;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --doc: Georgia, "Times New Roman", "Noto Serif", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1117; --surface: #181b23; --surface-2: #1e222e; --ink: #e8eaf1; --muted: #9aa0b2;
+      --faint: #6d7386; --border: #272c39; --border-strong: #363d4e; --accent: #8090f2;
+      --accent-deep: #9aa6f6; --accent-soft: #1f2540; --brass: #d6a340; --brass-soft: #2a2415;
+      --ok: #3fbf87; --ok-soft: #12291f; --warn: #dfa04a; --warn-soft: #2b2312;
+      --shadow-paper: 0 1px 0 rgba(0,0,0,.3), 0 14px 40px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #eceef4; --surface: #fff; --surface-2: #f5f6fb; --ink: #1b1e26; --muted: #565b6b;
+    --faint: #868ca0; --border: #e1e4ee; --border-strong: #ccd1e0; --accent: #3b4db3;
+    --accent-deep: #2b3990; --accent-soft: #e9ecfb; --brass: #a4741a; --brass-soft: #f4ecd6;
+    --ok: #1f9d6b; --ok-soft: #e2f4ec; --warn: #c9801f; --warn-soft: #faecd4;
+    --shadow-paper: 0 1px 0 rgba(0,0,0,.04), 0 10px 30px rgba(24,28,48,.14);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1117; --surface: #181b23; --surface-2: #1e222e; --ink: #e8eaf1; --muted: #9aa0b2;
+    --faint: #6d7386; --border: #272c39; --border-strong: #363d4e; --accent: #8090f2;
+    --accent-deep: #9aa6f6; --accent-soft: #1f2540; --brass: #d6a340; --brass-soft: #2a2415;
+    --ok: #3fbf87; --ok-soft: #12291f; --warn: #dfa04a; --warn-soft: #2b2312;
+    --shadow-paper: 0 1px 0 rgba(0,0,0,.3), 0 14px 40px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .app { display: flex; flex-direction: column; height: 100vh; }
+  .topbar { display: flex; align-items: center; gap: 18px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); z-index: 20; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; }
+  .brand .mark { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(150deg, var(--accent), var(--accent-deep)); color: #fff; font-weight: 800; font-size: 13px; }
+  .brand .sub { color: var(--faint); font-weight: 500; font-size: 12px; margin-left: 2px; }
+  .meter { flex: 1; min-width: 180px; max-width: 420px; display: flex; align-items: center; gap: 12px; }
+  .meter .track { flex: 1; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; border: 1px solid var(--border); }
+  .meter .fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-deep)); transition: width .45s cubic-bezier(.4,0,.1,1); }
+  .meter .label { font-size: 12.5px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .meter .label b { color: var(--ink); }
+  .actions { display: flex; gap: 8px; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink); padding: 8px 14px; border-radius: var(--r-sm); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; transition: background .15s, border-color .15s, transform .05s; }
+  .btn:hover { background: var(--surface-2); border-color: var(--faint); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn.ghost:hover { background: var(--surface-2); color: var(--ink); }
+  .btn:focus-visible, .seclink:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .work { flex: 1; display: grid; grid-template-columns: minmax(340px, 460px) 1fr; min-height: 0; }
+  .editor { border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+  .concept { padding: 16px 20px 14px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, var(--accent-soft), transparent); }
+  .concept .eyebrow { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-deep); font-weight: 700; }
+  .concept h1 { margin: 5px 0 4px; font-size: 17px; letter-spacing: -.02em; line-height: 1.25; text-wrap: balance; }
+  .concept p { margin: 0; color: var(--muted); font-size: 12.5px; max-width: 46ch; }
+  .group { padding: 6px 14px 4px; }
+  .group-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 6px 6px; }
+  .group-head .g-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .group-head .g-note { font-size: 11px; color: var(--faint); margin-left: auto; }
+  .seclist { display: flex; flex-direction: column; gap: 6px; }
+  .seclink { text-align: left; width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-sm); padding: 10px 12px; display: flex; align-items: center; gap: 11px; transition: border-color .15s, background .15s, box-shadow .15s; }
+  .seclink:hover { border-color: var(--accent); background: var(--surface-2); box-shadow: var(--shadow-sm); }
+  .seclink.disabled { opacity: .58; cursor: not-allowed; }
+  .seclink.disabled:hover { border-color: var(--border); background: var(--surface); box-shadow: none; }
+  .seclink .ic { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); font-size: 15px; }
+  .seclink.done .ic { background: var(--ok-soft); border-color: transparent; }
+  .seclink.added .ic { background: var(--accent-soft); border-color: transparent; }
+  .seclink .body { flex: 1; min-width: 0; }
+  .seclink .name { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 7px; }
+  .seclink .summary { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .seclink .summary.empty { color: var(--faint); font-style: italic; }
+  .badge { font-size: 9.5px; font-weight: 800; letter-spacing: .04em; padding: 1.5px 5px; border-radius: 5px; text-transform: uppercase; }
+  .badge.p1 { color: var(--brass); background: var(--brass-soft); }
+  .badge.soon { color: var(--faint); background: var(--surface-2); border: 1px solid var(--border); }
+  .chip { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 99px; white-space: nowrap; flex: none; }
+  .chip.need { color: var(--warn); background: var(--warn-soft); }
+  .chip.ready { color: var(--ok); background: var(--ok-soft); }
+  .chip.added { color: var(--accent-deep); background: var(--accent-soft); }
+  .chip.add { color: var(--muted); background: var(--surface-2); border: 1px dashed var(--border-strong); }
+  .previewpane { background: var(--bg); overflow-y: auto; position: relative; min-height: 0; }
+  .preview-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 11px 22px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .preview-head .live { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+  .dot { width: 8px; height: 8px; border-radius: 99px; background: var(--ok); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent);} 70%{box-shadow:0 0 0 7px transparent;} 100%{box-shadow:0 0 0 0 transparent;} }
+  .preview-head .grow { flex: 1; }
+  .toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); border: 1px solid var(--border); background: var(--surface); padding: 6px 10px; border-radius: 99px; font-weight: 600; }
+  .toggle input { accent-color: var(--accent); }
+  .paper-wrap { padding: 26px 22px 60px; display: flex; justify-content: center; }
+  .paper { width: 100%; max-width: 640px; background: var(--paper); color: var(--paper-ink); font-family: var(--doc); border-radius: 3px; box-shadow: var(--shadow-paper); padding: 52px 56px; position: relative; transition: box-shadow .3s; }
+  .paper.flash { animation: flash .9s ease; }
+  @keyframes flash { 0%{box-shadow:var(--shadow-paper);} 25%{box-shadow: 0 0 0 3px var(--accent), var(--shadow-paper);} 100%{box-shadow:var(--shadow-paper);} }
+  .paper h2.doc-title { font-family: var(--doc); text-align: center; font-size: 21px; margin: 0 0 3px; letter-spacing: .3px; }
+  .paper .doc-sub { text-align: center; color: var(--paper-muted); font-size: 12.5px; margin: 0 0 22px; }
+  .paper .exec { text-align: center; font-size: 12.5px; color: var(--paper-ink); margin: 0 0 20px; }
+  .paper h3.sec { font-family: var(--ui); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--paper-ink); border-bottom: 1px solid var(--paper-line); padding-bottom: 3px; margin: 22px 0 10px; }
+  .paper p { font-size: 13px; line-height: 1.62; text-align: justify; margin: 8px 0; }
+  .party { background: rgba(0,0,0,.035); padding: 9px 12px; border-radius: 3px; margin: 7px 0; }
+  .party .who { font-weight: 700; font-size: 13.5px; }
+  .party .kv { font-size: 12px; color: var(--paper-muted); margin-top: 2px; }
+  .party .kv b { color: var(--paper-ink); font-weight: 600; }
+  table.terms { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.terms td { padding: 4px 6px 4px 0; vertical-align: top; }
+  table.terms td.k { width: 42%; color: var(--paper-muted); }
+  .money { font-weight: 700; font-variant-numeric: tabular-nums; }
+  ol.clauses { padding-left: 20px; margin: 6px 0 0; }
+  ol.clauses > li { font-size: 12.5px; line-height: 1.6; margin: 8px 0; text-align: justify; }
+  ol.clauses > li.addon::marker { color: var(--accent); font-weight: 700; }
+  li.addon { position: relative; }
+  li.addon .tag { font-family: var(--ui); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--accent-deep); background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  .annex { margin-top: 6px; font-size: 12.5px; }
+  .annex ul { margin: 4px 0 0; padding-left: 18px; }
+  .annex li { margin: 2px 0; }
+  .ph { color: var(--paper-ph); font-family: var(--ui); font-size: 11.5px; font-weight: 600; background: transparent; border-bottom: 1.5px dotted color-mix(in srgb, var(--paper-ph) 55%, transparent); padding: 0 2px; transition: background .2s; }
+  .paper.hl .ph { background: color-mix(in srgb, var(--paper-ph) 16%, transparent); border-radius: 2px; }
+  .newclause { animation: hl 1.6s ease; }
+  @keyframes hl { 0%,20%{ background: color-mix(in srgb, var(--accent) 22%, transparent); } 100%{ background: transparent; } }
+  .doc-foot { margin-top: 26px; text-align: center; font-size: 10.5px; color: var(--paper-muted); font-family: var(--ui); }
+  .scrim { position: fixed; inset: 0; background: rgba(16,18,28,.5); backdrop-filter: blur(3px); display: none; z-index: 50; }
+  .scrim.open { display: block; }
+  .modal { position: fixed; z-index: 51; inset: 0; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .modal.open { display: flex; }
+  .dialog { width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-md); border: 1px solid var(--border); animation: rise .22s cubic-bezier(.2,.7,.3,1); }
+  @keyframes rise { from { transform: translateY(14px) scale(.99); opacity: 0; } to { transform: none; opacity: 1; } }
+  .dialog header { padding: 18px 20px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+  .dialog header .di { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); font-size: 17px; flex: none; }
+  .dialog header h3 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+  .dialog header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .dialog header .x { margin-left: auto; }
+  .form { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+  .field input, .field select, .field textarea { font-family: inherit; font-size: 13.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 9px 11px; width: 100%; }
+  .field textarea { resize: vertical; min-height: 62px; }
+  .field .hint { font-size: 11px; color: var(--faint); }
+  .switch { display: flex; align-items: center; gap: 9px; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .dialog footer { padding: 13px 20px 18px; display: flex; gap: 9px; justify-content: flex-end; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--surface); }
+  .secure { margin-right: auto; font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 5px; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 99px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-md); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 60; display: flex; align-items: center; gap: 8px; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .mobile-switch { display: none; }
+  @media (max-width: 900px) {
+    .work { grid-template-columns: 1fr; }
+    .editor { border-right: none; }
+    .previewpane { display: none; }
+    body.show-preview .editor { display: none; }
+    body.show-preview .previewpane { display: block; }
+    .mobile-switch { display: inline-flex; }
+    .meter { order: 3; max-width: none; flex-basis: 100%; }
+  }
+  @media (max-width: 640px) {
+    .topbar { gap: 10px 12px; padding: 9px 14px; }
+    .brand .sub { display: none; }
+    .actions { flex: 1; justify-content: flex-end; }
+    .paper { padding: 30px 22px; border-radius: 2px; }
+    .paper-wrap { padding: 16px 12px 48px; }
+    .preview-head { padding: 10px 14px; }
+    /* section editors become full-screen sheets (design D5) */
+    .modal { padding: 0; align-items: flex-end; }
+    .dialog { max-width: none; height: 100%; max-height: 100vh; border-radius: 0; border: none; animation: sheet .24s cubic-bezier(.2,.7,.3,1); }
+    .form { grid-template-columns: 1fr; }
+    .dialog footer { flex-wrap: wrap; }
+    .secure { flex-basis: 100%; margin: 0 0 4px; }
+  }
+  @keyframes sheet { from { transform: translateY(100%); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="mark">AM</span><span>AgreementMitra <span class="sub">/ new rental agreement</span></span></div>
+    <div class="meter"><div class="track"><div class="fill" id="fill" style="width:0%"></div></div>
+      <div class="label"><b id="doneN">0</b> of <b id="totN">4</b> required sections ready</div></div>
+    <div class="actions">
+      <button class="btn mobile-switch" id="mswitch">Preview</button>
+      <button class="btn" id="dlpdf">Download PDF</button>
+      <button class="btn primary" id="save">Save &amp; continue</button>
+    </div>
+  </header>
+  <div class="work">
+    <aside class="editor" id="editor">
+      <div class="concept">
+        <div class="eyebrow">Preview-centric capture</div>
+        <h1>The document is the centrepiece &mdash; every section is a control around it.</h1>
+        <p>Fill a section, watch the agreement update. Add optional clauses from the catalog below; each drops into the document. Nothing is saved until you choose to.</p>
+      </div>
+      <div id="groups"></div>
+      <div style="height: 24px"></div>
+    </aside>
+    <section class="previewpane" id="previewpane">
+      <div class="preview-head">
+        <span class="live"><span class="dot"></span> Live preview</span>
+        <span class="grow"></span>
+        <label class="toggle"><input type="checkbox" id="hlmiss"> Highlight what's missing</label>
+      </div>
+      <div class="paper-wrap"><article class="paper" id="paper"></article></div>
+    </section>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+  <div class="dialog">
+    <header>
+      <span class="di" id="dlgIcon">Ed</span>
+      <div><h3 id="dlgTitle">Section</h3><p id="dlgDesc"></p></div>
+      <button class="btn ghost x" id="dlgClose" aria-label="Close">&times;</button>
+    </header>
+    <div class="form" id="dlgForm"></div>
+    <footer>
+      <span class="secure">&#128274; escaped &amp; sandboxed &mdash; you edit data, never the document markup</span>
+      <button class="btn ghost" id="dlgCancel">Cancel</button>
+      <button class="btn primary" id="dlgSave">Save section</button>
+    </footer>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+const RS = "&#8377;"; // rupee sign, rendered in document HTML
+const data = {
+  tenant:{}, owner:{}, property:{}, terms:{},
+  escalation:{}, deposit:{}, penalty:{}, maintenance:{}, utilities:{},
+  lockin:{}, notice:{}, occupants:{}, pets:{}, parking:{},
+  furnishing:{}, fixtures:{}, dispute:{}, custom:{}
+};
+const F = (key,label,type,extra={}) => ({key,label,type,...extra});
+const REGISTRY = [
+  { id:"tenant", group:"Parties & property", icon:"Tn", label:"Tenant details", required:true,
+    fields:[F("firstName","First name","text"),F("lastName","Last name","text"),
+            F("fatherName","Father's / guardian's name","text",{full:true}),
+            F("address","Current address","textarea",{full:true}),
+            F("email","Email","text"),F("mobile","Mobile","text")],
+    done:d=>d.tenant.firstName&&d.tenant.lastName&&d.tenant.fatherName&&d.tenant.address,
+    summary:d=>d.tenant.firstName?(d.tenant.firstName+" "+(d.tenant.lastName||"")).trim():"" },
+  { id:"owner", group:"Parties & property", icon:"Ow", label:"Owner details", required:true,
+    fields:[F("firstName","First name","text"),F("lastName","Last name","text"),
+            F("fatherName","Father's / guardian's name","text",{full:true}),
+            F("address","Current address","textarea",{full:true}),
+            F("email","Email","text"),F("mobile","Mobile","text")],
+    done:d=>d.owner.firstName&&d.owner.lastName&&d.owner.fatherName&&d.owner.address,
+    summary:d=>d.owner.firstName?(d.owner.firstName+" "+(d.owner.lastName||"")).trim():"" },
+  { id:"property", group:"Parties & property", icon:"Pr", label:"Rental property", required:true,
+    fields:[F("address","Property address","textarea",{full:true}),
+            F("type","Type","select",{options:["","Apartment","Independent house","Villa","PG room"]}),
+            F("bhk","Configuration","select",{options:["","1 RK","1 BHK","2 BHK","3 BHK","4 BHK"]}),
+            F("area","Carpet area (sq.ft)","text"),F("floor","Floor","text")],
+    done:d=>d.property.address,
+    summary:d=>d.property.address?((d.property.bhk?d.property.bhk+" / ":"")+firstLine(d.property.address)):"" },
+  { id:"terms", group:"Parties & property", icon:"Tm", label:"Tenancy terms", required:true,
+    fields:[F("rent","Monthly rent (Rs)","number"),F("deposit","Security deposit (Rs)","number"),
+            F("startDate","Start date","date"),F("endDate","End date","date")],
+    done:d=>d.terms.rent&&d.terms.startDate&&d.terms.endDate,
+    summary:d=>d.terms.rent?("Rs "+inr(d.terms.rent)+"/mo / "+(months(d.terms.startDate,d.terms.endDate)||"-")):"" },
+  { id:"escalation", group:"Financial terms", icon:"Es", label:"Rent escalation", p1:true,
+    fields:[F("pct","Increase (%)","number"),F("basis","Applied","select",{options:["","every year","on renewal"]})],
+    added:d=>d.escalation.pct, summary:d=>d.escalation.pct?("+"+d.escalation.pct+"% "+(d.escalation.basis||"")).trim():"",
+    clause:d=>d.escalation.pct?("<strong>Rent escalation.</strong> The monthly rent shall increase by <b>"+esc(d.escalation.pct)+"%</b> "+esc(d.escalation.basis||"on renewal")+"."):null },
+  { id:"deposit", group:"Financial terms", icon:"Dp", label:"Security-deposit terms", p1:true,
+    fields:[F("refundDays","Refund within (days of handover)","number"),
+            F("deductions","Deductions allowed","textarea",{full:true,hint:"e.g. unpaid rent, utility dues, damage beyond wear & tear"})],
+    added:d=>d.deposit.refundDays||d.deposit.deductions, summary:d=>d.deposit.refundDays?("refund in "+d.deposit.refundDays+" days"):"",
+    clause:d=>(d.deposit.refundDays||d.deposit.deductions)?("<strong>Deposit refund.</strong> The security deposit shall be refunded within <b>"+esc(d.deposit.refundDays||"__")+"</b> days of handover"+(d.deposit.deductions?(", after deducting "+esc(d.deposit.deductions)):"")+"."):null },
+  { id:"penalty", group:"Financial terms", icon:"Lp", label:"Late-payment penalty", p1:true,
+    fields:[F("amount","Penalty (Rs)","number"),F("grace","Grace period (days)","number")],
+    added:d=>d.penalty.amount, summary:d=>d.penalty.amount?("Rs "+inr(d.penalty.amount)+" after "+(d.penalty.grace||0)+"d"):"",
+    clause:d=>d.penalty.amount?("<strong>Late payment.</strong> A penalty of "+RS+"<b>"+esc(d.penalty.amount)+"</b> applies if rent is not paid within <b>"+esc(d.penalty.grace||0)+"</b> day(s) of the due date."):null },
+  { id:"maintenance", group:"Financial terms", icon:"Mn", label:"Maintenance charges", p1:true,
+    fields:[F("who","Borne by","select",{options:["","Tenant","Owner","Shared"]}),F("amount","Amount (Rs/mo)","number")],
+    added:d=>d.maintenance.who, summary:d=>d.maintenance.who?(d.maintenance.who+(d.maintenance.amount?(" / Rs "+inr(d.maintenance.amount)):"")):"",
+    clause:d=>d.maintenance.who?("<strong>Maintenance.</strong> Society / upkeep charges"+(d.maintenance.amount?(" of "+RS+"<b>"+esc(d.maintenance.amount)+"</b> per month"):"")+" shall be borne by the <b>"+esc(d.maintenance.who)+"</b>."):null },
+  { id:"utilities", group:"Financial terms", icon:"Ut", label:"Utilities split", p1:true,
+    fields:[F("who","Utilities borne by","select",{options:["","Tenant, on actuals","Owner","Shared"]})],
+    added:d=>d.utilities.who, summary:d=>d.utilities.who||"",
+    clause:d=>d.utilities.who?("<strong>Utilities.</strong> Electricity, water and other utility charges shall be borne by the <b>"+esc(d.utilities.who)+"</b>."):null },
+
+  { id:"lockin", group:"Tenancy rules", icon:"Li", label:"Lock-in period", p1:true,
+    fields:[F("months","Lock-in (months)","number")],
+    added:d=>d.lockin.months, summary:d=>d.lockin.months?(d.lockin.months+" months"):"",
+    clause:d=>d.lockin.months?("<strong>Lock-in.</strong> Neither party may terminate this Agreement during the first <b>"+esc(d.lockin.months)+"</b> month(s) of the term."):null },
+  { id:"notice", group:"Tenancy rules", icon:"Nt", label:"Notice period", p1:true,
+    fields:[F("months","Notice (months)","number")],
+    added:d=>d.notice.months, summary:d=>d.notice.months?(d.notice.months+" months"):"",
+    clause:d=>d.notice.months?("<strong>Notice.</strong> Either party may terminate by giving <b>"+esc(d.notice.months)+"</b> month(s) prior written notice, or rent in lieu."):null },
+  { id:"occupants", group:"Tenancy rules", icon:"Oc", label:"Permitted occupants", p1:true,
+    fields:[F("count","Number of occupants","number"),F("names","Names (optional)","textarea",{full:true})],
+    added:d=>d.occupants.count, summary:d=>d.occupants.count?(d.occupants.count+" occupant(s)"):"",
+    clause:d=>d.occupants.count?("<strong>Occupancy.</strong> The premises shall be occupied by no more than <b>"+esc(d.occupants.count)+"</b> person(s)"+(d.occupants.names?(": "+esc(d.occupants.names)):"")+"."):null },
+  { id:"pets", group:"Tenancy rules", icon:"Pt", label:"Pets policy", p1:true,
+    fields:[F("allowed","Pets allowed","toggle")],
+    added:d=>d.pets.allowed===true||d.pets.allowed===false, summary:d=>d.pets.allowed===true?"Allowed":d.pets.allowed===false?"Not allowed":"",
+    clause:d=>(d.pets.allowed===true||d.pets.allowed===false)?("<strong>Pets.</strong> Pets are <b>"+(d.pets.allowed?"permitted":"not permitted")+"</b> on the premises."):null },
+  { id:"parking", group:"Tenancy rules", icon:"Pk", label:"Parking", p1:true,
+    fields:[F("type","Vehicle","select",{options:["","2-wheeler","4-wheeler","Both"]}),F("slot","Slot no.","text")],
+    added:d=>d.parking.type, summary:d=>d.parking.type?(d.parking.type+(d.parking.slot?(" / "+d.parking.slot):"")):"",
+    clause:d=>d.parking.type?("<strong>Parking.</strong> A <b>"+esc(d.parking.type)+"</b> parking slot"+(d.parking.slot?(" ("+esc(d.parking.slot)+")"):"")+" is allotted to the Tenant."):null },
+  { id:"furnishing", group:"Property detail", icon:"Fu", label:"Furnishing status", p1:true,
+    fields:[F("status","Furnishing","select",{options:["","Unfurnished","Semi-furnished","Fully furnished"]})],
+    added:d=>d.furnishing.status, summary:d=>d.furnishing.status||"" },
+  { id:"fixtures", group:"Property detail", icon:"Fx", label:"Fixtures & inventory annexure", p1:true,
+    fields:[F("items","Items handed over","textarea",{full:true,hint:"one per line - e.g. Refrigerator, 3 ceiling fans, modular kitchen"})],
+    added:d=>d.fixtures.items, summary:d=>d.fixtures.items?(d.fixtures.items.split("\n").filter(Boolean).length+" item(s)"):"" },
+
+  { id:"dispute", group:"Legal & clauses", icon:"Dr", label:"Dispute resolution",
+    fields:[F("mode","Mode","select",{options:["","Arbitration","Mediation","Courts"]}),F("seat","Seat / city","text")],
+    added:d=>d.dispute.mode, summary:d=>d.dispute.mode?(d.dispute.mode+(d.dispute.seat?(" / "+d.dispute.seat):"")):"",
+    clause:d=>d.dispute.mode?("<strong>Dispute resolution.</strong> Disputes shall be settled by <b>"+esc(d.dispute.mode)+"</b>"+(d.dispute.seat?(" seated at <b>"+esc(d.dispute.seat)+"</b>"):"")+"."):null },
+  { id:"custom", group:"Legal & clauses", icon:"Cc", label:"Custom clause",
+    fields:[F("text","Your clause","textarea",{full:true,hint:"free text - escaped and rendered as document text, never markup"})],
+    added:d=>d.custom.text, summary:d=>d.custom.text?firstLine(d.custom.text):"",
+    clause:d=>d.custom.text?("<strong>Special condition.</strong> "+esc(d.custom.text)):null },
+
+  { id:"cotenant", group:"More parties", icon:"+", label:"Co-tenant / co-owner", soon:"Phase 3", disabled:true },
+  { id:"guarantor", group:"More parties", icon:"Gu", label:"Guarantor / surety", soon:"Phase 3", disabled:true },
+  { id:"template", group:"Document format", icon:"Tp", label:"Template (residential / commercial / PG)", soon:"Phase 3", disabled:true },
+  { id:"state", group:"Document format", icon:"St", label:"State - drives stamp duty & clauses", soon:"Phase 3", disabled:true },
+  { id:"language", group:"Document format", icon:"Ln", label:"Language (Hindi / Telugu / bilingual)", soon:"Phase 3", disabled:true },
+];
+const GROUP_NOTES = { "Parties & property":"required", "Financial terms":"most-negotiated / P1", "Tenancy rules":"P1", "Property detail":"P1", "Legal & clauses":"optional", "More parties":"later", "Document format":"later" };
+
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function firstLine(s){ return String(s||"").split("\n")[0]; }
+function inr(n){ n=Number(n); if(!isFinite(n)) return ""; var s=Math.round(n).toString(); var l=s.slice(-3); var o=s.slice(0,-3); return (o?o.replace(/\B(?=(\d{2})+(?!\d))/g,",")+",":"")+l; }
+function fmtDate(s){ if(!s) return null; var p=s.split("-"); if(p.length<3) return null; var mo=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1]-1]; return (+p[2])+" "+mo+" "+p[0]; }
+function months(a,b){ if(!a||!b) return null; var x=new Date(a),y=new Date(b); var m=(y.getFullYear()-x.getFullYear())*12+(y.getMonth()-x.getMonth()); return m>0?(m+" mo"):null; }
+function ph(text){ return '<span class="ph">[ '+esc(text)+' ]</span>'; }
+function val(v,text){ return (v!==undefined&&v!==null&&v!=="")?esc(v):ph(text); }
+const groupsEl = document.getElementById("groups");
+function reg(id){ return REGISTRY.find(r=>r.id===id); }
+function renderRail(){
+  var byGroup = {};
+  REGISTRY.forEach(function(r){ (byGroup[r.group]=byGroup[r.group]||[]).push(r); });
+  groupsEl.innerHTML = Object.keys(byGroup).map(function(g){
+    var items = byGroup[g].map(function(r){
+      if(r.disabled){
+        return '<button class="seclink disabled" data-id="'+r.id+'" disabled><span class="ic">'+r.icon+'</span>'+
+          '<span class="body"><span class="name">'+esc(r.label)+' <span class="badge soon">'+esc(r.soon)+'</span></span>'+
+          '<span class="summary empty">planned in the section catalog</span></span><span class="chip add">soon</span></button>';
+      }
+      var done = r.required ? !!r.done(data) : !!(r.added&&r.added(data));
+      var summary = r.summary ? r.summary(data) : "";
+      var cls = r.required ? (done?"done":"") : (done?"added":"");
+      var chip = r.required
+        ? (done?'<span class="chip ready">Ready</span>':'<span class="chip need">Needs input</span>')
+        : (done?'<span class="chip added">Added</span>':'<span class="chip add">Add +</span>');
+      return '<button class="seclink '+cls+'" data-id="'+r.id+'"><span class="ic">'+r.icon+'</span>'+
+        '<span class="body"><span class="name">'+esc(r.label)+' '+(r.p1?'<span class="badge p1">P1</span>':"")+'</span>'+
+        '<span class="summary '+(summary?"":"empty")+'">'+(summary?esc(summary):(r.required?"required - tap to fill":"optional clause"))+'</span></span>'+chip+'</button>';
+    }).join("");
+    return '<div class="group"><div class="group-head"><span class="g-title">'+esc(g)+'</span><span class="g-note">'+esc(GROUP_NOTES[g]||"")+'</span></div><div class="seclist">'+items+'</div></div>';
+  }).join("");
+  Array.prototype.forEach.call(groupsEl.querySelectorAll(".seclink:not(.disabled)"),function(b){ b.addEventListener("click",function(){ openSection(b.dataset.id); }); });
+  updateMeter();
+}
+function updateMeter(){
+  var req = REGISTRY.filter(function(r){ return r.required; });
+  var done = req.filter(function(r){ return r.done(data); }).length;
+  document.getElementById("doneN").textContent = done;
+  document.getElementById("totN").textContent = req.length;
+  document.getElementById("fill").style.width = Math.round(done/req.length*100)+"%";
+}
+
+var paper = document.getElementById("paper");
+function party(p,role){
+  return '<div class="party"><div class="who">'+val((p.firstName||p.lastName)?((p.firstName||"")+" "+(p.lastName||"")).trim():"","add "+role+" name")+'</div>'+
+    '<div class="kv"><b>Father\'s / guardian\'s name:</b> '+val(p.fatherName,role+"'s father's name")+'</div>'+
+    '<div class="kv"><b>Address:</b> '+val(p.address,role+"'s address")+'</div></div>';
+}
+function renderDoc(){
+  var d=data, t=d.terms;
+  var addonClauses = REGISTRY.filter(function(r){ return r.clause; }).map(function(r){ return {id:r.id,html:r.clause(d)}; }).filter(function(x){ return x.html; });
+  var dur = months(t.startDate,t.endDate);
+  var baseClauses = [
+    "<strong>Term.</strong> The Owner lets and the Tenant takes on rent the Scheduled Property for a term of "+val(dur?dur.replace(" mo",""):"","duration")+" month(s), commencing "+val(fmtDate(t.startDate),"start date")+" and ending "+val(fmtDate(t.endDate),"end date")+".",
+    "<strong>Rent.</strong> The Tenant shall pay a monthly rent of "+RS+val(t.rent?inr(t.rent):"","monthly rent")+", payable in advance on or before the 5th of each month.",
+    "<strong>Security deposit.</strong> The Tenant has paid an interest-free refundable deposit of "+RS+val(t.deposit?inr(t.deposit):"","deposit amount")+".",
+    "<strong>Use.</strong> The premises shall be used for residential purposes only."
+  ];
+  var furn = d.furnishing.status;
+  var html = '<h2 class="doc-title">Rental Agreement</h2>'+
+    '<div class="doc-sub">Residential Tenancy (Leave &amp; Licence)</div>'+
+    '<p class="exec">This Agreement is executed on '+val(fmtDate(new Date().toISOString().slice(0,10)),"date")+' in respect of the property in the Schedule below.</p>'+
+    '<h3 class="sec">Between the parties</h3>'+
+    '<p style="margin:0 0 4px;color:var(--paper-muted);font-size:12px">The Owner / Lessor:</p>'+party(d.owner,"owner")+
+    '<p style="margin:8px 0 4px;color:var(--paper-muted);font-size:12px">AND the Tenant / Lessee:</p>'+party(d.tenant,"tenant")+
+    '<h3 class="sec">Schedule of property</h3>'+
+    '<p>All that residential premises at '+val(d.property.address,"property address")+(d.property.bhk?(" ("+esc(d.property.bhk)+(d.property.area?(", "+esc(d.property.area)+" sq.ft"):"")+")"):"")+(furn?(", <b>"+esc(furn)+"</b>"):"")+', together with its fixtures and fittings.</p>'+
+    '<h3 class="sec">Terms of tenancy</h3><table class="terms">'+
+    '<tr><td class="k">Start date</td><td>'+val(fmtDate(t.startDate),"start date")+'</td></tr>'+
+    '<tr><td class="k">End date</td><td>'+val(fmtDate(t.endDate),"end date")+'</td></tr>'+
+    '<tr><td class="k">Monthly rent</td><td class="money">'+RS+val(t.rent?inr(t.rent):"","rent")+'</td></tr>'+
+    '<tr><td class="k">Security deposit</td><td class="money">'+RS+val(t.deposit?inr(t.deposit):"","deposit")+'</td></tr></table>'+
+    '<h3 class="sec">Now this agreement witnesseth</h3><ol class="clauses">'+
+    baseClauses.map(function(c){ return "<li>"+c+"</li>"; }).join("")+
+    addonClauses.map(function(c){ return '<li class="addon" data-clause="'+c.id+'">'+c.html+'<span class="tag">from add-on</span></li>'; }).join("")+
+    '</ol>'+
+    (d.fixtures.items?('<h3 class="sec">Annexure - Schedule of fixtures &amp; inventory</h3><div class="annex" data-clause="fixtures"><ul>'+d.fixtures.items.split("\n").filter(Boolean).map(function(i){ return "<li>"+esc(i.trim())+"</li>"; }).join("")+'</ul></div>'):"")+
+    '<div class="doc-foot">Executed electronically via OTP-based eSign / sandbox document, not for legal use</div>';
+  paper.innerHTML = html;
+}
+var modal=document.getElementById("modal"), scrim=document.getElementById("scrim"),
+    dForm=document.getElementById("dlgForm"), dTitle=document.getElementById("dlgTitle"),
+    dDesc=document.getElementById("dlgDesc"), dIcon=document.getElementById("dlgIcon");
+var currentId=null, lastFocus=null;
+function openSection(id){
+  var r=reg(id); if(!r||r.disabled) return;
+  currentId=id; lastFocus=document.activeElement;
+  dTitle.textContent=r.label; dIcon.textContent=r.icon;
+  dDesc.textContent=r.required?"Required - appears in the parties/terms of the document.":"Optional - adds a clause to the document.";
+  var cur=data[id]||{};
+  dForm.innerHTML=r.fields.map(function(f){
+    var v=cur[f.key];
+    var wrap=f.full?"field full":"field";
+    if(f.type==="textarea") return '<div class="'+wrap+'"><label for="f_'+f.key+'">'+esc(f.label)+'</label><textarea id="f_'+f.key+'" data-k="'+f.key+'">'+esc(v||"")+'</textarea>'+(f.hint?'<span class="hint">'+esc(f.hint)+'</span>':"")+'</div>';
+    if(f.type==="select") return '<div class="'+wrap+'"><label for="f_'+f.key+'">'+esc(f.label)+'</label><select id="f_'+f.key+'" data-k="'+f.key+'">'+f.options.map(function(o){ return '<option '+(o===v?"selected":"")+' value="'+esc(o)+'">'+(o?esc(o):"- select -")+'</option>'; }).join("")+'</select></div>';
+    if(f.type==="toggle") return '<div class="field full"><label class="switch"><input type="checkbox" id="f_'+f.key+'" data-k="'+f.key+'" '+(v===true?"checked":"")+'> '+esc(f.label)+'</label></div>';
+    return '<div class="'+wrap+'"><label for="f_'+f.key+'">'+esc(f.label)+'</label><input id="f_'+f.key+'" data-k="'+f.key+'" type="'+(f.type==="number"?"number":f.type==="date"?"date":"text")+'" value="'+esc(v==null?"":v)+'">'+(f.hint?'<span class="hint">'+esc(f.hint)+'</span>':"")+'</div>';
+  }).join("");
+  modal.classList.add("open"); scrim.classList.add("open");
+  var first=dForm.querySelector("input,select,textarea"); if(first) first.focus();
+}
+function closeModal(){ modal.classList.remove("open"); scrim.classList.remove("open"); currentId=null; if(lastFocus) lastFocus.focus(); }
+function saveSection(){
+  if(!currentId) return;
+  var r=reg(currentId), obj={};
+  Array.prototype.forEach.call(dForm.querySelectorAll("[data-k]"),function(el){ var k=el.dataset.k; if(el.type==="checkbox") obj[k]=el.checked; else obj[k]=el.value.trim(); });
+  data[currentId]=obj;
+  closeModal(); renderRail(); renderDoc();
+  paper.classList.remove("flash"); void paper.offsetWidth; paper.classList.add("flash");
+  var node=paper.querySelector('[data-clause="'+currentId+'"]');
+  if(node){ node.classList.add("newclause"); node.scrollIntoView({block:"center",behavior:"smooth"}); }
+  toast("Updated "+r.label+" - preview refreshed");
+}
+var toastEl=document.getElementById("toast"), toastT=null;
+function toast(msg){ toastEl.textContent=msg; toastEl.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){ toastEl.classList.remove("show"); },1900); }
+document.getElementById("dlgSave").addEventListener("click",saveSection);
+document.getElementById("dlgCancel").addEventListener("click",closeModal);
+document.getElementById("dlgClose").addEventListener("click",closeModal);
+scrim.addEventListener("click",closeModal);
+document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&modal.classList.contains("open")) closeModal(); });
+document.getElementById("hlmiss").addEventListener("change",function(e){ paper.classList.toggle("hl",e.target.checked); });
+document.getElementById("save").addEventListener("click",function(){
+  var missing=REGISTRY.filter(function(r){ return r.required&&!r.done(data); });
+  if(missing.length) toast("Fill "+missing.length+" more required section(s) first");
+  else toast("Saved - create agreement + generate draft (existing endpoints)");
+});
+document.getElementById("dlpdf").addEventListener("click",function(){ toast("Requesting PDF variant (application/pdf) ..."); });
+document.getElementById("mswitch").addEventListener("click",function(e){ document.body.classList.toggle("show-preview"); e.target.textContent=document.body.classList.contains("show-preview")?"Sections":"Preview"; });
+
+/* seed only non-personal fields so the concept reads immediately; parties start empty to show placeholders */
+data.property={address:"Sample flat, sector and city (dummy)",type:"Apartment",bhk:"2 BHK",area:"1080",floor:"3rd"};
+data.terms={rent:"32000",deposit:"200000",startDate:"2026-08-01",endDate:"2027-07-31"};
+data.escalation={pct:"5",basis:"on renewal"};
+renderRail(); renderDoc();
+</script>

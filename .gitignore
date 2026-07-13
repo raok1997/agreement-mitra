@@ -20,3 +20,6 @@ bin/
 .gradle/
 
 node_modules/
+
+# Runtime logs (daily-start / restart scripts)
+logs/

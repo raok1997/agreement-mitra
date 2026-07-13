@@ -1,0 +1,12 @@
+# Reference layer set -- LANGUAGE layer (reserved, NOT applied). English-only is active in this
+# capability, so the resolver's ClasspathLayerSource never probes for a language file: this patch
+# sits in the resource set purely to prove it is ignored (its clause must NOT appear in any resolved
+# template). System-authored dummy content; fixture only.
+meta:
+  kind: language
+  dimensions: { state: TG, type: residential }
+  version: 1
+
+ops:
+  - { op: addClause,
+      clause: { id: langNote, text: "This clause would only appear if the language layer were applied." } }

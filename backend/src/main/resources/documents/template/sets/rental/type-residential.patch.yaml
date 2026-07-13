@@ -1,0 +1,11 @@
+# Production layer set (rental) -- TYPE layer (residential). A patch over the composed base.
+# Pins the residential character: permitted use is required and defaulted to residential, so a
+# generated draft always carries a residential use covenant even when the aggregate does not supply
+# it (the default satisfies generate's required-check, preserving preview/draft parity).
+meta:
+  kind: type
+  dimensions: { type: residential }
+  version: 1
+
+ops:
+  - { op: overrideField, key: permittedUse, required: true, default: residential }

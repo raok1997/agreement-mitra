@@ -1,0 +1,108 @@
+# Reference template definition: the India-standard residential rental agreement expressed in the
+# declarative format (meta / fields / clauses / sections). System-authored, dummy content only.
+#
+# FIXTURE ONLY: this is the loader's end-to-end example and the worked reference for the format. It is
+# deliberately NOT wired to TemplateAssembler / DocumentRenderer -- replacing the live Thymeleaf
+# template with a definition-driven render is a separate render-parity CR. Clauses are plain text with
+# typed {{slots}}; every slot names a declared field, and every section entry names a field or clause.
+meta:
+  id: residential-rental
+  dimensions:
+    state: IN
+    type: residential
+  version: 1
+  status: draft
+
+fields:
+  # --- Owner (Lessor) ---
+  - { key: ownerName,        label: "Owner name",                   type: text,     required: true }
+  - { key: ownerFatherName,  label: "Owner father's / guardian's name", type: text, required: true }
+  - { key: ownerAddress,     label: "Owner current address",        type: longtext, required: true }
+  # --- Tenant (Lessee) ---
+  - { key: tenantName,       label: "Tenant name",                  type: text,     required: true }
+  - { key: tenantFatherName, label: "Tenant father's / guardian's name", type: text, required: true }
+  - { key: tenantAddress,    label: "Tenant current address",       type: longtext, required: true }
+  # --- Property ---
+  - { key: propertyAddress,  label: "Scheduled property address",   type: longtext, required: true }
+  # --- Term ---
+  - { key: agreementDate,    label: "Agreement date",               type: date,     required: true }
+  - { key: startDate,        label: "Tenancy start date",           type: date,     required: true }
+  - { key: endDate,          label: "Tenancy end date",             type: date,     required: true }
+  - { key: durationMonths,   label: "Duration (months)",            type: int,      required: true,
+      validation: { min: 1, max: 60 } }
+  - { key: lockInMonths,     label: "Lock-in (months)",             type: int,      required: false,
+      default: 6, validation: { min: 0, max: 60 } }
+  # --- Money ---
+  - { key: monthlyRent,      label: "Monthly rent (INR)",           type: money,    required: true }
+  - { key: securityDeposit,  label: "Security deposit (INR)",       type: money,    required: true }
+  # --- Use ---
+  - { key: purpose,          label: "Permitted use",                type: enum,     required: false,
+      default: residential, options: [ residential, commercial ] }
+
+clauses:
+  - id: term
+    text: >-
+      The OWNER lets and the TENANT takes on rent the Scheduled Property for a term of
+      {{durationMonths}} month(s) commencing on {{startDate}} and ending on {{endDate}}, unless sooner
+      determined as provided herein.
+  - id: rent
+    text: >-
+      The TENANT shall pay a monthly rent of INR {{monthlyRent}}, payable in advance on or before the
+      5th day of each calendar month, without deduction.
+  - id: deposit
+    text: >-
+      The TENANT has paid an interest-free refundable security deposit of INR {{securityDeposit}},
+      refundable on vacating the Scheduled Property after adjusting arrears of rent, utility dues, and
+      the cost of making good any damage beyond normal wear and tear.
+  - id: lockIn
+    text: >-
+      The TENANT shall not vacate the Scheduled Property before the expiry of the lock-in period of
+      {{lockInMonths}} month(s) from the commencement date, save with the OWNER's prior written
+      consent.
+  - id: use
+    text: >-
+      The Scheduled Property shall be used for {{purpose}} purposes only and shall not be used for any
+      illegal or hazardous purpose.
+  - id: utilities
+    text: >-
+      The TENANT shall pay for electricity, water, and other utility charges as per actual usage
+      during the tenancy, and shall bear routine maintenance; major or structural repairs shall be the
+      OWNER's responsibility.
+  - id: careOfPremises
+    text: >-
+      The TENANT shall keep the Scheduled Property in good and tenantable condition and shall not make
+      any structural alteration or addition without the OWNER's prior written consent.
+  - id: noSubletting
+    text: >-
+      The TENANT shall not sublet, assign, or part with possession of the Scheduled Property, in whole
+      or in part, without the OWNER's prior written consent.
+  - id: noticeTermination
+    text: >-
+      Either party may terminate this Agreement by giving the other one (1) month's prior written
+      notice, or rent in lieu thereof.
+  - id: inspection
+    text: >-
+      The OWNER or the OWNER's authorised agent may enter and inspect the Scheduled Property at
+      reasonable times upon reasonable prior notice to the TENANT.
+  - id: handover
+    text: >-
+      On expiry or earlier determination, the TENANT shall hand over vacant and peaceful possession of
+      the Scheduled Property together with all fixtures in their original condition, normal wear and
+      tear excepted.
+  - id: stampDuty
+    text: >-
+      This Agreement shall be stamped and, where required, registered in accordance with the
+      applicable State law; the stamp duty and registration charges shall be borne as mutually agreed
+      between the parties.
+
+sections:
+  - title: "Owner"
+    entries: [ ownerName, ownerFatherName, ownerAddress ]
+  - title: "Tenant"
+    entries: [ tenantName, tenantFatherName, tenantAddress ]
+  - title: "Schedule of Property"
+    entries: [ propertyAddress ]
+  - title: "Terms of Tenancy"
+    entries: [ agreementDate, startDate, endDate, durationMonths, lockInMonths, monthlyRent, securityDeposit, purpose ]
+  - title: "Now This Agreement Witnesseth"
+    entries: [ term, rent, deposit, lockIn, use, utilities, careOfPremises, noSubletting, noticeTermination, inspection, handover, stampDuty ]

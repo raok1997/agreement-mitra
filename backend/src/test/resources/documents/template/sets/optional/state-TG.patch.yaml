@@ -1,0 +1,16 @@
+# TEST FIXTURE ONLY -- STATE layer (Telangana) for the optional-section opt-in demo set.
+# Adds an OPTIONAL "Pets" section (a field + a clause). Because the section is optional, it renders
+# only when its title is in the request's activeSections; a default resolution leaves it out.
+# System-authored dummy content only.
+meta:
+  kind: state
+  dimensions: { state: TG }
+  version: 1
+
+ops:
+  - { op: addField,
+      field: { key: petType, label: "Permitted pet", type: text, required: false } }
+  - { op: addClause,
+      clause: { id: petsClause, text: "The Tenant may keep one {{petType}} on the premises." } }
+  - { op: addSection,
+      section: { title: Pets, optional: true, entries: [ petType, petsClause ] } }

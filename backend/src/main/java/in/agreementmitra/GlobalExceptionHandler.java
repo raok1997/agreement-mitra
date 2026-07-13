@@ -49,10 +49,14 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_NOT_FOUND = "urn:agreementmitra:problem:resource-not-found";
   private static final String TYPE_DRAFT_FROZEN = "urn:agreementmitra:problem:draft-frozen";
   private static final String TYPE_DRAFT_REQUIRED = "urn:agreementmitra:problem:draft-required";
+  private static final String TYPE_CONTACT_REQUIRED = "urn:agreementmitra:problem:contact-required";
+  private static final String TYPE_NOT_SIGNABLE = "urn:agreementmitra:problem:not-signable";
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
   private static final String TYPE_PAYLOAD_TOO_LARGE =
       "urn:agreementmitra:problem:payload-too-large";
   private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
+  private static final String TYPE_DOCUMENT_DATA_INVALID =
+      "urn:agreementmitra:problem:document-data-invalid";
 
   @Override
   protected ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -135,6 +139,18 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               TYPE_DRAFT_REQUIRED,
               "Draft required",
               "A draft must be uploaded before signing can be requested.");
+      case CONTACT_REQUIRED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_CONTACT_REQUIRED,
+              "Contact required",
+              "Every party must have an email or mobile before signing can be requested.");
+      case NOT_SIGNABLE ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_NOT_SIGNABLE,
+              "Not signable",
+              "The document has no signature anchor, so a signing request cannot be created.");
     };
   }
 
@@ -157,6 +173,23 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         TYPE_STAMP_FAILED,
         "Stamping failed",
         "The uploaded draft could not be stamped.");
+  }
+
+  @ExceptionHandler(DocumentDataInvalidException.class)
+  ProblemDetail handleDocumentDataInvalid(DocumentDataInvalidException ex) {
+    // Submitted document-projection data failed schema validation (wrong type, out-of-bounds, bad
+    // pattern, non-member enum, or a missing required field in generate mode). 400 + errors[], the
+    // same shape as bean-validation failures. The exception already carries only field keys + rule
+    // tokens (never a rejected value), so errors[] is safe to surface verbatim -- never-echo holds.
+    // Passive today: no endpoint raises this yet; CR-2's preview endpoint exercises the HTTP path.
+    ProblemDetail body =
+        problem(
+            HttpStatus.BAD_REQUEST,
+            TYPE_DOCUMENT_DATA_INVALID,
+            "Validation failed",
+            "One or more submitted fields are invalid.");
+    body.setProperty("errors", ex.errors());
+    return body;
   }
 
   @Override

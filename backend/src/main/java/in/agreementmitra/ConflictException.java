@@ -19,7 +19,11 @@ public class ConflictException extends RuntimeException {
     /** A draft upload was attempted after signing was already requested (draft finalized). */
     DRAFT_FROZEN,
     /** Signing was requested for an agreement that has no uploaded draft. */
-    DRAFT_REQUIRED
+    DRAFT_REQUIRED,
+    /** Signing was requested but a party has no reachable contact (email or mobile). */
+    CONTACT_REQUIRED,
+    /** Signing was requested but the drafted artifact yields no eSign anchor (nothing signable). */
+    NOT_SIGNABLE
   }
 
   private final Kind kind;
@@ -35,6 +39,14 @@ public class ConflictException extends RuntimeException {
 
   public static ConflictException draftRequired() {
     return new ConflictException(Kind.DRAFT_REQUIRED, "draft required before signing");
+  }
+
+  public static ConflictException contactRequired() {
+    return new ConflictException(Kind.CONTACT_REQUIRED, "contact required before signing");
+  }
+
+  public static ConflictException notSignable() {
+    return new ConflictException(Kind.NOT_SIGNABLE, "no eSign anchor: artifact is not signable");
   }
 
   public Kind kind() {

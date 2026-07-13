@@ -1,0 +1,17 @@
+# Reference layer set -- STATE+TYPE layer (Telangana residential), the highest precedence.
+# Exercises: replaceClause (last-wins over the base rent clause, and introduces a showWhen via a
+# patch), removeClause (drops the base furnishing clause), replaceSection (drops the now-orphaned
+# entry so nothing dangles), and reorderSections. System-authored dummy content; fixture only.
+meta:
+  kind: state_type
+  dimensions: { state: TG, type: residential }
+  version: 1
+
+ops:
+  - { op: replaceClause, id: rent,
+      clause: { id: rent, text: "The Tenant shall pay a monthly rent of INR {{monthlyRent}}, in advance.",
+                showWhen: "monthlyRent > 0" } }
+  - { op: removeClause, id: furnishing }
+  - { op: replaceSection, title: Term,
+      section: { title: Term, entries: [ durationMonths, furnished, term ] } }
+  - { op: reorderSections, order: [ Parties, Financial, Term, Statutory ] }

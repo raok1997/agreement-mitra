@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agreementmitra.in/schemas/template-definition.schema.json",
+  "title": "Template Definition",
+  "description": "Structural shape of a declarative template definition (meta / fields / clauses / sections). Cross-reference rules (unique keys, slot-to-field resolution, section-entry resolution, enum/options consistency, default type-consistency) are enforced by semantic validation, not this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "fields", "sections"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "dimensions", "version", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "type"],
+          "properties": {
+            "state": { "type": "string", "minLength": 1 },
+            "type": { "type": "string", "minLength": 1 }
+          }
+        },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "legal_approved", "published", "deprecated"]
+        },
+        "document": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title"],
+          "properties": {
+            "title": { "type": "string", "minLength": 1 },
+            "subtitle": { "type": "string" },
+            "executionLine": { "type": "string" }
+          }
+        }
+      }
+    },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "label", "type"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "type": {
+            "type": "string",
+            "enum": ["text", "longtext", "int", "money", "date", "bool", "enum"]
+          },
+          "required": { "type": "boolean" },
+          "default": true,
+          "options": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "validation": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "minLength": { "type": "integer", "minimum": 0 },
+              "maxLength": { "type": "integer", "minimum": 0 },
+              "pattern": { "type": "string" }
+            }
+          },
+          "group": { "type": "string" }
+        }
+      }
+    },
+    "clauses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "required": ["ref"],
+            "properties": {
+              "ref": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["id", "text"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "text": { "type": "string" },
+              "showWhen": { "type": "string" }
+            }
+          }
+        ]
+      }
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "entries"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "entries": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "optional": { "type": "boolean" },
+          "render": {
+            "type": "string",
+            "enum": ["parties", "keyvalue", "clauses", "annexure", "signatures"]
+          }
+        }
+      }
+    }
+  }
+}

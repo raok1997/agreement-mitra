@@ -56,10 +56,47 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*")
                     .permitAll()
+                    // Document preview (CR-3b) — scoped to the exact sub-path (NOT
+                    // /api/agreements/**). Anonymous like the rest of the agreement/draft surface;
+                    // TEMPORARY — tighten (ownership) when an auth mechanism lands. Renders on
+                    // demand and stores nothing.
+                    .requestMatchers(HttpMethod.GET, "/api/agreements/*/preview")
+                    .permitAll()
+                    // Generate-as-draft (CR-3c) — render + store as the signable draft. Scoped to
+                    // the exact sub-path. Anonymous like the rest of the agreement/draft surface;
+                    // TEMPORARY — tighten (ownership) when an auth mechanism lands. Overwrite until
+                    // signing, then locked (409) by the shared draft freeze rule.
+                    .requestMatchers(HttpMethod.POST, "/api/agreements/*/document")
+                    .permitAll()
                     // Draft upload — scoped to the exact sub-path (NOT /api/agreements/**) so the
                     // posture stays fail-closed. Unauthenticated today; ownership authorization +
                     // rate-limiting on upload/overwrite are deferred to the signing-auth change.
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/draft")
+                    .permitAll()
+                    // Form-projection schema (template-form-projection) — a public read of
+                    // system-owned metadata (field keys/labels/widgets/validation): no PII, no
+                    // signer data, no auth needed. Exact path only (NOT /api/templates/**) so
+                    // future
+                    // template sub-paths stay denied by default.
+                    .requestMatchers(HttpMethod.GET, "/api/templates/form")
+                    .permitAll()
+                    // Stateless document projection (document-projection-render) -- renders a
+                    // posted
+                    // working set to inline HTML/PDF and stores nothing. Exact method+path only
+                    // (NOT
+                    // /api/templates/**) so the posture stays fail-closed. Anonymous like the rest
+                    // of
+                    // the render surface; server-side schema validation caps the render, and
+                    // per-caller rate-limiting is an owed companion before this leaves sandbox.
+                    .requestMatchers(HttpMethod.POST, "/api/templates/document/preview")
+                    .permitAll()
+                    // Template catalog (template-catalog) -- public reads of system-owned
+                    // template metadata (no PII, no signer data, no auth needed). Exact paths
+                    // only: the browse list and one entry by id. NOT /api/templates/** so future
+                    // template sub-paths stay denied by default.
+                    .requestMatchers(HttpMethod.GET, "/api/templates")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/templates/*")
                     .permitAll()
                     .anyRequest()
                     .denyAll())

@@ -55,6 +55,19 @@ extra["commons-lang3.version"] = "3.18.0"
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    // Document rendering (CR-3a): Thymeleaf composes the rental-agreement template to
+    // self-contained HTML (auto-escaping ON) for the Gotenberg render. Plain thymeleaf (not the
+    // MVC-view starter) -- the engine is constructed directly, so no view auto-config is needed.
+    // Version is Boot-BOM-managed. The HTTP client is the web starter's Spring RestClient. No
+    // Playwright, no browser binary in the app -- Chromium runs in the Gotenberg compose service.
+    implementation("org.thymeleaf:thymeleaf")
+    // Template-definition model (CR: template-definition-model): definitions are authored in YAML,
+    // compiled to canonical JSON, and structurally validated against a checked-in JSON Schema.
+    // jackson-dataformat-yaml (Boot-BOM-managed) parses the YAML; json-schema-validator (offline,
+    // Draft 2020-12-capable) does the structural validation. A shipping implementation dep, so it is
+    // in the OSV/SpotBugs scan scope; pinned to a fixed release (not BOM-managed).
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
+    implementation("com.networknt:json-schema-validator:1.5.6")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     // Default-deny HTTP security baseline (CR-5): one SecurityFilterChain, fail-closed.
     implementation("org.springframework.boot:spring-boot-starter-security")
@@ -84,9 +97,6 @@ dependencies {
     // GHSA-c3fc-8qff-9hwx). A direct shipping dependency so the override applies to the shipped
     // graph, not just tests (remediated by upgrade per policy).
     implementation("org.bouncycastle:bcprov-jdk18on:1.84")
-
-    // Document rendering (headless Chromium). Uncomment when wiring `documents`:
-    // implementation("com.microsoft.playwright:playwright:1.49.0")
 
     // Rules engine (future `rules` module):
     // implementation("org.drools:drools-ruleunits-engine:9.x")

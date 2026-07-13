@@ -62,7 +62,20 @@ class AgreementApiIntegrationTest {
   }
 
   private static Map<String, Object> signer(String name, String email, String role) {
-    return Map.of("name", name, "email", email, "role", role);
+    String[] parts = name.split(" ", 2);
+    return Map.of(
+        "firstName",
+        parts[0],
+        "lastName",
+        parts.length > 1 ? parts[1] : "X",
+        "fatherName",
+        "Father " + parts[0],
+        "currentAddress",
+        "Addr " + parts[0],
+        "email",
+        email,
+        "role",
+        role);
   }
 
   private Map<String, Object> validBody(List<Map<String, Object>> signers) {
@@ -73,8 +86,10 @@ class AgreementApiIntegrationTest {
         new BigDecimal("25000.00"),
         "securityDeposit",
         new BigDecimal("50000.00"),
-        "termMonths",
-        11,
+        "startDate",
+        "2026-01-01",
+        "endDate",
+        "2026-12-01",
         "signers",
         signers);
   }

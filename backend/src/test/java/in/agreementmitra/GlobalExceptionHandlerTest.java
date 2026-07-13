@@ -129,6 +129,18 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void contactRequiredConflictMapsTo409WithADistinctTypeUrn() {
+    ProblemDetail problem = handler.handleConflict(ConflictException.contactRequired());
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:contact-required")
+        .isNotEqualTo("urn:agreementmitra:problem:draft-required");
+    assertThat(problem.getDetail())
+        .isEqualTo("Every party must have an email or mobile before signing can be requested.");
+  }
+
+  @Test
   void invalidUploadMapsTo400WithConstantDetailNotReflectingMessage() {
     var ex = new InvalidUploadException("filename=evil.exe magic-byte mismatch");
 
@@ -137,6 +149,31 @@ class GlobalExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getDetail()).isEqualTo("The upload must be a single PDF file.");
     assertThat(problem.getDetail()).doesNotContain("evil.exe");
+  }
+
+  @Test
+  void documentDataInvalidMapsTo400WithErrorsCarryingKeysAndRuleTokensOnly() throws Exception {
+    var rejectedValue = "9999999999";
+    var ex =
+        new DocumentDataInvalidException(
+            List.of(
+                new FieldErrorDetail("monthlyRent", "min"),
+                new FieldErrorDetail("purpose", "enum")));
+
+    ProblemDetail problem = handler.handleDocumentDataInvalid(ex);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:document-data-invalid");
+    assertThat(problem.getDetail()).isEqualTo("One or more submitted fields are invalid.");
+
+    @SuppressWarnings("unchecked")
+    List<FieldErrorDetail> errors = (List<FieldErrorDetail>) problem.getProperties().get("errors");
+    assertThat(errors)
+        .containsExactly(
+            new FieldErrorDetail("monthlyRent", "min"), new FieldErrorDetail("purpose", "enum"));
+    // The serialized body carries field keys + rule tokens only, never a submitted data value.
+    assertThat(mapper.writeValueAsString(problem)).doesNotContain(rejectedValue);
   }
 
   @Test

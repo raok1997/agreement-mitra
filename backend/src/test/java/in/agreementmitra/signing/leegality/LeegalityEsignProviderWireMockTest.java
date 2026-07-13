@@ -73,6 +73,11 @@ class LeegalityEsignProviderWireMockTest {
             .withRequestBody(matchingJsonPath("$.profileId", equalTo(PROFILE_ID)))
             .withRequestBody(matchingJsonPath("$.file.file")) // base64 PDF present
             .withRequestBody(matchingJsonPath("$.invitees[0].aadhaarConfig.verifyName"))
+            // Each signer's eSign anchor is mapped to the vendor's signature field.
+            .withRequestBody(
+                matchingJsonPath("$.invitees[0].signature.anchorText", equalTo("esign:owner")))
+            .withRequestBody(
+                matchingJsonPath("$.invitees[1].signature.anchorText", equalTo("esign:tenant")))
             .willReturn(
                 okJson(
                     """
@@ -86,8 +91,9 @@ class LeegalityEsignProviderWireMockTest {
             "agr-1",
             "%PDF-1.4".getBytes(StandardCharsets.UTF_8),
             List.of(
-                new SignRequest.Invitee("Asha", "asha@example.com", null, true),
-                new SignRequest.Invitee("Tara", "tara@example.com", "9999999999", true)));
+                new SignRequest.Invitee("Asha", "asha@example.com", null, true, "esign:owner"),
+                new SignRequest.Invitee(
+                    "Tara", "tara@example.com", "9999999999", true, "esign:tenant")));
 
     SignSession session = adapter.createSignRequest(request);
 

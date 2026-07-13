@@ -76,6 +76,16 @@ public class SigningRequestService {
             .orElseThrow(
                 () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
 
+    // Every party needs a reachable contact (email or mobile) before the provider call — contact
+    // is optional at draft (CR-1). Checked before any row / stamp / provider side effect.
+    requireContacts(agreement);
+
+    // Nothing signable (no signer yields an eSign anchor) -> fail clearly before any row, stamp, or
+    // provider side effect; no partial request is ever submitted (agreement-execution-block CR).
+    if (agreement.signers().stream().noneMatch(s -> esignAnchorFor(s) != null)) {
+      throw ConflictException.notSignable();
+    }
+
     // Server-sourced unsigned PDF: the agreement's uploaded draft (anti-mass-assignment). Loaded
     // BEFORE persisting any row or calling the provider, so a missing draft is a clean 409 with no
     // signing-request row and no provider call.
@@ -229,9 +239,34 @@ public class SigningRequestService {
   }
 
   private SignRequest buildSignRequest(AgreementResponse agreement, byte[] unsignedPdf) {
+    // Address the invite to both channels the party provided (email + mobile as phone), and bind
+    // each signer to the eSign anchor its signature zone rendered (esign:<role>).
     Function<AgreementResponse.SignerResponse, SignRequest.Invitee> toInvitee =
-        s -> new SignRequest.Invitee(s.name(), s.email(), null, true);
+        s -> new SignRequest.Invitee(s.name(), s.email(), s.mobile(), true, esignAnchorFor(s));
     List<SignRequest.Invitee> invitees = agreement.signers().stream().map(toInvitee).toList();
     return new SignRequest(agreement.id().toString(), unsignedPdf, invitees);
+  }
+
+  /**
+   * The stable, non-PII eSign anchor for a signer: {@code esign:<role>} (e.g. {@code esign:owner}),
+   * derived from the signer's role. Mirrors the token the {@code documents} renderer emits at each
+   * signature zone (derived there from the signatory name key), so the anchor a zone renders and
+   * the provider field this maps agree -- without either module sharing a type.
+   */
+  private static String esignAnchorFor(AgreementResponse.SignerResponse signer) {
+    return signer.role() == null ? null : "esign:" + signer.role().name().toLowerCase(Locale.ROOT);
+  }
+
+  /** Reject (409) if any party lacks a reachable contact (email or mobile). */
+  private static void requireContacts(AgreementResponse agreement) {
+    boolean allContactable =
+        agreement.signers().stream().allMatch(s -> isPresent(s.email()) || isPresent(s.mobile()));
+    if (!allContactable) {
+      throw ConflictException.contactRequired();
+    }
+  }
+
+  private static boolean isPresent(String value) {
+    return value != null && !value.isBlank();
   }
 }

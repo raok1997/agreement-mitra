@@ -1,0 +1,18 @@
+# Reference layer set -- STATE layer (Telangana). A patch over the composed-so-far template.
+# Exercises: addField, addClause (appended), and addSection -- i.e. a new jurisdiction added as one
+# small state layer over the shared base, no per-state copy. System-authored dummy content; fixture
+# only.
+meta:
+  kind: state
+  dimensions: { state: TG }
+  version: 1
+
+ops:
+  # stampDuty carries a system-authored DEFAULT so generate-as-draft renders it from the template
+  # default (no per-agreement attributes store yet); the aggregate does not persist this field, so
+  # its default is what both the live preview and the signed draft use -- parity holds. Dummy value.
+  - { op: addField,
+      field: { key: stampDuty, label: "Stamp duty (INR)", type: money, required: true, default: 100 } }
+  - { op: addClause,
+      clause: { id: tgStamp, text: "Stamp duty payable under the Telangana Act is INR {{stampDuty}}." } }
+  - { op: addSection, section: { title: Statutory, entries: [ stampDuty, tgStamp ] } }

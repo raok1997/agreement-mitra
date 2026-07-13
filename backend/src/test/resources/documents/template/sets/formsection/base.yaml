@@ -1,0 +1,35 @@
+# TEST FIXTURE ONLY -- a layer set for the form-schema section-semantics projection
+# (openspec/changes/form-schema-section-semantics). It carries three sections that exercise the
+# projection end-to-end:
+#   - "Parties"     : a MANDATORY field-bearing section (optional omitted -> false) with an explicit
+#                     render kind (parties), to assert optional == false + renderKind is surfaced.
+#   - "Add-ons"     : an OPTIONAL field-bearing section (optional: true) with render: annexure, to
+#                     assert optional == true + its renderKind is surfaced verbatim.
+#   - "Witnesseth"  : a CLAUSE-ONLY / document-only section whose only entry is a clause id (zero
+#                     field keys), to assert the whole section is omitted from the FormSchema.
+# System-authored dummy content only.
+meta:
+  id: form-section-demo
+  dimensions:
+    state: IN
+    type: residential
+  version: 1
+  status: published
+
+fields:
+  - { key: ownerName,  label: "Owner name",  type: text, required: true }
+  - { key: tenantName, label: "Tenant name", type: text, required: true }
+  - { key: extraNote,  label: "Extra note",  type: longtext, required: false }
+
+clauses:
+  - id: partiesClause
+    text: "This Agreement is made between {{ownerName}} (Owner) and {{tenantName}} (Tenant)."
+  - id: extraClause
+    text: "Additional terms as agreed between the parties are annexed hereto."
+  - id: witnessClause
+    text: "Now this Agreement witnesseth and the parties hereto mutually agree as follows."
+
+sections:
+  - { title: Parties,    render: parties,   entries: [ ownerName, tenantName, partiesClause ] }
+  - { title: Add-ons,    optional: true, render: annexure, entries: [ extraNote, extraClause ] }
+  - { title: Witnesseth, render: clauses,  entries: [ witnessClause ] }

@@ -1,0 +1,54 @@
+# Production layer set (rental) -- STATE+TYPE layer (Telangana residential), highest precedence.
+# Telangana residential specifics over the M5 structure: drop the generic national stamp clause in
+# favour of the Telangana-specific one (state layer), remove its now-dangling entry from the
+# witnesseth covenant list, default the jurisdiction city to Hyderabad, and order the sections so the
+# document reads Owner -> Tenant -> Schedule -> Term -> Financial -> [optional add-ons] -> Now This
+# Agreement Witnesseth -> Annexure -> Statutory (Telangana), with the statutory overlay last before
+# the signature block.
+#
+# "Statutory (Telangana)" is OPT-IN OPTIONAL (2026-07-13 requester decision): absent from preview and
+# a generated draft until the user adds it from the catalog (marked optional in the state layer's
+# addSection).
+#
+# The "In Witness Whereof" execution / signature block is MANDATORY here (agreement-execution-block
+# CR): a generated draft must carry the per-signer signature zones + esign:<role> anchors to be
+# signable via Aadhaar eSign, so the block always renders. This supersedes the earlier (2026-07-13)
+# opt-in treatment of the signature block, which predates eSign and left the block empty. The block
+# declares its signatories by their name field keys (ownerName, tenantName); the compiler renders one
+# zone + one anchor per entry.
+meta:
+  kind: state_type
+  dimensions: { state: TG, type: residential }
+  version: 1
+
+ops:
+  # Drop the generic national stamp/registration clause; the state layer's tgStampRegistration
+  # supersedes it. Then re-author the witnesseth list without the removed clause so nothing dangles.
+  - { op: removeClause, id: stampRegistrationClause }
+  # Re-author without the removed national stamp clause; keep the general boilerplate closing clauses
+  # (service of notice, governing law -- laws of India, severability, entire agreement). The opt-in
+  # Statutory (Telangana) section adds the more-specific tgGoverningLaw on top when the user adds it.
+  - { op: replaceSection, title: "Now This Agreement Witnesseth",
+      section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
+                 entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,
+                            inspectionClause, handoverClause, disputeClause,
+                            serviceOfNoticeClause, governingLawClause, severabilityClause,
+                            entireAgreementClause ] } }
+
+  # Execution / signature block: MANDATORY, declaring its signatories by name field key so the
+  # compiler renders one signature zone + one esign:<role> anchor per entry (agreement-execution-block
+  # CR -- the draft must be signable). SIGNATURES sections are document-only, so M3 omits it from the
+  # capture form even though it now carries field-key entries.
+  - { op: replaceSection, title: "In Witness Whereof",
+      section: { title: "In Witness Whereof", render: signatures, optional: false,
+                 entries: [ ownerName, tenantName ] } }
+
+  # Telangana default jurisdiction.
+  - { op: overrideField, key: jurisdictionCity, default: "Hyderabad" }
+
+  # Full section order for the Telangana residential set: Statutory then the signature block last.
+  - { op: reorderSections,
+      order: [ "Owner", "Tenant", "Schedule of Property", "Term", "Financial",
+               "Charges & Utilities", "Occupancy & Use", "Dispute Resolution",
+               "Now This Agreement Witnesseth", "Annexure", "Statutory (Telangana)",
+               "In Witness Whereof", "Witnesses" ] }

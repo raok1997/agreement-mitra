@@ -64,7 +64,16 @@ class LeegalityEsignProvider implements EsignProvider {
             .map(
                 i ->
                     new InvitePart(
-                        i.name(), i.email(), i.phone(), new AadhaarConfig(i.verifyName())))
+                        i.name(),
+                        i.email(),
+                        i.phone(),
+                        new AadhaarConfig(i.verifyName()),
+                        // Map the provider-agnostic esign:<role> anchor to the vendor's signature
+                        // field. Whether Leegality/Digio place by text anchor or coordinate is the
+                        // open question (docs/integrations/leegality.md); this adapter is where
+                        // that
+                        // translation lands. Exercised against the sandbox stub / WireMock.
+                        i.esignAnchor() == null ? null : new SignatureField(i.esignAnchor())))
             .toList();
     var body =
         new CreateBody(
@@ -259,9 +268,17 @@ class LeegalityEsignProvider implements EsignProvider {
 
   private record FilePart(String name, String file) {}
 
-  private record InvitePart(String name, String email, String phone, AadhaarConfig aadhaarConfig) {}
+  private record InvitePart(
+      String name,
+      String email,
+      String phone,
+      AadhaarConfig aadhaarConfig,
+      SignatureField signature) {}
 
   private record AadhaarConfig(boolean verifyName) {}
+
+  /** The signer's signature placement, carried to the vendor as a text anchor (esign:<role>). */
+  private record SignatureField(String anchorText) {}
 
   private record CreateResponse(String status, CreateData data) {}
 

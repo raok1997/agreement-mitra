@@ -98,11 +98,36 @@ class SigningRequestApiIntegrationTest {
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
-            "termMonths", 11,
+            "startDate", "2026-01-01",
+            "endDate", "2026-12-01",
             "signers",
                 List.of(
-                    Map.of("name", "Asha Owner", "email", "asha@example.com", "role", "OWNER"),
-                    Map.of("name", "Tara Tenant", "email", "tara@example.com", "role", "TENANT")));
+                    Map.of(
+                        "firstName",
+                        "Asha",
+                        "lastName",
+                        "Owner",
+                        "fatherName",
+                        "Ravi Owner",
+                        "currentAddress",
+                        "1 A St",
+                        "email",
+                        "asha@example.com",
+                        "role",
+                        "OWNER"),
+                    Map.of(
+                        "firstName",
+                        "Tara",
+                        "lastName",
+                        "Tenant",
+                        "fatherName",
+                        "Hari Tenant",
+                        "currentAddress",
+                        "3 C St",
+                        "email",
+                        "tara@example.com",
+                        "role",
+                        "TENANT")));
     @SuppressWarnings("unchecked")
     ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);

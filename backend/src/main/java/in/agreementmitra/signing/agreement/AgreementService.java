@@ -1,5 +1,7 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.ResourceNotFoundException;
+import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.AgreementResponse.SignerResponse;
 import in.agreementmitra.signing.api.CreateAgreementRequest;
@@ -22,21 +24,75 @@ import org.springframework.transaction.annotation.Transactional;
 public class AgreementService {
 
   private final AgreementRepository repository;
+  private final TemplateCatalogApi templateCatalog;
 
-  AgreementService(AgreementRepository repository) {
+  AgreementService(AgreementRepository repository, TemplateCatalogApi templateCatalog) {
     this.repository = repository;
+    this.templateCatalog = templateCatalog;
   }
 
   @Transactional
   public AgreementResponse create(CreateAgreementRequest request) {
+    // Resolve the catalog selection BEFORE any persistence so an unknown (state, type) rejects
+    // cleanly with nothing stored. The server owns the template UUID end-to-end (never client-set).
+    UUID selectedTemplateId = resolveSelectedTemplate(request.state(), request.type());
     Agreement agreement =
         Agreement.create(
             request.propertyAddress(),
             request.monthlyRent(),
             request.securityDeposit(),
-            request.termMonths());
-    request.signers().forEach(s -> agreement.addSigner(s.name(), s.email(), s.role()));
+            request.startDate(),
+            request.endDate());
+    request
+        .signers()
+        .forEach(
+            s ->
+                agreement.addSigner(
+                    fullName(s),
+                    s.firstName(),
+                    s.lastName(),
+                    s.fatherName(),
+                    s.currentAddress(),
+                    s.email(),
+                    s.mobile(),
+                    s.role()));
+    if (selectedTemplateId != null) {
+      agreement.selectTemplate(selectedTemplateId);
+    }
     return toResponse(repository.save(agreement));
+  }
+
+  /**
+   * Resolve the published catalog template for the client-picked {@code (state, type)} to its
+   * server-owned UUID. Both dimensions must be present to select; when either is absent the
+   * agreement keeps today's default behaviour (no selection, {@code null}). An {@code (state,
+   * type)} that no published template covers is rejected via the app-wide no-oracle 404 contract --
+   * the catalog is the dimension-validation authority, and the {@code GlobalExceptionHandler}
+   * renders a fixed detail that never echoes the requested dimensions.
+   */
+  private UUID resolveSelectedTemplate(String state, String type) {
+    if (isBlank(state) || isBlank(type)) {
+      return null;
+    }
+    return templateCatalog
+        .publishedTemplateIdFor(state, type)
+        .map(UUID::fromString)
+        .orElseThrow(
+            () ->
+                new ResourceNotFoundException("no published template for the selected dimensions"));
+  }
+
+  private static boolean isBlank(String s) {
+    return s == null || s.isBlank();
+  }
+
+  /** Full name as per Aadhaar: the override when supplied (non-blank), else first + last name. */
+  private static String fullName(CreateAgreementRequest.SignerRequest s) {
+    String override = s.name();
+    if (override != null && !override.isBlank()) {
+      return override.trim();
+    }
+    return (s.firstName().trim() + " " + s.lastName().trim()).trim();
   }
 
   @Transactional(readOnly = true)
@@ -79,16 +135,52 @@ public class AgreementService {
     repository.save(agreement);
   }
 
+  /**
+   * Record the selected catalog template's id on the agreement. Server-managed only (never
+   * client-settable): the id is sourced from the catalog selection at the {@code api} layer --
+   * where it is validated as a published template (via {@code documents.api}'s {@code
+   * TemplateCatalogApi}) -- and passed inward as a plain {@link UUID} value, so {@code signing}
+   * holds no {@code documents.template} type (Modulith-clean). The effective-template hash +
+   * layer-version pin stays at generate-as-draft (document projection) -- unchanged here.
+   *
+   * <p>INTEGRATION NOTE: the create/update request wiring that routes a client-chosen template
+   * through catalog validation into this setter is deliberately NOT added in this CR (the
+   * CreateAgreementRequest / controller surface is being edited concurrently). This setter is the
+   * server-managed call site; wiring it into the create flow is a flagged follow-up.
+   */
+  @Transactional
+  public void recordSelectedTemplate(UUID agreementId, UUID templateId) {
+    Agreement agreement =
+        repository
+            .findById(agreementId)
+            .orElseThrow(() -> new IllegalStateException("Agreement vanished: " + agreementId));
+    agreement.selectTemplate(templateId);
+    repository.save(agreement);
+  }
+
   private AgreementResponse toResponse(Agreement agreement) {
     var signers =
         agreement.signers().stream()
-            .map(s -> new SignerResponse(s.id(), s.name(), s.email(), s.role()))
+            .map(
+                s ->
+                    new SignerResponse(
+                        s.id(),
+                        s.name(),
+                        s.firstName(),
+                        s.lastName(),
+                        s.fatherName(),
+                        s.currentAddress(),
+                        s.email(),
+                        s.mobile(),
+                        s.role()))
             .toList();
     return new AgreementResponse(
         agreement.getId(),
         agreement.propertyAddress(),
         agreement.monthlyRent(),
         agreement.securityDeposit(),
+        agreement.startDate(),
+        agreement.endDate(),
         agreement.termMonths(),
         agreement.createdAt(),
         signers);

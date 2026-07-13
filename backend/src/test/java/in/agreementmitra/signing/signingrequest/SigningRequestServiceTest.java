@@ -26,6 +26,7 @@ import in.agreementmitra.signing.stamp.StampProvider;
 import in.agreementmitra.signing.stamp.StampResult;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -70,11 +71,93 @@ class SigningRequestServiceTest {
         "12 MG Road",
         new BigDecimal("25000.00"),
         new BigDecimal("50000.00"),
+        LocalDate.of(2026, 1, 1),
+        LocalDate.of(2026, 12, 1),
         11,
         Instant.now(),
         List.of(
-            new SignerResponse(UUID.randomUUID(), "Asha Owner", "asha@example.com", Role.OWNER),
-            new SignerResponse(UUID.randomUUID(), "Tara Tenant", "tara@example.com", Role.TENANT)));
+            new SignerResponse(
+                UUID.randomUUID(),
+                "Asha Owner",
+                "Asha",
+                "Owner",
+                "Ravi Owner",
+                "1 A St",
+                "asha@example.com",
+                null,
+                Role.OWNER),
+            new SignerResponse(
+                UUID.randomUUID(),
+                "Tara Tenant",
+                "Tara",
+                "Tenant",
+                "Hari Tenant",
+                "3 C St",
+                "tara@example.com",
+                null,
+                Role.TENANT)));
+  }
+
+  private static AgreementResponse agreementWithContactlessTenant(UUID id) {
+    return new AgreementResponse(
+        id,
+        "12 MG Road",
+        new BigDecimal("25000.00"),
+        new BigDecimal("50000.00"),
+        LocalDate.of(2026, 1, 1),
+        LocalDate.of(2026, 12, 1),
+        11,
+        Instant.now(),
+        List.of(
+            new SignerResponse(
+                UUID.randomUUID(),
+                "Asha Owner",
+                "Asha",
+                "Owner",
+                "Ravi Owner",
+                "1 A St",
+                "asha@example.com",
+                null,
+                Role.OWNER),
+            new SignerResponse(
+                UUID.randomUUID(),
+                "Tara Tenant",
+                "Tara",
+                "Tenant",
+                "Hari Tenant",
+                "3 C St",
+                null,
+                null,
+                Role.TENANT)));
+  }
+
+  /**
+   * An agreement with an empty signer set -- nothing signable (defensive: creation forbids this).
+   */
+  private static AgreementResponse agreementWithNoSigners(UUID id) {
+    return new AgreementResponse(
+        id,
+        "12 MG Road",
+        new BigDecimal("25000.00"),
+        new BigDecimal("50000.00"),
+        LocalDate.of(2026, 1, 1),
+        LocalDate.of(2026, 12, 1),
+        11,
+        Instant.now(),
+        List.of());
+  }
+
+  @Test
+  void createRejectsWith409WhenAPartyHasNoContact() {
+    UUID agreementId = UUID.randomUUID();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithContactlessTenant(agreementId)));
+
+    assertThatThrownBy(() -> service().create(agreementId)).isInstanceOf(ConflictException.class);
+
+    // No pre-request row and no provider call once the contact check fails.
+    verify(persistence, never()).createPending(any());
+    verify(esignProvider, never()).createSignRequest(any());
   }
 
   /** Stub the agreement's stored draft so the unsigned PDF can be sourced. */
@@ -114,6 +197,50 @@ class SigningRequestServiceTest {
     inOrder.verify(persistence).createPending(agreementId);
     inOrder.verify(esignProvider).createSignRequest(any());
     inOrder.verify(persistence).markRequested(eq(signingRequestId), eq("DOC-9"), anyList());
+  }
+
+  @Test
+  void createBindsEachSignerToItsRoleDerivedEsignAnchor() {
+    UUID agreementId = UUID.randomUUID();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithTwoSigners(agreementId)));
+    stubDraft(agreementId);
+    stubStamp(agreementId);
+    when(persistence.createPending(agreementId)).thenReturn(UUID.randomUUID());
+    when(esignProvider.createSignRequest(any()))
+        .thenReturn(
+            new SignSession(
+                "DOC-A",
+                List.of(
+                    new SignSession.InviteeSession("asha@example.com", "u", "2026", "INV-1"),
+                    new SignSession.InviteeSession("tara@example.com", "u", "2026", "INV-2"))));
+
+    service().create(agreementId);
+
+    // The provider request binds one esign:<role> anchor per signer, derived from the role, in
+    // signer order -- the same tokens the renderer emits at each signature zone.
+    var captor = org.mockito.ArgumentCaptor.forClass(in.agreementmitra.signing.SignRequest.class);
+    verify(esignProvider).createSignRequest(captor.capture());
+    assertThat(captor.getValue().invitees())
+        .extracting(in.agreementmitra.signing.SignRequest.Invitee::esignAnchor)
+        .containsExactly("esign:owner", "esign:tenant");
+  }
+
+  @Test
+  void createFailsClearlyWhenThereIsNothingSignableAndSubmitsNothing() {
+    UUID agreementId = UUID.randomUUID();
+    when(agreementService.findById(agreementId))
+        .thenReturn(Optional.of(agreementWithNoSigners(agreementId)));
+
+    assertThatThrownBy(() -> service().create(agreementId))
+        .isInstanceOfSatisfying(
+            ConflictException.class,
+            e -> assertThat(e.kind()).isEqualTo(ConflictException.Kind.NOT_SIGNABLE));
+
+    // No row, no stamp, no provider call -- the failure is before any side effect.
+    verify(persistence, never()).createPending(any());
+    verify(stampProvider, never()).procure(any(), any());
+    verify(esignProvider, never()).createSignRequest(any());
   }
 
   @Test

@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agreementmitra.in/schemas/layer-patch.schema.json",
+  "title": "Layer Patch",
+  "description": "Structural shape of a non-base layer patch: meta { kind, dimensions, version } and an ordered list of operations applied over the composed-so-far template. Cross-reference rules (targets exist, no orphaned slot/section entry, definition invariants after composition, showWhen references declared fields) are enforced by resolution, not this schema. A base layer is a full template-definition and uses template-definition.schema.json, not this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "ops"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "version"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["type", "state", "state_type", "language"]
+        },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "type": "string", "minLength": 1 },
+            "type": { "type": "string", "minLength": 1 }
+          }
+        },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["op"],
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "required": ["op", "field"],
+            "properties": {
+              "op": { "const": "addField" },
+              "field": { "$ref": "#/$defs/field" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "key"],
+            "properties": {
+              "op": { "const": "overrideField" },
+              "key": { "type": "string", "minLength": 1 },
+              "required": { "type": "boolean" },
+              "default": true,
+              "options": { "type": "array", "items": { "type": "string" } },
+              "validation": { "$ref": "#/$defs/validation" },
+              "group": { "type": "string" },
+              "label": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "key"],
+            "properties": {
+              "op": { "const": "removeField" },
+              "key": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "clause"],
+            "properties": {
+              "op": { "const": "addClause" },
+              "after": { "type": "string", "minLength": 1 },
+              "clause": { "$ref": "#/$defs/clause" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "id", "clause"],
+            "properties": {
+              "op": { "const": "replaceClause" },
+              "id": { "type": "string", "minLength": 1 },
+              "clause": { "$ref": "#/$defs/clause" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "id"],
+            "properties": {
+              "op": { "const": "removeClause" },
+              "id": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "section"],
+            "properties": {
+              "op": { "const": "addSection" },
+              "after": { "type": "string", "minLength": 1 },
+              "section": { "$ref": "#/$defs/section" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "title", "section"],
+            "properties": {
+              "op": { "const": "replaceSection" },
+              "title": { "type": "string", "minLength": 1 },
+              "section": { "$ref": "#/$defs/section" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "title"],
+            "properties": {
+              "op": { "const": "removeSection" },
+              "title": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "order"],
+            "properties": {
+              "op": { "const": "reorderSections" },
+              "order": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": ["op", "title", "order"],
+            "properties": {
+              "op": { "const": "reorderEntries" },
+              "title": { "type": "string", "minLength": 1 },
+              "order": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "type"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["text", "longtext", "int", "money", "date", "bool", "enum"]
+        },
+        "required": { "type": "boolean" },
+        "default": true,
+        "options": { "type": "array", "items": { "type": "string" } },
+        "validation": { "$ref": "#/$defs/validation" },
+        "group": { "type": "string" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "minLength": { "type": "integer", "minimum": 0 },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "type": "string" }
+      }
+    },
+    "clause": {
+      "type": "object",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": {
+            "ref": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["id", "text"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "text": { "type": "string" },
+            "showWhen": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "entries"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "entries": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "optional": { "type": "boolean" },
+        "render": {
+          "type": "string",
+          "enum": ["parties", "keyvalue", "clauses", "annexure", "signatures"]
+        }
+      }
+    }
+  }
+}
