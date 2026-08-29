@@ -68,6 +68,26 @@ class TemplateCatalogService implements TemplateCatalogApi {
             () -> new ResourceNotFoundException("no published template for the requested id"));
   }
 
+  /**
+   * The non-throwing lookup. Same published-only rule as {@link #detail(String)} and the same
+   * indistinguishable treatment of unknown vs non-published (empty either way) -- it just reports
+   * "no entry" as a value, so a caller inside a transaction is not forced to survive an exception
+   * that has already marked that transaction rollback-only.
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<TemplateDetail> find(String id) {
+    UUID uuid;
+    try {
+      uuid = UUID.fromString(id);
+    } catch (IllegalArgumentException e) {
+      return Optional.empty(); // a malformed id is not a published entry
+    }
+    return repository
+        .findByIdAndStatus(uuid, TemplateStatus.PUBLISHED)
+        .map(TemplateCatalogMapper::toDetail);
+  }
+
   @Override
   @Transactional(readOnly = true)
   public Optional<String> publishedTemplateIdFor(String state, String type) {

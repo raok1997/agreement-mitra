@@ -16,15 +16,72 @@ spring:
 signing:
   reconciliation:
     enabled: false
+  # The delivery retry sweep is disabled here for the same reason: it must never fire against
+  # unrelated fixtures. Retry behaviour is tested by invoking the sweep directly. Backoff is zeroed
+  # so a retry in a test is due immediately rather than a minute later.
+  delivery:
+    retry-enabled: false
+    initial-backoff: PT0S
+    max-backoff: PT0S
+
+# The email seam stays on the STUB in tests: messages are captured in memory and nothing is sent, so
+# no test needs a mailbox, a credential, or network access. Delivery tests assert against the
+# captured messages. SMTP settings are pinned empty so no test can reach a real account.
+mail:
+  provider: stub
+  from: "no-reply@agreementmitra.test"
+  smtp:
+    host: ""
+    username: ""
+    password: ""
 
 # storage.* (endpoint, bucket, access-key, secret-key) is supplied at runtime by the
 # DynamicPropertyRegistrar bean in HarnessTestConfig, pointed at the MinIO container — so
 # no credentials are hardcoded here, and those values win over any real S3_* env on the
 # runner. eSign secrets are pinned empty so the context boots without any real secret.
+# The default provider is pinned to `leegality` here so the pre-existing suite keeps exercising the
+# adapter it was written against; the ZOOP adapter's tests select `zoop` explicitly per test class.
+# That IS the provider-selector test: switching the selector must leave everything else green.
 esign:
   provider: leegality
+  webhook-key:
+    pepper: "test-webhook-key-pepper"
   leegality:
     base-url: ""
     profile-id: "test-profile"
+    artifact-hosts: ""
     auth-token: ""
     webhook-secret: ""
+
+# The gate is REQUIRED here because that is what production ships. Pinning the test profile to
+# OPTIONAL would leave the configuration we actually deploy as the one configuration the suite never
+# exercises - and the whole point of the gate is protecting real money, so that is exactly the wrong
+# trade. Fixtures whose subject is stamping or signing satisfy the gate through
+# `support.Payments`; the permissive mode is still covered, by tests that override this explicitly.
+#
+# Gateway credentials are pinned EMPTY here so the context boots with no real secret and no test can
+# accidentally reach a live account; the payment tests supply fabricated values per class via
+# @DynamicPropertySource, pointed at a WireMock stub. The reconciliation scheduler is disabled so it
+# never fires against unrelated fixtures - its behaviour is tested by invoking the job directly.
+payment:
+  mode: REQUIRED
+  reconciliation:
+    enabled: false
+  razorpay:
+    base-url: ""
+    key-id: ""
+    key-secret: ""
+    webhook-secret: ""
+
+# Identity/login (google-oauth-login CR). Non-blank dummy Google client so the context boots (the
+# fail-fast check requires id + secret present); the login handshake integration test overrides the
+# endpoint URIs (token-uri / jwks-uri) and client-id at runtime to point at a stubbed Google. Short
+# fixed pepper -- deterministic hashing in tests. No real secret.
+auth:
+  hash-pepper: "test-pepper"
+  session-ttl: PT24H
+  handoff-ttl: PT60S
+  login-state-ttl: PT5M
+  google:
+    client-id: "test-client"
+    client-secret: "dummy"

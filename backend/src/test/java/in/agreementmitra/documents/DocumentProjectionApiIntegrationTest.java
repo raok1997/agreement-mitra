@@ -14,12 +14,16 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.agreementmitra.support.HarnessTestConfig;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -200,6 +204,130 @@ class DocumentProjectionApiIntegrationTest {
 
     byte[] pdf = result.getResponse().getContentAsByteArray();
     assertThat(new String(pdf, 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+  }
+
+  // --- provenance line (body, preview + PDF) + page-number furniture (PDF) -----
+
+  @Test
+  void statelessPreviewHtmlBodyCarriesTheProvenanceLineMarkerAndUrl() throws Exception {
+    // The point of moving the reference + URL into the body: the reader sees them in the ON-SCREEN
+    // preview (HTML), not only in the PDF. Pre-save the provenance line shows the marker + the URL.
+    mockMvc
+        .perform(
+            post(PREVIEW)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_HTML)
+                .content(previewBody(fullData("Asha Rao"))))
+        .andExpect(status().isOk())
+        .andExpect(content().string(containsString("PREVIEW - NOT FOR EXECUTION")))
+        .andExpect(content().string(containsString("agreementmitra.com")));
+  }
+
+  @Test
+  void aSuppliedReferenceReplacesTheMarkerInThePreviewHtmlBody() throws Exception {
+    // Post-save the client passes the real tracking number as documentReference; the preview body
+    // shows it instead of the marker (still HTML-escaped, still in parity with the PDF body).
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("data", fullData("Asha Rao"));
+    body.put("documentReference", "AM-A5E4D7-010726");
+
+    mockMvc
+        .perform(
+            post(PREVIEW)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_HTML)
+                .content(mapper.writeValueAsString(body)))
+        .andExpect(status().isOk())
+        .andExpect(content().string(containsString("AM-A5E4D7-010726")))
+        .andExpect(content().string(not(containsString("PREVIEW - NOT FOR EXECUTION"))));
+  }
+
+  @Test
+  void statelessPreviewPdfCarriesThePreviewMarkerPlatformUrlAndPageNumbers() throws Exception {
+    // The capture-screen Download PDF (stateless, no saved agreement) carries the provenance line
+    // (marker + platform URL, from the body) and page numbers (furniture) -- all extractable text.
+    MvcResult result =
+        mockMvc
+            .perform(
+                post(PREVIEW)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_PDF)
+                    .content(previewBody(fullData("Asha Rao"))))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    String text = flattenWhitespace(pdfText(result.getResponse().getContentAsByteArray()));
+    assertThat(text)
+        .contains("PREVIEW - NOT FOR EXECUTION")
+        .contains("agreementmitra.com")
+        .contains("Page 1 of");
+  }
+
+  @Test
+  void idBoundPreviewPdfCarriesThePersistedTrackingReferencePlatformUrlAndPageNumbers()
+      throws Exception {
+    // The saved-agreement render stamps the agreement's ONE persisted tracking reference -- the
+    // same value the customer is given and staff quote at stamp intake -- plus the platform URL
+    // and page numbers, and not the preview marker.
+    UUID id = createAgreement("Asha");
+
+    MvcResult result =
+        mockMvc
+            .perform(get("/api/agreements/{id}/preview", id))
+            .andExpect(status().isOk())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    int pages = pageCount(pdf);
+    String text = flattenWhitespace(pdfText(pdf));
+    String reference =
+        jdbc.queryForObject(
+            "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, id);
+
+    // The footer is furniture in the margin, stamped once PER PAGE -- so the reference appears
+    // exactly
+    // `pages` times. The on-screen provenance line is screen-only (hidden in print), so it adds NO
+    // extra occurrence (a body-flow line would add one and, on a full page, orphan onto its own
+    // page).
+    assertThat(countOccurrences(text, reference)).isEqualTo(pages);
+    assertThat(text)
+        .contains(reference)
+        .contains("agreementmitra.com")
+        .contains("Page 1 of " + pages) // the "of Y" total renders
+        .doesNotContain("PREVIEW - NOT FOR EXECUTION");
+  }
+
+  /** Extract all text from a PDF (page body + Chromium footer furniture) with PDFBox. */
+  private static String pdfText(byte[] pdf) throws IOException {
+    try (PDDocument doc = Loader.loadPDF(pdf)) {
+      return new PDFTextStripper().getText(doc);
+    }
+  }
+
+  /** The number of pages in a PDF. */
+  private static int pageCount(byte[] pdf) throws IOException {
+    try (PDDocument doc = Loader.loadPDF(pdf)) {
+      return doc.getNumberOfPages();
+    }
+  }
+
+  /** Count non-overlapping occurrences of {@code needle} in {@code haystack}. */
+  private static long countOccurrences(String haystack, String needle) {
+    long count = 0;
+    for (int i = haystack.indexOf(needle);
+        i >= 0;
+        i = haystack.indexOf(needle, i + needle.length())) {
+      count++;
+    }
+    return count;
+  }
+
+  /**
+   * Collapse runs of whitespace to single spaces so footer-cell assertions are wrap-insensitive.
+   */
+  private static String flattenWhitespace(String text) {
+    return text.replaceAll("\\s+", " ");
   }
 
   // --- 4.5 log hygiene ------------------------------------------------------

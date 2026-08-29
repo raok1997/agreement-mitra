@@ -1,16 +1,132 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-IN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/src/assets/logo-mark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The recovery link we email carries the agreement id in its path, and the agreement id is a
+         bearer capability. Without this, clicking any outbound link from that page would hand the
+         id to a third-party origin in the Referer header. same-origin keeps referrers internal;
+         cross-origin requests send none at all. -->
+    <meta name="referrer" content="same-origin" />
+
+    <title>AgreementMitra | Online Rental Agreement with Aadhaar eSign, Hyderabad</title>
+    <meta
+      name="description"
+      content="Build an Indian rental agreement online in minutes. Live document preview, state-wise stamp duty shown up front, and remote Aadhaar OTP eSign. Free to draft, no login to start."
+    />
+    <link rel="canonical" href="https://agreementmitra.com/" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#313984" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AgreementMitra" />
+    <meta property="og:url" content="https://agreementmitra.com/" />
+    <meta
+      property="og:title"
+      content="AgreementMitra | Online Rental Agreement with Aadhaar eSign"
+    />
+    <meta
+      property="og:description"
+      content="Build an Indian rental agreement online in minutes. Live document preview, state-wise stamp duty shown up front, and remote Aadhaar OTP eSign. Free to draft."
+    />
+    <meta property="og:locale" content="en_IN" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <title>AgreementMitra</title>
+
+    <!--
+      Structured data for the marketing page. Crawlers read this out of the static HTML,
+      which is why it lives here rather than being injected by the SPA.
+
+      MAINTENANCE: the questions/answers below mirror the `faqs` array in
+      src/views/LandingPage.vue, and LandingPage.test.ts asserts the two stay in step. Google
+      devalues FAQ markup that does not match the visible page, so change both together.
+    -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://agreementmitra.com/#org",
+            "name": "AgreementMitra",
+            "url": "https://agreementmitra.com/",
+            "email": "hello@agreementmitra.com",
+            "areaServed": { "@type": "Place", "name": "Hyderabad, Telangana, India" },
+            "description": "Online rental agreement platform for India with Aadhaar OTP eSign."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://agreementmitra.com/#site",
+            "url": "https://agreementmitra.com/",
+            "name": "AgreementMitra",
+            "publisher": { "@id": "https://agreementmitra.com/#org" },
+            "inLanguage": "en-IN"
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://agreementmitra.com/#faq",
+            "isPartOf": { "@id": "https://agreementmitra.com/#site" },
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Why are most rental agreements in India for 11 months?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Under the Registration Act, 1908, a lease of twelve months or more must be registered with the sub-registrar. An eleven-month term stays below that threshold, which is why it became the default for residential tenancies. It is a registration question, not a validity question: an eleven-month agreement is still a binding contract, it simply does not need to be registered."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is an Aadhaar OTP signature legally valid?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Aadhaar eSign is an electronic signature recognised under the Information Technology Act, 2000, and is issued through a licensed eSign Service Provider working with a Certifying Authority. The signed PDF carries a digital signature certificate plus an audit trail recording who signed, when, and from where."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What does stamp duty cost?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "It depends on your state and on the rent and deposit in your agreement, because stamp duty is levied by the state government and the slabs differ. We compute it for your specific agreement and show it as its own line in the total before you pay, rather than folding it into a single opaque price."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does a stamped agreement mean it is registered?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No, and the difference matters. Stamping pays the state duty on the document. Registration is a separate act of recording the lease with the sub-registrar, and it is what the twelve-month rule is about. A stamped, eSigned eleven-month agreement is not a registered lease."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Do I need an account?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Not to build and preview an agreement. You only need to sign in if you want to save a draft, leave, and pick it up later, or keep a list of your past agreements."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which cities do you serve?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "We are starting with Hyderabad and the rest of Telangana, then widening state by state as the rules engine covers each jurisdiction. If you are elsewhere in India, write to us and we will tell you where you sit in the queue."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

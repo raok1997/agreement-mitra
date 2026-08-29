@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 class FormSectionSemanticsProjectionIntegrationTest {
 
   private final TemplateResolver resolver =
-      new TemplateResolver(new ClasspathLayerSource("documents/template/sets/formsection/"));
+      new TemplateResolver(new ClasspathLayerSource("documents/template/testsets/formsection/"));
   private final FormProjector projector = new FormProjector();
   private final ObjectMapper mapper = new ObjectMapper();
 

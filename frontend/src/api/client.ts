@@ -34,6 +34,15 @@ export interface CreateAgreementInput {
    */
   state?: string;
   type?: string;
+  /**
+   * The full capture state (M5): the flat working-set field map (field key -> value) the guided form
+   * produced, plus the added optional-section titles. Persisted so a saved agreement round-trips its
+   * complete content and the stored/signed draft matches the live preview. Server-managed keys in
+   * captureData are ignored server-side (anti-mass-assignment); the fixed typed columns stay
+   * authoritative. Omitted keeps the pre-M5 fixed-column behaviour.
+   */
+  captureData?: Record<string, string>;
+  activeSections?: string[];
 }
 
 export interface PartyView {
@@ -50,6 +59,14 @@ export interface PartyView {
 
 export interface AgreementView {
   id: string;
+  /**
+   * The agreement's ONE tracking reference (`AM` + eight characters + a check character), assigned
+   * and persisted server-side at creation. The same value the rendered document shows in its
+   * provenance line and the same value AgreementMitra staff quote to attach the purchased e-stamp --
+   * so a support conversation about "my agreement" has exactly one number in it. The raw `id` stays
+   * the canonical internal identifier.
+   */
+  trackingNumber: string;
   propertyAddress: string;
   monthlyRent: number;
   securityDeposit: number;
@@ -58,6 +75,14 @@ export interface AgreementView {
   durationMonths: number;
   createdAt: string;
   signers: PartyView[];
+  /**
+   * The persisted full capture state (M5): the flat working-set field map and the added
+   * optional-section titles, returned (owner-scoped) so the capture form can restore the optional
+   * sections and dynamic field values when an agreement is reopened for edit. Both are absent/null
+   * for an agreement with no stored capture state (a legacy row / a fixed-fields-only client).
+   */
+  captureData?: Record<string, string> | null;
+  activeSections?: string[] | null;
 }
 
 const BASE = "/api";
@@ -87,11 +112,15 @@ interface FieldError {
 async function describeProblem(res: Response): Promise<string> {
   try {
     const body = await res.json();
-    const fieldErrors: FieldError[] = Array.isArray(body?.errors) ? body.errors : [];
+    const fieldErrors: FieldError[] = Array.isArray(body?.errors)
+      ? body.errors
+      : [];
     if (fieldErrors.length) {
       // Show the (user-friendly) messages the backend supplies; de-duplicate.
       const messages = [
-        ...new Set(fieldErrors.map((e) => e.message).filter((m): m is string => !!m)),
+        ...new Set(
+          fieldErrors.map((e) => e.message).filter((m): m is string => !!m),
+        ),
       ];
       if (messages.length) return messages.join(" ");
     }
@@ -107,7 +136,9 @@ async function describeProblem(res: Response): Promise<string> {
  * embedding in an `<iframe>`/`<object>`. The preview is rendered on demand and not stored. The
  * caller owns the returned URL and MUST `URL.revokeObjectURL` it when replacing or unmounting.
  */
-export async function fetchAgreementPreview(agreementId: string): Promise<string> {
+export async function fetchAgreementPreview(
+  agreementId: string,
+): Promise<string> {
   const res = await fetch(`${BASE}/agreements/${agreementId}/preview`);
   if (!res.ok) throw new Error(await describeProblem(res));
   const blob = await res.blob();
@@ -119,13 +150,21 @@ export async function fetchAgreementPreview(agreementId: string): Promise<string
  * upload for the guided flow). Throws a friendly message on failure -- including the `409` case when
  * the draft is locked because signing has already started.
  */
-export async function generateAgreementDocument(agreementId: string): Promise<void> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/document`, { method: "POST" });
+export async function generateAgreementDocument(
+  agreementId: string,
+): Promise<void> {
+  const res = await fetch(`${BASE}/agreements/${agreementId}/document`, {
+    method: "POST",
+  });
   if (!res.ok) throw new Error(await describeProblem(res));
 }
 
-export async function requestSignature(agreementId: string): Promise<SignSession> {
-  const res = await fetch(`${BASE}/signing/${agreementId}/request`, { method: "POST" });
+export async function requestSignature(
+  agreementId: string,
+): Promise<SignSession> {
+  const res = await fetch(`${BASE}/signing/${agreementId}/request`, {
+    method: "POST",
+  });
   if (!res.ok) throw new Error(`Sign request failed: ${res.status}`);
   return res.json();
 }
@@ -135,12 +174,17 @@ export async function requestSignature(agreementId: string): Promise<SignSession
  * java.time.Period semantics (1 Jan to 1 Dec is 11 months). Returns null for an incomplete or
  * non-positive range so the UI can hide the duration until both dates are valid.
  */
-export function durationMonths(startDate: string, endDate: string): number | null {
+export function durationMonths(
+  startDate: string,
+  endDate: string,
+): number | null {
   if (!startDate || !endDate) return null;
   const s = new Date(startDate);
   const e = new Date(endDate);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e <= s) return null;
-  let months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e <= s)
+    return null;
+  let months =
+    (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
   if (e.getDate() < s.getDate()) months -= 1;
   return months;
 }

@@ -14,28 +14,16 @@ package in.agreementmitra.documents;
 public interface HtmlPdfRenderer {
 
   /**
-   * Render {@code html} to PDF bytes through the offline, network-denied Gotenberg leg.
+   * Render {@code html} to PDF bytes through the offline, network-denied Gotenberg leg, stamping a
+   * per-page footer in the reserved bottom margin: the {@code reference} (the tracking number or a
+   * preview marker) with the platform URL, and a "Page X of Y" indicator. The render emulates print
+   * media, so a screen-only body element (the on-screen provenance line) does not appear in the
+   * PDF.
    *
    * @param html a self-contained HTML document (no external references)
+   * @param reference the non-PII footer reference (tracking number or preview marker)
    * @return the rendered PDF bytes (begin with the {@code %PDF-} signature)
    * @throws DocumentRenderException if the render fails or returns no document
    */
-  byte[] toPdf(String html);
-
-  /**
-   * Render {@code html} to PDF, stamping optional non-PII document furniture: a {@code
-   * documentReference} and a "page X of Y" indicator in the page footer (design D4). This is the
-   * only abstract method's furniture-aware sibling: it is a {@code default} so the interface stays
-   * functional and existing implementations need not change; the Gotenberg-backed implementation
-   * overrides it to attach the footer. A {@code null}/blank reference means "no furniture" and
-   * falls back to the plain {@link #toPdf(String)} render.
-   *
-   * @param html a self-contained HTML document (no external references)
-   * @param documentReference an optional, non-PII reference to stamp in the footer (may be null)
-   * @return the rendered PDF bytes
-   * @throws DocumentRenderException if the render fails or returns no document
-   */
-  default byte[] toPdf(String html, String documentReference) {
-    return toPdf(html);
-  }
+  byte[] toPdf(String html, String reference);
 }

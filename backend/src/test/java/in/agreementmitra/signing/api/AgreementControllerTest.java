@@ -28,8 +28,25 @@ class AgreementControllerTest {
   private final AgreementService agreementService = mock(AgreementService.class);
   private final DraftService draftService = mock(DraftService.class);
   private final AgreementDocumentService documentService = mock(AgreementDocumentService.class);
+  private final in.agreementmitra.signing.signingrequest.SigningRequestService
+      signingRequestService =
+          mock(in.agreementmitra.signing.signingrequest.SigningRequestService.class);
+
+  /**
+   * Mocked: draft delivery is a fulfilment side effect, and these tests are about the generate
+   * orchestration. Its own behaviour - per-recipient isolation, never throwing - is pinned in the
+   * contact tests.
+   */
+  private final in.agreementmitra.signing.contact.DraftDeliveryService draftDeliveryService =
+      mock(in.agreementmitra.signing.contact.DraftDeliveryService.class);
+
   private final AgreementController controller =
-      new AgreementController(agreementService, draftService, documentService);
+      new AgreementController(
+          agreementService,
+          draftService,
+          documentService,
+          signingRequestService,
+          draftDeliveryService);
 
   @Test
   void generateDocumentRendersStoresThenPinsAndReturnsId() {

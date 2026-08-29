@@ -25,7 +25,14 @@ class PayloadSizeLimitConfig {
   @Bean
   FilterRegistrationBean<PayloadSizeLimitFilter> payloadSizeLimitFilter() {
     var registration = new FilterRegistrationBean<>(new PayloadSizeLimitFilter(MAX_BODY_BYTES));
-    registration.addUrlPatterns("/api/webhooks/esign", "/api/signing/*");
+    registration.addUrlPatterns(
+        "/api/webhooks/esign",
+        "/api/webhooks/razorpay",
+        "/api/signing/*",
+        // Anonymous, unauthenticated, and reachable by anyone (post-payment-continuity CR). It
+        // needs only a short reference, so there is no reason to read an unbounded body from a
+        // caller who has proven nothing.
+        "/api/agreements/recovery");
     return registration;
   }
 

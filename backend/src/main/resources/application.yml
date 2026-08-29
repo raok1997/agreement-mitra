@@ -63,16 +63,176 @@ signing:
     age-threshold: ${SIGNING_RECONCILIATION_AGE_THRESHOLD:PT15M}
     grace: ${SIGNING_RECONCILIATION_GRACE:PT2M}
     batch-size: ${SIGNING_RECONCILIATION_BATCH_SIZE:50}
+  # Signed-document delivery retry (signed-delivery-and-closure CR). Delivery is triggered by the
+  # completion path; this sweep is the fallback for a transient failure at that moment - a mail
+  # provider that was down, a document briefly unreadable - so a signed agreement is not left
+  # undelivered until somebody notices. Bounded on every axis: attempts stop at `max-attempts`,
+  # backoff doubles from `initial-backoff` to `max-backoff`, and one run touches at most
+  # `batch-size` rows. Exhausted rows land in FAILED and appear on the staff delivery view, which
+  # is the outcome that actually gets the document to the party.
+  delivery:
+    retry-enabled: ${SIGNING_DELIVERY_RETRY_ENABLED:true}
+    interval: ${SIGNING_DELIVERY_INTERVAL:PT5M}
+    initial-delay: ${SIGNING_DELIVERY_INITIAL_DELAY:PT2M}
+    max-attempts: ${SIGNING_DELIVERY_MAX_ATTEMPTS:5}
+    initial-backoff: ${SIGNING_DELIVERY_INITIAL_BACKOFF:PT1M}
+    max-backoff: ${SIGNING_DELIVERY_MAX_BACKOFF:PT1H}
+    batch-size: ${SIGNING_DELIVERY_BATCH_SIZE:50}
+
+# Outbound email (signed-delivery-and-closure CR). ONE SMTP adapter serves both environments:
+# free Zoho Mail in development, Zoho ZeptoMail in production. The upgrade is host plus credentials,
+# not a new integration.
+#
+#   development   host smtp.zoho.<dc>       username = the mailbox address, password = its credential
+#   production    host smtp.zeptomail.<dc>  username = the literal `emailapikey`, password = a send token
+#
+# Ports 465 (implicit SSL) or 587 (STARTTLS). MATCH THE ZOHO DATA CENTRE (.in vs .com) to the
+# account or authentication fails in a way that looks exactly like a wrong password.
+#
+# `provider` DEFAULTS TO `stub`, deliberately: an unconfigured or half-configured deployment sends
+# NOTHING rather than sending a document naming both parties, the property and the money to the
+# wrong place. Real sending is configuration, never a default. The host has an EMPTY default for the
+# same reason - a production host is never assumed. Credentials come from env vars only and are
+# never committed.
+#
+# `max-attachment-bytes` is derived from the provider's ASSEMBLED-MESSAGE limit, not the raw file
+# (design D7a): ZeptoMail caps a message at 15 MB including headers and base64, and base64 inflates
+# binary by roughly a third, so 10 MiB raw leaves real headroom. Above it, delivery falls back to a
+# notification pointing at the in-app copy - never a truncated attachment.
+#
+# NOTE: plain SMTP reports that the provider ACCEPTED a message, never that it arrived. Hard bounces
+# are invisible here; ZeptoMail's bounce webhook closes that in production and is not built yet.
+mail:
+  provider: ${MAIL_PROVIDER:stub}
+  from: ${MAIL_FROM:}
+  from-name: ${MAIL_FROM_NAME:AgreementMitra}
+  max-attachment-bytes: ${MAIL_MAX_ATTACHMENT_BYTES:10485760}
+  smtp:
+    host: ${MAIL_SMTP_HOST:}
+    port: ${MAIL_SMTP_PORT:587}
+    username: ${MAIL_SMTP_USERNAME:}
+    password: ${MAIL_SMTP_PASSWORD:}
+    ssl: ${MAIL_SMTP_SSL:false}
+    starttls: ${MAIL_SMTP_STARTTLS:true}
+    timeout: ${MAIL_SMTP_TIMEOUT:PT20S}
+
+# Delivery channels (post-payment-continuity, design D14). A party is "reachable" when at least one
+# ENABLED channel has a usable contact for them - that single rule gates order creation and eSign
+# initiation, so the two can no longer disagree.
+#
+# Only EMAIL is enabled. SMS and WHATSAPP are declared because the mobile number that would feed
+# them is already captured, and because the rule should not need reshaping when one is switched on.
+# Neither has an adapter: no provider is integrated. A disabled channel NEVER satisfies reachability
+# whatever is stored for it, and must never be shown to a customer as a way they will be contacted.
+#
+# Fail closed: a channel absent from this block is disabled, not enabled. Switching one on is not
+# just a flag - it needs a ChannelDispatcher adapter, or dispatch fails loudly.
+delivery:
+  # Where the customer-facing app lives, used to build the recovery link that is emailed to the
+  # parties. Taken from configuration and NEVER from a request header: a spoofed `Host` would
+  # otherwise rewrite the link in an outbound email and send the customer somewhere else.
+  #
+  # Blank means recovery links cannot be built, so none are sent (fail closed) - the same posture
+  # the mail provider takes. Local dev points at the Vite dev server.
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:5173}
+  channels:
+    email:
+      enabled: ${DELIVERY_EMAIL_ENABLED:true}
+    sms:
+      enabled: ${DELIVERY_SMS_ENABLED:false}
+    whatsapp:
+      enabled: ${DELIVERY_WHATSAPP_ENABLED:false}
 
 # eSign provider config (sandbox). Values come from env — never commit secrets.
+#
+# `provider` selects exactly ONE adapter (zoop | leegality); each adapter's beans are conditional on
+# it, so switching vendors is a config flip and not a code change. Rollback path if ZOOP onboarding
+# stalls: set ESIGN_PROVIDER=leegality.
 esign:
-  provider: leegality
+  provider: ${ESIGN_PROVIDER:zoop}
+  # Application-side pepper keying the encryption of the PER-TRANSACTION webhook key at rest. That
+  # value is a credential (it authenticates inbound state changes for the life of a transaction), so
+  # a database read must not yield a working one. Sandbox dev default; set ESIGN_WEBHOOK_KEY_PEPPER
+  # from env in any shared/real environment -- same treatment as auth.hash-pepper below.
+  webhook-key:
+    pepper: ${ESIGN_WEBHOOK_KEY_PEPPER:dev-only-webhook-key-pepper-change-me}
+  # ZOOP eSign v5. The default base URL is the free, self-serve TEST host - the production host is
+  # never a default, so a misconfigured deployment talks to the sandbox rather than burning real
+  # signature credit. Credentials are env-only.
+  zoop:
+    base-url: ${ZOOP_BASE_URL:https://test.zoop.plus/contract/esign/}
+    app-id: ${ZOOP_APP_ID:}
+    api-key: ${ZOOP_API_KEY:}
+    # 10080 minutes = 7 days. The two parties sign days apart, so this window is measured in days by
+    # design; a minutes-scale window would be unusable.
+    txn-expiry-min: ${ZOOP_TXN_EXPIRY_MIN:10080}
+    # SSRF allowlist for signed-document / audit-trail URLs: ZOOP returns expiring links on a host
+    # that differs from the API host. Keep it an allowlist - never "any https URL the vendor sent".
+    artifact-hosts: ${ZOOP_ARTIFACT_HOSTS:test.zoop.plus,esign.zoop.plus,live.zoop.plus}
+    # Must be publicly reachable (cloudflared/ngrok in local dev) or the callback never arrives.
+    response-url: ${ZOOP_RESPONSE_URL:}
+    redirect-url: ${ZOOP_REDIRECT_URL:}
+    org-name: ${ZOOP_ORG_NAME:AgreementMitra}
   leegality:
     base-url: ${LEEGALITY_BASE_URL:}
     # Non-credential config (a dashboard-created profile reference) — env-overridable.
     profile-id: ${LEEGALITY_PROFILE_ID:}
+    # SSRF allowlist for artifact URLs. Empty means "the API host only" - the original single-host
+    # pin, so an existing deployment keeps exactly the behaviour it had.
+    artifact-hosts: ${LEEGALITY_ARTIFACT_HOSTS:}
     auth-token: ${LEEGALITY_AUTH_TOKEN:}
     webhook-secret: ${LEEGALITY_WEBHOOK_SECRET:}
+
+# Payment. `mode` is the GATE (payment-gate capability): how strictly the payment precondition is
+# enforced. REQUIRED (the default) refuses e-stamp intake and eSign initiation until the agreement
+# is PAID or WAIVED; OPTIONAL records payment state and lets the pipeline proceed whatever it is.
+# Switching is configuration only - no code change, no schema change.
+#
+# THE GATE SHIPS `REQUIRED`. Payment must clear before staff spend real money on an e-stamp - that
+# is the whole point of gating at intake. The accepted risk is explicit: until a live payment has
+# been observed settling, a payment bug hard-blocks ALL fulfilment rather than merely leaking
+# unpaid work. The escape hatch is operational, not a redeploy - STAFF can waive payment on one
+# agreement (`POST /api/staff/payments/{id}/waive`) when money arrives out of band or the provider
+# is down, and `PAYMENT_MODE=OPTIONAL` relaxes the gate globally if it ever has to be.
+#
+# `razorpay.*` are the gateway credentials. THREE distinct values, and two of them are secrets:
+#   key-id         - PUBLIC by design; handed to the browser so Checkout can open.
+#   key-secret     - server-only. HTTP Basic password, and the key that signs the value Checkout
+#                    returns to the browser.
+#   webhook-secret - server-only and DISTINCT from key-secret. It, and only it, verifies inbound
+#                    webhooks (HMAC-SHA256 over the RAW body). Using the key secret here is a
+#                    well-trodden integration error; the two never default to each other.
+# Both secrets come from env vars only and are NEVER committed. Empty defaults mean an unconfigured
+# deployment refuses to place orders and rejects every webhook, rather than half-working. TEST MODE
+# ONLY in this repository: use `rzp_test_` keys; the live host is never a default.
+#
+# The webhook endpoint must be publicly reachable (cloudflared/ngrok in local dev) or the callback
+# never arrives - the same requirement the eSign webhook already has.
+payment:
+  mode: ${PAYMENT_MODE:REQUIRED}
+  # The flat price, as INTEGER MINOR UNITS (paise) plus an explicit currency. Never a float: the
+  # provider requires paise and rejects floats. Today this is a configured constant; the pricing
+  # operation exists so state-and-rent-dependent stamp duty later changes the calculation only.
+  amount:
+    minor-units: ${PAYMENT_AMOUNT_MINOR_UNITS:49900}
+    currency: ${PAYMENT_CURRENCY:INR}
+  order:
+    # How long an outstanding order stays reusable. A reload during checkout resumes it rather than
+    # accumulating orders; past this it is abandoned and a fresh one may be placed.
+    ttl: ${PAYMENT_ORDER_TTL:PT2H}
+  reconciliation:
+    # Fallback scan so a missed webhook cannot strand a customer who has paid. Re-reads outstanding
+    # orders from the provider and applies confirmation through the SAME path as the webhook.
+    enabled: ${PAYMENT_RECONCILIATION_ENABLED:true}
+    interval: ${PAYMENT_RECONCILIATION_INTERVAL:PT5M}
+    initial-delay: ${PAYMENT_RECONCILIATION_INITIAL_DELAY:PT2M}
+    age-threshold: ${PAYMENT_RECONCILIATION_AGE_THRESHOLD:PT10M}
+    batch-size: ${PAYMENT_RECONCILIATION_BATCH_SIZE:50}
+  razorpay:
+    base-url: ${RAZORPAY_BASE_URL:https://api.razorpay.com/}
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RZP_KEY_SECRET:}
+    webhook-secret: ${RZP_WEBHOOK_SECRET:}
 
 # Object storage for PDFs (MinIO locally / S3-compatible in prod)
 storage:
@@ -89,6 +249,36 @@ gotenberg:
   # each render with a client read timeout so a stuck render surfaces as a clean failure.
   max-concurrent-renders: ${GOTENBERG_MAX_CONCURRENT_RENDERS:4}
   request-timeout: ${GOTENBERG_REQUEST_TIMEOUT:PT30S}
+
+# Optional Google login (google-oauth-login CR). Backend-mediated OAuth (Authorization-Code +
+# PKCE); the SPA never sees a Google token. Secrets come from env only and are NEVER committed. The
+# Google client id + secret have EMPTY defaults so a real deployment fails fast at startup if they
+# are unset (rather than falling back to a real project); the local + test profiles supply dummy
+# sandbox values so those environments still boot. Endpoint URIs default to Google's real endpoints
+# and are overridden in tests to point at a stubbed Google.
+auth:
+  # Server-side pepper for the keyed hash of session/handoff/state values. Sandbox dev default; set
+  # AUTH_HASH_PEPPER from env in any shared/real environment.
+  hash-pepper: ${AUTH_HASH_PEPPER:dev-only-identity-pepper-change-me}
+  session-ttl: ${AUTH_SESSION_TTL:PT24H}
+  handoff-ttl: ${AUTH_HANDOFF_TTL:PT60S}
+  login-state-ttl: ${AUTH_LOGIN_STATE_TTL:PT5M}
+  google:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+    client-secret: ${GOOGLE_OAUTH_SECRET:}
+    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI:http://localhost:8090/api/auth/google/callback}
+    spa-callback-uri: ${GOOGLE_OAUTH_SPA_CALLBACK_URI:http://localhost:5173/auth/callback}
+    issuer: ${GOOGLE_OAUTH_ISSUER:https://accounts.google.com}
+    authorization-uri: ${GOOGLE_OAUTH_AUTHORIZATION_URI:https://accounts.google.com/o/oauth2/v2/auth}
+    token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
+    jwks-uri: ${GOOGLE_OAUTH_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
+
+# Per-page render footer. platform-url is the non-secret provenance URL shown as the footer's
+# centre cell; the documents module keeps no brand literal (blank default omits the cell), so the
+# brand value lives here. Env-overridable.
+documents:
+  footer:
+    platform-url: ${DOCUMENT_FOOTER_PLATFORM_URL:agreementmitra.com}
 
 logging:
   level:

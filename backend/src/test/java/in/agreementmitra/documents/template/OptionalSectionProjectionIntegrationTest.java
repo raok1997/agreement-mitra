@@ -2,6 +2,7 @@ package in.agreementmitra.documents.template;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import in.agreementmitra.documents.DocumentFooterProperties;
 import in.agreementmitra.documents.HtmlPdfRenderer;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
@@ -30,7 +31,7 @@ import org.junit.jupiter.api.Test;
 class OptionalSectionProjectionIntegrationTest {
 
   /** Preview never renders a PDF; this stub satisfies the constructor without any I/O. */
-  private static final HtmlPdfRenderer NO_PDF = html -> new byte[0];
+  private static final HtmlPdfRenderer NO_PDF = (html, reference) -> new byte[0];
 
   private static final Clock FIXED_CLOCK =
       Clock.fixed(
@@ -38,9 +39,10 @@ class OptionalSectionProjectionIntegrationTest {
 
   private final DocumentProjectionService service =
       new DocumentProjectionService(
-          new TemplateResolver(new ClasspathLayerSource("documents/template/sets/optional/")),
+          new TemplateResolver(new ClasspathLayerSource("documents/template/testsets/optional/")),
           new TemplateCompiler(),
           NO_PDF,
+          new DocumentFooterProperties("agreementmitra.com"),
           FIXED_CLOCK);
 
   private static Map<String, Object> data() {

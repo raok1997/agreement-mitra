@@ -71,6 +71,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     // Default-deny HTTP security baseline (CR-5): one SecurityFilterChain, fail-closed.
     implementation("org.springframework.boot:spring-boot-starter-security")
+    // Google OAuth login (google-oauth-login CR): brings the OAuth2 token-response client
+    // primitives and the Nimbus JwtDecoder (spring-security-oauth2-jose) used to validate the
+    // Google ID token against Google's JWKS. We drive the redirect ourselves and mint our own
+    // opaque session -- Spring's oauth2Login auto-config stays dormant (no
+    // spring.security.oauth2.client.registration.* props are set). A shipping dependency, so the
+    // OSV/SpotBugs gate scopes it; version is Boot-BOM-managed.
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
     // Actuator: only `health` exposed (see application.yml management.*).
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
@@ -97,6 +104,16 @@ dependencies {
     // GHSA-c3fc-8qff-9hwx). A direct shipping dependency so the override applies to the shipped
     // graph, not just tests (remediated by upgrade per policy).
     implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+
+    // Outbound email (signed-delivery-and-closure CR): the ONE SMTP adapter behind the
+    // vendor-neutral EmailSender seam - free Zoho Mail in development, Zoho ZeptoMail in
+    // production (design D7); host/port/username/password are all configuration. The starter
+    // brings jakarta.mail-api + Angus Mail and Spring's JavaMailSender/MimeMessageHelper, which
+    // assembles the multipart MIME message (base64 attachment) we would otherwise hand-roll.
+    // Boot's spring.mail.* auto-configuration stays dormant - the adapter builds its own
+    // JavaMailSenderImpl from `mail.smtp.*` so the production host is never a default. A shipping
+    // dependency, so it is in the OSV/SpotBugs scan scope; version is Boot-BOM-managed.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // Rules engine (future `rules` module):
     // implementation("org.drools:drools-ruleunits-engine:9.x")
@@ -139,7 +156,46 @@ spotless {
     }
 }
 
-tasks.withType<Test> { useJUnitPlatform() }
+// --- Testcontainers reaper guard --------------------------------------------
+// Ryuk is the ONLY cleanup that survives a killed test JVM. Testcontainers' own
+// shutdown hook covers a clean exit; it does not run when the JVM is OOM-killed or
+// the build is interrupted - which on a memory-tight dev box is the common case, not
+// the rare one. With TESTCONTAINERS_RYUK_DISABLED=true set, every such run strands a
+// Postgres + a MinIO container. They are invisible (random names, no compose project)
+// and they accumulate: 32 of them once held ~1.8 GiB of a 3.7 GiB Docker VM here, with
+// one spinning at 72% CPU, and the machine slowed to a crawl.
+//
+// So the build refuses to run rather than leak. This is a fail-closed gate, like the
+// security scans: the disabled state is the dangerous one, so it must be loud.
+//
+// If Ryuk genuinely cannot start (Docker socket not where Testcontainers expects it),
+// the fix is `./run-tests.sh`, which resolves the socket per Docker context and leaves
+// Windows/Docker Desktop npipe alone - NOT disabling the reaper. To override anyway,
+// for one command, in full knowledge that you are the cleanup:
+//     ./gradlew test -Pallow.ryuk.disabled=true
+val ryukDisabled = System.getenv("TESTCONTAINERS_RYUK_DISABLED")?.lowercase() == "true"
+val ryukOverride = providers.gradleProperty("allow.ryuk.disabled").orNull?.lowercase() == "true"
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    doFirst {
+        if (ryukDisabled && !ryukOverride) {
+            throw GradleException(
+                """
+                TESTCONTAINERS_RYUK_DISABLED=true - refusing to run.
+
+                Ryuk is the reaper that removes test containers when the test JVM dies
+                without running its shutdown hook (OOM-kill, Ctrl-C, crash). Disabled, every
+                such run strands a Postgres + a MinIO container until Docker wedges.
+
+                  Use instead:  ./run-tests.sh test        (resolves the Docker socket for you)
+                  Override:     ./gradlew test -Pallow.ryuk.disabled=true
+                  Sweep leaks:  ./scripts/sweep-test-containers.sh
+                """.trimIndent()
+            )
+        }
+    }
+}
 
 // --- Coverage gate (JaCoCo) -------------------------------------------------
 // The gate exists from the first story but the floor is a deliberate 0.00 while

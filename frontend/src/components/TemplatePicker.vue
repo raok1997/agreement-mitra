@@ -11,7 +11,9 @@ import { listTemplates, type TemplateSummary } from "../api/templateCatalog";
 // signing draft path resolves + pins THAT effective template -- so the previewed document is the
 // signed document for any published (state, type) (IN + TG), not just a single default. The former
 // TG-only "Coming soon" lock is removed.
-const emit = defineEmits<{ (e: "select", dimensions: { state: string; type: string }): void }>();
+const emit = defineEmits<{
+  (e: "select", dimensions: { state: string; type: string }): void;
+}>();
 
 const rows = ref<TemplateSummary[]>([]);
 const loading = ref(true);
@@ -21,8 +23,12 @@ const query = ref("");
 const typeFilter = ref("");
 const stateFilter = ref("");
 
-const types = computed(() => [...new Set(rows.value.map((r) => r.type))].sort());
-const states = computed(() => [...new Set(rows.value.map((r) => r.state))].sort());
+const types = computed(() =>
+  [...new Set(rows.value.map((r) => r.type))].sort(),
+);
+const states = computed(() =>
+  [...new Set(rows.value.map((r) => r.state))].sort(),
+);
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
@@ -55,11 +61,14 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4">
+  <div
+    class="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4"
+  >
     <div>
       <h2 class="text-base font-semibold text-slate-800">Choose a template</h2>
       <p class="text-sm text-slate-500">
-        Pick the agreement type for your state. More states and types are on the way.
+        Pick the agreement type for your state. More states and types are on the
+        way.
       </p>
     </div>
 
@@ -98,10 +107,18 @@ onMounted(load);
       <option>English</option>
     </select>
 
-    <p v-if="loading" class="py-6 text-sm text-slate-500" data-testid="picker-loading">
+    <p
+      v-if="loading"
+      class="py-6 text-sm text-slate-500"
+      data-testid="picker-loading"
+    >
       Loading templates...
     </p>
-    <p v-else-if="error" class="py-6 text-sm text-red-600" data-testid="picker-error">
+    <p
+      v-else-if="error"
+      class="py-6 text-sm text-red-600"
+      data-testid="picker-error"
+    >
       {{ error }}
     </p>
     <p
@@ -112,7 +129,11 @@ onMounted(load);
       No templates match your search.
     </p>
 
-    <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="picker-list">
+    <div
+      v-else
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+      data-testid="picker-list"
+    >
       <div
         v-for="r in filtered"
         :key="r.id"
@@ -122,7 +143,9 @@ onMounted(load);
         <div class="flex items-start justify-between gap-2">
           <h3 class="text-sm font-semibold text-slate-800">{{ r.name }}</h3>
         </div>
-        <p v-if="r.description" class="text-xs text-slate-500">{{ r.description }}</p>
+        <p v-if="r.description" class="text-xs text-slate-500">
+          {{ r.description }}
+        </p>
         <div class="flex flex-wrap gap-1 text-xs text-slate-500">
           <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.state }}</span>
           <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.type }}</span>

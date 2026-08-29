@@ -23,8 +23,11 @@ class SigningRequestAggregationTest {
     request.markRequested(
         "DOC-1",
         List.of(
-            SigningRequestInvitee.create(UUID.randomUUID(), "url-0", "2026", 0, "INV-0"),
-            SigningRequestInvitee.create(UUID.randomUUID(), "url-1", "2026", 1, "INV-1")));
+            SigningRequestInvitee.create(
+                UUID.randomUUID(), "url-0", "2026", 0, "INV-0", "invitee-0@example.com"),
+            SigningRequestInvitee.create(
+                UUID.randomUUID(), "url-1", "2026", 1, "INV-1", "invitee-1@example.com")),
+        null); // Leegality-style provider: no per-transaction webhook key
     return request;
   }
 

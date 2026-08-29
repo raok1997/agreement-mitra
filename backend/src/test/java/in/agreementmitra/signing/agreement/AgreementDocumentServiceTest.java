@@ -12,6 +12,7 @@ import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -83,6 +84,70 @@ class AgreementDocumentServiceTest {
     assertThat(req.getValue().dimensions()).isNotNull();
     assertThat(req.getValue().dimensions().state()).isEqualTo("TG");
     assertThat(req.getValue().dimensions().type()).isEqualTo("residential");
+  }
+
+  @Test
+  void stampsThePersistedTrackingReferenceAsTheFooterReference() {
+    // The footer's left-cell label is the agreement's ONE persisted tracking reference -- the same
+    // value the customer holds and staff quote at stamp intake. NOT a separately-derived veneer:
+    // the old AM-<LAST6>-<DDMMYY> form was computed at render time and was not collision-free.
+    UUID id = UUID.randomUUID();
+    Agreement agreement = draft();
+    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    when(documentProjection.generate(any())).thenReturn(aResult());
+
+    service.renderForDraft(id);
+
+    ArgumentCaptor<DocumentProjectionRequest> req =
+        ArgumentCaptor.forClass(DocumentProjectionRequest.class);
+    org.mockito.Mockito.verify(documentProjection).generate(req.capture());
+    assertThat(req.getValue().documentReference())
+        .isEqualTo(agreement.trackingReference())
+        .isNotBlank();
+    // The retired derived form must not reappear anywhere in the document reference.
+    assertThat(req.getValue().documentReference()).doesNotContain("-");
+  }
+
+  // --- Render selection (M5, D3): stored capture state feeds data + sections; null -> fallback ---
+
+  @Test
+  void rendersFromTheStoredCaptureStateWithFixedColumnsWinning() {
+    UUID id = UUID.randomUUID();
+    Agreement agreement = draft();
+    // The stored map carries a DYNAMIC field plus a STALE fixed-column entry that must NOT win.
+    agreement.replaceCaptureState(
+        Map.of("lockInMonths", "6", "propertyAddress", "STALE ADDRESS"), List.of("Lock-in"));
+    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    when(documentProjection.generate(any())).thenReturn(aResult());
+
+    service.renderForDraft(id);
+
+    ArgumentCaptor<DocumentProjectionRequest> req =
+        ArgumentCaptor.forClass(DocumentProjectionRequest.class);
+    org.mockito.Mockito.verify(documentProjection).generate(req.capture());
+    // The dynamic field flows through; the added optional section is passed as the sections arg.
+    assertThat(req.getValue().data()).containsEntry("lockInMonths", "6");
+    assertThat(req.getValue().activeSections()).containsExactly("Lock-in");
+    // D3 reconciliation: the authoritative fixed column wins over the stale map entry.
+    assertThat(req.getValue().data()).containsEntry("propertyAddress", "12 MG Road, Bengaluru");
+  }
+
+  @Test
+  void fallsBackToTheFixedColumnMapperWithNoSectionsWhenCaptureStateIsNull() {
+    UUID id = UUID.randomUUID();
+    Agreement agreement = draft(); // no capture state
+    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    when(documentProjection.generate(any())).thenReturn(aResult());
+
+    service.renderForDraft(id);
+
+    ArgumentCaptor<DocumentProjectionRequest> req =
+        ArgumentCaptor.forClass(DocumentProjectionRequest.class);
+    org.mockito.Mockito.verify(documentProjection).generate(req.capture());
+    // Fixed-column mapping, no optional sections (null normalized to empty) -- unchanged behaviour.
+    assertThat(req.getValue().data()).containsEntry("propertyAddress", "12 MG Road, Bengaluru");
+    assertThat(req.getValue().data()).doesNotContainKey("lockInMonths");
+    assertThat(req.getValue().activeSections()).isEmpty();
   }
 
   @Test

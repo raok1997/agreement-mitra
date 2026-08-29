@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import CaptureForm from "./CaptureForm.vue";
 import * as client from "../api/client";
+import * as agreements from "../api/agreements";
 import * as documentPreview from "../api/documentPreview";
+import * as payments from "../api/payments";
 import * as templateForm from "../api/templateForm";
 import type { FormSchema } from "../api/templateForm";
+import ContactConfirmation, {
+  type PartyContact,
+} from "./ContactConfirmation.vue";
 
 // Mock the network layer only.
 vi.mock("../api/client", async (importOriginal) => {
@@ -23,12 +28,33 @@ vi.mock("../api/templateForm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/templateForm")>();
   return { ...actual, getTemplateForm: vi.fn() };
 });
+// The pre-payment path. AgreementHttpError stays REAL: the component distinguishes a 409 by
+// instanceof, so a stubbed error class would make the test agree with itself instead of with the
+// code.
+vi.mock("../api/agreements", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/agreements")>();
+  return {
+    ...actual,
+    getAgreement: vi.fn(),
+    updateAgreementContacts: vi.fn(),
+    finaliseAgreement: vi.fn(),
+    claimAgreement: vi.fn(),
+  };
+});
+vi.mock("../api/payments", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/payments")>();
+  return { ...actual, payForAgreement: vi.fn(), getPaymentProgress: vi.fn() };
+});
 
 const mockedCreate = vi.mocked(client.createAgreement);
 const mockedGenerate = vi.mocked(client.generateAgreementDocument);
 const mockedPreviewHtml = vi.mocked(documentPreview.fetchDocumentPreviewHtml);
 const mockedPreviewPdf = vi.mocked(documentPreview.fetchDocumentPreviewPdf);
 const mockedGetForm = vi.mocked(templateForm.getTemplateForm);
+const mockedGetAgreement = vi.mocked(agreements.getAgreement);
+const mockedUpdateContacts = vi.mocked(agreements.updateAgreementContacts);
+const mockedFinalise = vi.mocked(agreements.finaliseAgreement);
+const mockedPay = vi.mocked(payments.payForAgreement);
 
 // A small reference-shaped schema exercising every widget: text, money, checkbox, select, textarea,
 // date, number. Section ids are slugged titles: parties / financial-terms / property / term.
@@ -206,6 +232,7 @@ function schemaWithOptional(): FormSchema {
 function fakeAgreement(): client.AgreementView {
   return {
     id: "agr-1",
+    trackingNumber: "AM-A5E4D7-010126",
     propertyAddress: "12 MG Road",
     monthlyRent: 25000,
     securityDeposit: 0,
@@ -215,6 +242,50 @@ function fakeAgreement(): client.AgreementView {
     createdAt: "2026-07-10T00:00:00Z",
     signers: [],
   };
+}
+
+/**
+ * The agreement as the contact step reads it back: both parties already have an address, which is
+ * the state a customer is in on a SECOND attempt after their first payment failed.
+ */
+function agreementWithContacts(): client.AgreementView {
+  return {
+    ...fakeAgreement(),
+    signers: [
+      {
+        id: "signer-owner",
+        name: "Asha Rao",
+        firstName: "Asha",
+        lastName: "Rao",
+        fatherName: "Ravi Rao",
+        currentAddress: "12 MG Road",
+        email: "asha@example.com",
+        mobile: null,
+        role: "OWNER" as client.Role,
+      },
+      {
+        id: "signer-tenant",
+        name: "Tara Sen",
+        firstName: "Tara",
+        lastName: "Sen",
+        fatherName: "Hari Sen",
+        currentAddress: "3 C Street",
+        email: "tara@example.com",
+        mobile: null,
+        role: "TENANT" as client.Role,
+      },
+    ],
+  };
+}
+
+/** Drive the form to saved, then open the pre-payment contact step on it. */
+async function reachContactStep(wrapper: ReturnType<typeof mount>) {
+  await fillAllRequired(wrapper);
+  await wrapper.find('[data-testid="save-continue"]').trigger("click");
+  await flushPromises();
+  await wrapper.find('[data-testid="finalise-and-pay"]').trigger("click");
+  await flushPromises();
+  return wrapper.findComponent(ContactConfirmation);
 }
 
 async function mountReady() {
@@ -257,6 +328,10 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     mockedPreviewHtml.mockReset();
     mockedPreviewPdf.mockReset();
     mockedGetForm.mockReset();
+    mockedGetAgreement.mockReset();
+    mockedUpdateContacts.mockReset();
+    mockedFinalise.mockReset();
+    mockedPay.mockReset();
     mockedGetForm.mockResolvedValue(sampleSchema());
     mockedPreviewHtml.mockResolvedValue("<html><body>preview</body></html>");
     mockedPreviewPdf.mockResolvedValue(
@@ -296,10 +371,11 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     ).toBe("TEXTAREA");
   });
 
-  it("PARITY GUARDRAIL: hides template fields the draft does not persist (furnished, registration)", async () => {
-    // furnished + registrationResponsibility render from the effective template's DEFAULTS in the
-    // signed draft, so exposing them for edit would let the live preview diverge from the draft. They
-    // are hidden until M5 persists per-agreement attributes.
+  it("M5: un-hides fields the aggregate now persists (furnished, registration)", async () => {
+    // agreement-capture-persistence (M5) persists the full capture state, so furnished +
+    // registrationResponsibility now round-trip and render from the user's value on both faces --
+    // the STOPGAP hide-list is retired for them (design D5). Only genuinely system-owned
+    // template-default fields (e.g. stampDuty) stay hidden.
     const wrapper = await mountReady();
     await wrapper
       .find('[data-testid="section-financial-terms"]')
@@ -307,12 +383,10 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(wrapper.find('[data-testid="field-monthlyRent"]').exists()).toBe(
       true,
     );
-    expect(wrapper.find('[data-testid="field-furnished"]').exists()).toBe(
-      false,
-    );
+    expect(wrapper.find('[data-testid="field-furnished"]').exists()).toBe(true);
     expect(
       wrapper.find('[data-testid="field-registrationResponsibility"]').exists(),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("enforces required and bounds client-side (modal error + incomplete section)", async () => {
@@ -399,6 +473,31 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     await flushPromises();
 
     expect(mockedPreviewPdf).toHaveBeenCalledOnce();
+    // Before save there is no reference: the preview/download passes no documentReference (4th arg),
+    // so the server shows its PREVIEW marker.
+    expect(mockedPreviewPdf.mock.calls.at(-1)?.[3]).toBeUndefined();
+  });
+
+  it("after save shows the tracking number and feeds it into the preview", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement()); // trackingNumber AM-A5E4D7-010126
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+
+    mockedPreviewHtml.mockClear();
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    // The confirmation surfaces the reference to the user (UUID information at the client end).
+    expect(wrapper.find('[data-testid="tracking-number"]').text()).toBe(
+      "AM-A5E4D7-010126",
+    );
+    // The post-save preview refresh carries the tracking number as documentReference (4th arg), so
+    // the on-screen preview body shows the real number instead of the marker.
+    const carriedTheNumber = mockedPreviewHtml.mock.calls.some(
+      (c) => c[3] === "AM-A5E4D7-010126",
+    );
+    expect(carriedTheNumber).toBe(true);
   });
 
   it("keeps the working draft in localStorage and clears it after a successful save", async () => {
@@ -410,7 +509,9 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
       tenantName: "Tara Sen",
       ownerName: "Asha Rao",
     });
-    expect(localStorage.getItem("am.preview.draft.v1")).not.toBeNull();
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).not.toBeNull();
 
     await fillSection(wrapper, "financial-terms", { monthlyRent: "25000" });
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
@@ -423,13 +524,17 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     await wrapper.find('[data-testid="save-continue"]').trigger("click");
     await flushPromises();
 
-    expect(localStorage.getItem("am.preview.draft.v1")).toBeNull();
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).toBeNull();
   });
 
   it("Reset draft clears the client-held working set and storage", async () => {
     const wrapper = await mountReady();
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
-    expect(localStorage.getItem("am.preview.draft.v1")).not.toBeNull();
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).not.toBeNull();
     expect(wrapper.find('[data-testid="status-property"]').text()).toBe(
       "Ready",
     );
@@ -437,7 +542,9 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     await wrapper.find('[data-testid="reset"]').trigger("click");
     await flushPromises();
 
-    expect(localStorage.getItem("am.preview.draft.v1")).toBeNull();
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).toBeNull();
     expect(wrapper.find('[data-testid="status-property"]').text()).toBe(
       "Needs input",
     );
@@ -456,6 +563,113 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(wrapper.find('[data-testid="schema-error"]').text()).not.toContain(
       "residential",
     );
+  });
+  // The pre-payment contact step on a RETRY. The first payment failed and the order is already
+  // placed. The server now allows the save (contacts freeze at payment, not at finalise), but the
+  // step still must not send a write it has no reason to send -- that pointless PATCH is what met
+  // the old freeze and stranded a customer short of the pay button.
+  it("retries payment without re-saving contacts that did not change", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    mockedGetAgreement.mockResolvedValue(agreementWithContacts());
+    mockedFinalise.mockResolvedValue({
+      agreementId: "agr-1",
+      trackingReference: "AM-A5E4D7-010126",
+      status: "PDF_GENERATED",
+    });
+    mockedPay.mockResolvedValue("FAILED");
+
+    const wrapper = await mountReady();
+    const step = await reachContactStep(wrapper);
+    expect(step.exists()).toBe(true);
+
+    // Confirm exactly what the server gave us -- the customer changed nothing, they just want to
+    // pay again.
+    step.vm.$emit(
+      "confirm",
+      agreementWithContacts().signers.map((signer) => ({
+        id: signer.id,
+        name: signer.name,
+        role: signer.role,
+        email: signer.email ?? "",
+        mobile: signer.mobile ?? "",
+      })) as PartyContact[],
+    );
+    await flushPromises();
+
+    // No pointless PATCH: it would meet the freeze and strand the customer short of payment.
+    expect(mockedUpdateContacts).not.toHaveBeenCalled();
+    // ...and the retry actually happens. Finalise is idempotent, so this places no second order.
+    expect(mockedFinalise).toHaveBeenCalledWith("agr-1");
+    expect(mockedPay).toHaveBeenCalledOnce();
+  });
+
+  it("says a paid agreement's contacts are frozen instead of 'please try again'", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    mockedGetAgreement.mockResolvedValue(agreementWithContacts());
+    // Contacts now freeze on PAYMENT, not on the order existing, so this is the only 409 the step
+    // can meet -- and it is permanent, which is why the message must not invite a retry.
+    mockedUpdateContacts.mockRejectedValue(
+      new agreements.AgreementHttpError(
+        409,
+        "urn:agreementmitra:problem:contacts-frozen",
+      ),
+    );
+
+    const wrapper = await mountReady();
+    const step = await reachContactStep(wrapper);
+
+    // This time the customer edits an address, which the frozen order genuinely cannot accept.
+    step.vm.$emit("confirm", [
+      {
+        id: "signer-owner",
+        name: "Asha Rao",
+        role: "OWNER",
+        email: "asha.new@example.com",
+        mobile: "",
+      },
+      {
+        id: "signer-tenant",
+        name: "Tara Sen",
+        role: "TENANT",
+        email: "tara@example.com",
+        mobile: "",
+      },
+    ] as PartyContact[]);
+    await flushPromises();
+
+    const message = step.props("error") ?? "";
+    expect(message).toContain("already paid");
+    // "Please try again" would be a lie: the freeze is permanent and retrying refuses forever.
+    expect(message).not.toContain("try again");
+    expect(mockedFinalise).not.toHaveBeenCalled();
+  });
+
+  it("still offers a retry for a failure that is not the contacts freeze", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    mockedGetAgreement.mockResolvedValue(agreementWithContacts());
+    mockedUpdateContacts.mockRejectedValue(
+      new agreements.AgreementHttpError(500),
+    );
+
+    const wrapper = await mountReady();
+    const step = await reachContactStep(wrapper);
+
+    step.vm.$emit("confirm", [
+      {
+        id: "signer-owner",
+        name: "Asha Rao",
+        role: "OWNER",
+        email: "asha.new@example.com",
+        mobile: "",
+      },
+    ] as PartyContact[]);
+    await flushPromises();
+
+    // A transient failure IS worth retrying, so the retryable message survives.
+    expect(step.props("error") ?? "").toContain("try again");
   });
 });
 
@@ -567,7 +781,7 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     await flushPromises();
 
     const stored = JSON.parse(
-      localStorage.getItem("am.preview.draft.v1") ?? "{}",
+      localStorage.getItem("am.preview.draft.v1.IN.residential") ?? "{}",
     );
     expect(stored.activeSections).toContain("Pets");
     wrapper.unmount();
@@ -577,5 +791,86 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     expect(resumed.find('[data-testid="active-optional-pets"]').exists()).toBe(
       true,
     );
+  });
+});
+
+// agreement-capture-persistence (M5): Save sends the full capture state (captureData +
+// activeSections); reopening an owned agreement for edit restores the added optional sections and
+// dynamic values from the stored capture state. The anonymous drafting path is unchanged.
+describe("CaptureForm: capture-state persistence (M5)", () => {
+  beforeEach(() => {
+    mockedCreate.mockReset();
+    mockedGenerate.mockReset();
+    mockedPreviewHtml.mockReset();
+    mockedPreviewPdf.mockReset();
+    mockedGetForm.mockReset();
+    mockedGetForm.mockResolvedValue(schemaWithOptional());
+    mockedPreviewHtml.mockResolvedValue("<html><body>preview</body></html>");
+    mockedPreviewPdf.mockResolvedValue(
+      new Blob(["%PDF-"], { type: "application/pdf" }),
+    );
+    localStorage.clear();
+    URL.createObjectURL = vi.fn(() => "blob:stub");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("sends captureData (the flat working set) + activeSections on Save", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+
+    // Complete the two mandatory sections and add + fill an optional one.
+    await fillSection(wrapper, "parties", { tenantName: "Tara Sen" });
+    await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
+    await wrapper.find('[data-testid="add-optional-pets"]').trigger("click");
+    await flushPromises();
+    await fillSection(wrapper, "pets", { petNotes: "One indoor cat" });
+
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedCreate).toHaveBeenCalledOnce();
+    const input = mockedCreate.mock.calls[0][0];
+    // The full working set (fixed + dynamic) is sent as captureData ...
+    expect(input.captureData).toMatchObject({
+      tenantName: "Tara Sen",
+      propertyAddress: "12 MG Road",
+      petNotes: "One indoor cat",
+    });
+    // ... and the added optional section title as activeSections.
+    expect(input.activeSections).toContain("Pets");
+  });
+
+  it("edit-reload re-activates a stored optional section and repopulates its dynamic value", async () => {
+    const wrapper = mount(CaptureForm, {
+      props: {
+        agreementId: "agr-1",
+        initialAgreement: {
+          ...fakeAgreement(),
+          captureData: {
+            tenantName: "Tara Sen",
+            propertyAddress: "12 MG Road",
+            petNotes: "One indoor cat",
+          },
+          activeSections: ["Pets"],
+        },
+      },
+    });
+    await flushPromises();
+
+    // The stored optional section is re-activated (moved out of the Add-optional catalog).
+    expect(wrapper.find('[data-testid="active-optional-pets"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="catalog-pets"]').exists()).toBe(false);
+
+    // Its dynamic value is repopulated: opening the section shows the stored value.
+    await wrapper.find('[data-testid="section-pets"]').trigger("click");
+    expect(
+      (
+        wrapper.find('[data-testid="field-petNotes"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("One indoor cat");
   });
 });

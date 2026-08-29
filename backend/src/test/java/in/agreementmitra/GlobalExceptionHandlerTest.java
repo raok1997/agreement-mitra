@@ -136,8 +136,25 @@ class GlobalExceptionHandlerTest {
     assertThat(problem.getType().toString())
         .isEqualTo("urn:agreementmitra:problem:contact-required")
         .isNotEqualTo("urn:agreementmitra:problem:draft-required");
+    // Reworded deliberately. "email or mobile" described a rule that no longer exists - a mobile
+    // alone does not make a party reachable while SMS is disabled - and "before signing" named the
+    // wrong gate, since the check now first fires at order creation.
     assertThat(problem.getDetail())
-        .isEqualTo("Every party must have an email or mobile before signing can be requested.");
+        .isEqualTo("Every party needs a contact we can reach them on before payment.");
+  }
+
+  @Test
+  void contactRequiredCarriesUnreachablePartiesAsStructuredDataNotInTheDetail() {
+    ProblemDetail problem =
+        handler.handleConflict(ConflictException.contactRequired(java.util.List.of("tenant 1")));
+
+    // The detail stays a fixed constant, per this handler's contract that no client-facing text is
+    // derived from an exception message. Which party to fix travels as a property instead, carrying
+    // role-and-position labels only - never a name, address, or number.
+    assertThat(problem.getDetail())
+        .isEqualTo("Every party needs a contact we can reach them on before payment.");
+    assertThat(problem.getProperties())
+        .containsEntry("unreachableParties", java.util.List.of("tenant 1"));
   }
 
   @Test
@@ -147,7 +164,8 @@ class GlobalExceptionHandlerTest {
     ProblemDetail problem = handler.handleInvalidUpload(ex);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-    assertThat(problem.getDetail()).isEqualTo("The upload must be a single PDF file.");
+    assertThat(problem.getDetail())
+        .isEqualTo("The upload must be a single file of an accepted type and size.");
     assertThat(problem.getDetail()).doesNotContain("evil.exe");
   }
 

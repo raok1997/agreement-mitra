@@ -2,6 +2,7 @@ package in.agreementmitra.documents.template;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import in.agreementmitra.documents.DocumentFooterProperties;
 import in.agreementmitra.documents.HtmlPdfRenderer;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
@@ -23,13 +24,20 @@ import org.junit.jupiter.api.Test;
  */
 class DocumentProjectionServiceTest {
 
-  /** Captures the exact HTML handed to the PDF renderer; returns dummy PDF bytes. */
+  /**
+   * Captures the exact HTML handed to the PDF renderer; returns dummy PDF bytes. Page-number
+   * furniture is added by the real Gotenberg leg, not this stub, so {@code lastHtml} is the
+   * compiled body (including the provenance line) -- letting the parity checks compare it to the
+   * preview HTML.
+   */
   private static final class CapturingRenderer implements HtmlPdfRenderer {
     private String lastHtml;
+    private String lastReference;
 
     @Override
-    public byte[] toPdf(String html) {
+    public byte[] toPdf(String html, String reference) {
       this.lastHtml = html;
+      this.lastReference = reference;
       return ("%PDF-" + html.length()).getBytes(StandardCharsets.UTF_8);
     }
   }
@@ -39,12 +47,17 @@ class DocumentProjectionServiceTest {
       Clock.fixed(
           LocalDate.of(2026, 7, 13).atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC);
 
+  /** The platform URL shown in the provenance line; the module holds no brand literal. */
+  private static final DocumentFooterProperties FOOTER =
+      new DocumentFooterProperties("agreementmitra.com");
+
   private final CapturingRenderer renderer = new CapturingRenderer();
   private final DocumentProjectionService service =
       new DocumentProjectionService(
           new TemplateResolver(new ClasspathLayerSource()),
           new TemplateCompiler(),
           renderer,
+          FOOTER,
           FIXED_CLOCK);
 
   /**
@@ -57,6 +70,7 @@ class DocumentProjectionServiceTest {
           new TemplateResolver(new ClasspathLayerSource("documents/template/sets/rental/")),
           new TemplateCompiler(),
           renderer,
+          FOOTER,
           FIXED_CLOCK);
 
   /**
@@ -66,9 +80,10 @@ class DocumentProjectionServiceTest {
    */
   private final DocumentProjectionService optionalService =
       new DocumentProjectionService(
-          new TemplateResolver(new ClasspathLayerSource("documents/template/sets/optional/")),
+          new TemplateResolver(new ClasspathLayerSource("documents/template/testsets/optional/")),
           new TemplateCompiler(),
           renderer,
+          FOOTER,
           FIXED_CLOCK);
 
   private static DocumentProjectionRequest inRequest(Map<String, Object> data) {
@@ -160,6 +175,37 @@ class DocumentProjectionServiceTest {
     String paneHtml = service.previewHtml(req);
 
     assertThat(paneHtml).isEqualTo(pdfSourceHtml);
+  }
+
+  @Test
+  void preSaveBodyCarriesTheProvenanceMarkerAndUrlInBothFacesAndStaysInParity() {
+    // Pre-save (no documentReference): the provenance line at the document foot shows the PREVIEW
+    // marker + the configured platform URL, in the preview HTML; the PDF is rendered from that same
+    // body (parity), and the renderer only adds page-number furniture.
+    DocumentProjectionRequest req = request(fullData());
+
+    String html = service.previewHtml(req);
+    assertThat(html).contains("PREVIEW - NOT FOR EXECUTION").contains("agreementmitra.com");
+
+    service.previewPdf(req);
+    assertThat(renderer.lastHtml).isEqualTo(html); // body parity: preview HTML == the PDF's source
+    assertThat(renderer.lastReference)
+        .isEqualTo("PREVIEW - NOT FOR EXECUTION"); // same reference stamped as PDF footer furniture
+  }
+
+  @Test
+  void postSaveBodyShowsTheSuppliedTrackingNumberInsteadOfTheMarker() {
+    // Post-save, the client passes the real tracking number as documentReference: the provenance
+    // line shows it (with the URL) and not the marker.
+    DocumentProjectionRequest req =
+        new DocumentProjectionRequest(null, fullData(), null, "AM-A5E4D7-010726");
+
+    String html = service.previewHtml(req);
+
+    assertThat(html)
+        .contains("AM-A5E4D7-010726")
+        .contains("agreementmitra.com")
+        .doesNotContain("PREVIEW - NOT FOR EXECUTION");
   }
 
   @Test

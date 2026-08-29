@@ -7,10 +7,24 @@
 // FormField / FormField.Validation) served by GET /api/templates/form?state=..&type=..
 
 /** The resolved widget-vocabulary token the client renders (from the field's FieldType). */
-export type Widget = "text" | "textarea" | "number" | "money" | "date" | "checkbox" | "select";
+export type Widget =
+  | "text"
+  | "textarea"
+  | "number"
+  | "money"
+  | "date"
+  | "checkbox"
+  | "select";
 
 /** The raw field-type token so the client can parse/format. */
-export type FieldType = "text" | "longtext" | "int" | "money" | "date" | "bool" | "enum";
+export type FieldType =
+  | "text"
+  | "longtext"
+  | "int"
+  | "money"
+  | "date"
+  | "bool"
+  | "enum";
 
 /**
  * Declarative validation bounds for client-side checks, projected verbatim from the definition's
@@ -85,7 +99,10 @@ const BASE = "/api";
  * state/type, so a failure cannot leak which dimensions were probed (mirroring the server's
  * never-echo error contract).
  */
-export async function getTemplateForm(state: string, type: string): Promise<FormSchema> {
+export async function getTemplateForm(
+  state: string,
+  type: string,
+): Promise<FormSchema> {
   const params = new URLSearchParams({ state, type });
   const res = await fetch(`${BASE}/templates/form?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to load the form (${res.status}).`);

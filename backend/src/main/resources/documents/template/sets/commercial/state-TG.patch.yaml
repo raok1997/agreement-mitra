@@ -1,0 +1,38 @@
+# Production layer set (commercial) -- STATE layer (Telangana). A patch over the composed template
+# that adds Telangana's statutory overlay for commercial leases: governing law (Transfer of Property
+# Act 1882 / Registration Act 1908), stamping / compulsory registration before the jurisdictional
+# Sub-Registrar, and who bears the registration charges. Added as one small state layer over the
+# shared national commercial base -- no per-state copy of the whole agreement.
+meta:
+  kind: state
+  dimensions: { state: TG }
+  version: 1
+
+ops:
+  - { op: addField,
+      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false } }
+  - { op: addField,
+      field: { key: registrationChargesBorneBy, label: "Registration charges borne by", type: enum,
+               required: false, default: lessee, options: [ lessor, lessee, shared ] } }
+
+  - { op: addClause,
+      clause: { id: tgGoverningLaw,
+                text: "This Agreement shall be governed by the laws of India as applicable in the State
+                       of Telangana, including the Transfer of Property Act, 1882 and the Registration
+                       Act, 1908, as amended." } }
+  - { op: addClause,
+      clause: { id: tgStampRegistration,
+                text: "This Agreement shall be duly stamped and, where the term exceeds eleven (11)
+                       months, compulsorily registered before the jurisdictional Sub-Registrar in the
+                       State of Telangana under the Registration Act, 1908. The stamp duty and
+                       registration charges shall be borne by the {{registrationChargesBorneBy}}." } }
+  - { op: addClause,
+      clause: { id: tgStampAmount, showWhen: "stampDutyAmount > 0",
+                text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }
+
+  # Optional/opt-in, matching the residential decision: the Telangana statutory overlay is an add-on
+  # the user adds from the catalog, absent from preview + signed draft until added.
+  - { op: addSection,
+      section: { title: "Statutory (Telangana)", optional: true,
+                 entries: [ stampDutyAmount, registrationChargesBorneBy,
+                            tgGoverningLaw, tgStampRegistration, tgStampAmount ] } }

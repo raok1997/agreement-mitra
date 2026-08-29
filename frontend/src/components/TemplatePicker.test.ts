@@ -64,7 +64,9 @@ describe("TemplatePicker", () => {
     const wrapper = await mountReady();
     expect(mockedList).toHaveBeenCalledOnce();
     for (const id of ["in-res", "tg-res", "tg-com", "ka-res"]) {
-      expect(wrapper.find(`[data-testid="template-card-${id}"]`).exists()).toBe(true);
+      expect(wrapper.find(`[data-testid="template-card-${id}"]`).exists()).toBe(
+        true,
+      );
     }
   });
 
@@ -72,37 +74,53 @@ describe("TemplatePicker", () => {
     const wrapper = await mountReady();
     // generate-as-draft is dimension-aware now, so IN + TG (and any other published pair) all select.
     for (const id of ["in-res", "tg-res", "tg-com", "ka-res"]) {
-      expect(wrapper.find(`[data-testid="select-${id}"]`).attributes("disabled")).toBeUndefined();
-      expect(wrapper.find(`[data-testid="coming-soon-${id}"]`).exists()).toBe(false);
+      expect(
+        wrapper.find(`[data-testid="select-${id}"]`).attributes("disabled"),
+      ).toBeUndefined();
+      expect(wrapper.find(`[data-testid="coming-soon-${id}"]`).exists()).toBe(
+        false,
+      );
     }
   });
 
   it("emits select with the chosen (state, type) for the default template", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="select-in-res"]').trigger("click");
-    expect(wrapper.emitted("select")?.[0]).toEqual([{ state: "IN", type: "residential" }]);
+    expect(wrapper.emitted("select")?.[0]).toEqual([
+      { state: "IN", type: "residential" },
+    ]);
   });
 
   it("emits select for a non-default template (TG residential) too", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="select-tg-res"]').trigger("click");
-    expect(wrapper.emitted("select")?.[0]).toEqual([{ state: "TG", type: "residential" }]);
+    expect(wrapper.emitted("select")?.[0]).toEqual([
+      { state: "TG", type: "residential" },
+    ]);
   });
 
   it("filters by search query over name/description", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="picker-search"]').setValue("commercial");
     await flushPromises();
-    expect(wrapper.find('[data-testid="template-card-tg-com"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="template-card-tg-com"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(
+      false,
+    );
   });
 
   it("filters by state", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="filter-state"]').setValue("KA");
     await flushPromises();
-    expect(wrapper.find('[data-testid="template-card-ka-res"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="template-card-ka-res"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(
+      false,
+    );
   });
 
   it("surfaces a load failure", async () => {

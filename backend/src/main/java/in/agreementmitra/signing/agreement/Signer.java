@@ -141,6 +141,30 @@ class Signer {
     return role;
   }
 
+  /**
+   * Set this party's contact details, and only those.
+   *
+   * <p>Exists so the pre-payment contact step can complete what draft capture left optional without
+   * going through the full-replace edit path - which rewrites terms and the party list, and is
+   * owner-scoped. Every other field stays untouched, so a contacts update cannot alter what was
+   * agreed.
+   *
+   * <p>Blank is stored as null rather than an empty string, so "absent" has one representation and
+   * the reachability rule does not have to know about two.
+   */
+  void updateContacts(String email, String mobile) {
+    this.email = blankToNull(email);
+    this.mobile = blankToNull(mobile);
+  }
+
+  private static String blankToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {

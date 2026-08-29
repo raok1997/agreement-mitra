@@ -8,8 +8,19 @@ import java.util.List;
  *
  * @param providerDocumentId the vendor's document id for this request (store it)
  * @param invitees one entry per invitee, in the same order as the request
+ * @param webhookKey the per-transaction webhook credential the vendor issued for this transaction,
+ *     or {@code null} when the vendor authenticates its callback some other way (e.g. a body MAC
+ *     under a config-wide secret). It is carried out through this value object - rather than the
+ *     adapter storing it - so persistence stays outside the vendor boundary; the module encrypts it
+ *     before it reaches the database, never logs it, and compares it in constant time (design D3).
  */
-public record SignSession(String providerDocumentId, List<InviteeSession> invitees) {
+public record SignSession(
+    String providerDocumentId, List<InviteeSession> invitees, String webhookKey) {
+
+  /** For providers that issue no per-transaction webhook credential. */
+  public SignSession(String providerDocumentId, List<InviteeSession> invitees) {
+    this(providerDocumentId, invitees, null);
+  }
 
   /**
    * The per-invitee result of creating a signing request.
@@ -22,4 +33,10 @@ public record SignSession(String providerDocumentId, List<InviteeSession> invite
    */
   public record InviteeSession(
       String email, String signUrl, String expiryDate, String providerInviteeId) {}
+
+  /** Never renders the webhook key - it is a credential. */
+  @Override
+  public String toString() {
+    return "SignSession{invitees=" + invitees.size() + "}";
+  }
 }

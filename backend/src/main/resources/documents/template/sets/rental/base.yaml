@@ -122,7 +122,7 @@ clauses:
   - id: scheduleClause
     text: >-
       The Owner lets to the Tenant the residential premises situated at {{propertyAddress}}, being a
-      {{bhkConfiguration}} {{propertyType}}, let on a {{furnishingStatus}} basis together with its
+      {{bhkConfiguration}} {{propertyType}}, {{furnishingStatus}}, together with its
       fixtures and fittings (the "Premises").
   - id: termClause
     text: >-
@@ -139,8 +139,8 @@ clauses:
       {{noticePeriodMonths}} month(s) prior written notice to the other, or rent in lieu thereof.
   - id: rentClause
     text: >-
-      The Tenant shall pay a monthly rent of INR {{monthlyRent}}, payable in advance on or before the
-      {{rentDueDay}} day of each calendar month, without deduction, by {{paymentMode}}.
+      The Tenant shall pay a monthly rent of INR {{monthlyRent}}, payable in advance on or before
+      day {{rentDueDay}} of each calendar month, without deduction, by {{paymentMode}}.
   - id: escalationClause
     showWhen: "rentEscalationPercent > 0"
     text: >-
@@ -208,9 +208,18 @@ clauses:
       On expiry or earlier determination of this Agreement, the Tenant shall hand over vacant and
       peaceful possession of the Premises together with all fixtures in their original condition,
       normal wear and tear excepted.
+  # Two clauses, one per mode. A single sentence cannot read correctly for all three values: the
+  # humanised token is Title Case for the key/value cell ("Courts"), and "resolved through Courts"
+  # is not a sentence a deed would contain. Splitting on the value keeps both readings right.
   - id: disputeClause
+    showWhen: 'disputeResolution == "courts"'
     text: >-
-      Any dispute arising out of or in connection with this Agreement shall be resolved through
+      Any dispute arising out of or in connection with this Agreement shall be subject to the
+      exclusive jurisdiction of the courts at {{jurisdictionCity}}.
+  - id: disputeAlternativeClause
+    showWhen: 'disputeResolution != "courts"'
+    text: >-
+      Any dispute arising out of or in connection with this Agreement shall first be referred to
       {{disputeResolution}}; subject thereto, the courts at {{jurisdictionCity}} shall have
       jurisdiction.
   - id: specialConditionsClause
@@ -298,7 +307,7 @@ sections:
     render: clauses
     optional: false
     entries: [ recital, useClause, careOfPremisesClause, noSublettingClause, inspectionClause,
-               handoverClause, disputeClause, stampRegistrationClause,
+               handoverClause, disputeClause, disputeAlternativeClause, stampRegistrationClause,
                serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]
   # Optional fixtures/inventory annexure (render: annexure), opt-in, with a dummy inventory scaffold.
   - title: "Annexure"

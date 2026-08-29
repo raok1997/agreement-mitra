@@ -11,7 +11,11 @@ import DateWidget from "./DateWidget.vue";
 import CheckboxWidget from "./CheckboxWidget.vue";
 import SelectWidget from "./SelectWidget.vue";
 
-const props = defineProps<{ field: FormField; modelValue: string; error?: string | null }>();
+const props = defineProps<{
+  field: FormField;
+  modelValue: string;
+  error?: string | null;
+}>();
 const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
 
 const registry: Record<string, Component> = {
@@ -24,7 +28,9 @@ const registry: Record<string, Component> = {
   select: SelectWidget,
 };
 
-const widget = computed<Component>(() => registry[props.field.widget] ?? TextWidget);
+const widget = computed<Component>(
+  () => registry[props.field.widget] ?? TextWidget,
+);
 </script>
 
 <template>

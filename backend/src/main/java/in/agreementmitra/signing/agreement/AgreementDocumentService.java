@@ -8,6 +8,8 @@ import in.agreementmitra.documents.api.DocumentProjectionResult;
 import in.agreementmitra.documents.api.EffectiveTemplateIdentity;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -95,13 +97,34 @@ public class AgreementDocumentService {
             .findById(agreementId)
             .orElseThrow(
                 () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
-    Map<String, Object> data = AgreementDocumentMapper.toTemplateData(agreement);
-    // A unique, non-PII document reference (the agreement id, prefixed) ties the rendered artifact
-    // to the eSign audit trail (design D4). Furniture only -- it does not affect the effective
-    // template or its pin.
-    String documentReference = "AM-" + agreementId;
+    // Render from the STORED capture state when present so the stored/signed draft matches the live
+    // preview (parity). The stored working-set map is the base; the authoritative fixed columns are
+    // overlaid on top so a stale map entry can never override the typed
+    // property/rent/deposit/dates/
+    // parties (D3 reconciliation). The stored activeSections drive which optional sections render.
+    // When no capture state exists (legacy row / fixed-fields-only API client) fall back to the
+    // fixed-column mapping with no optional sections -- behaviour unchanged for existing
+    // agreements.
+    CaptureState capture = agreement.captureState();
+    Map<String, Object> data;
+    List<String> activeSections;
+    if (capture == null) {
+      data = AgreementDocumentMapper.toTemplateData(agreement);
+      activeSections = null;
+    } else {
+      data = new LinkedHashMap<>(capture.data());
+      data.putAll(AgreementDocumentMapper.toTemplateData(agreement)); // fixed columns win
+      activeSections = capture.activeSections();
+    }
+    // The agreement's ONE tracking reference is passed as the document reference; the projection
+    // renders it (with the platform URL) as the body provenance line -- system-owned body content
+    // that does not affect the effective template or its pin. It is the same value the customer was
+    // given and the same value staff quote at stamp intake, so the paper and the people agree. The
+    // full UUID stays the canonical audit tie.
+    String documentReference = agreement.trackingReference();
     return documentProjection.generate(
-        new DocumentProjectionRequest(dimensionsFor(agreement), data, null, documentReference));
+        new DocumentProjectionRequest(
+            dimensionsFor(agreement), data, activeSections, documentReference));
   }
 
   /**

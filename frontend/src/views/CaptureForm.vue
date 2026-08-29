@@ -10,10 +10,29 @@ import {
 import {
   createAgreement,
   generateAgreementDocument,
+  type AgreementView,
   type CreateAgreementInput,
   type PartyInput,
   type Role,
 } from "../api/client";
+import {
+  AgreementHttpError,
+  claimAgreement,
+  finaliseAgreement,
+  getAgreement,
+  updateAgreement,
+  updateAgreementContacts,
+} from "../api/agreements";
+import ContactConfirmation, {
+  type PartyContact,
+} from "./ContactConfirmation.vue";
+import PaymentConfirmation from "./PaymentConfirmation.vue";
+import {
+  formatMinorUnits,
+  getPaymentProgress,
+  payForAgreement,
+} from "../api/payments";
+import { auth } from "../api/authStore";
 import {
   fetchDocumentPreviewHtml,
   fetchDocumentPreviewPdf,
@@ -52,11 +71,31 @@ import {
 const DEFAULT_STATE = "IN";
 const DEFAULT_TYPE = "residential";
 
-const props = withDefaults(defineProps<{ state?: string; type?: string }>(), {
-  state: DEFAULT_STATE,
-  type: DEFAULT_TYPE,
-});
-const emit = defineEmits<{ (e: "change-template"): void }>();
+const props = withDefaults(
+  defineProps<{
+    state?: string;
+    type?: string;
+    // Edit mode (agreement-ownership CR): when an owned agreement is being edited, its id + loaded
+    // terms are passed in. Save then PUTs to /api/agreements/{id} instead of creating a new one.
+    agreementId?: string;
+    initialAgreement?: AgreementView | null;
+  }>(),
+  {
+    state: DEFAULT_STATE,
+    type: DEFAULT_TYPE,
+    agreementId: undefined,
+    initialAgreement: null,
+  },
+);
+const emit = defineEmits<{
+  (e: "change-template"): void;
+  // Fired after a successful Save-to-account (claim) or an edit save, so the shell can return to the
+  // "My Agreements" list.
+  (e: "saved-to-account"): void;
+}>();
+
+// True while editing an existing owned agreement (vs. drafting a new one).
+const editMode = computed(() => !!props.agreementId);
 
 // The (state, type) the FormSchema is fetched for. The SAME dimensions are sent on every preview
 // request so the previewed document resolves the exact effective template the form was projected from
@@ -91,22 +130,16 @@ interface UiSection {
   optional: boolean;
 }
 
-// PARITY GUARDRAIL (2026-07-12, document-capture-shell-wiring task 4.2): generate-as-draft round-trips
-// only the aggregate-backed field keys (signing AgreementDocumentMapper); a template-declared OPTIONAL
-// field it does NOT persist would render from the effective template's DEFAULT in the signed draft
-// while the live preview showed the user's value -- a silent preview/draft divergence. Until M5
-// (attributes store + schema-driven, dimension-aware generate) lands, hide those non-persisted optional
-// fields so the user cannot set a value the signed draft would ignore. These are also stripped from the
-// preview data map below, so a resumed localStorage draft can never reintroduce them.
-// stampDuty is TG-only, required, and NOT persisted on the aggregate; it renders from the template's
-// system-authored default in BOTH the live preview and the signed draft (the aggregate never carries
-// a user-set value), so hiding + stripping it keeps preview/draft parity until the attributes store
-// (M5) lands.
-const NON_PERSISTED_FIELDS = new Set([
-  "furnished",
-  "registrationResponsibility",
-  "stampDuty",
-]);
+// M5 (agreement-capture-persistence) retired the STOPGAP: the agreement now persists its FULL capture
+// state (the flat working-set map + added optional sections), and generate-as-draft renders from that
+// stored state, so every user-set field round-trips and the signed draft matches the live preview.
+// The hide-list therefore shrinks to only GENUINELY system-owned template-default fields the user
+// never sets -- stampDuty is TG-only, required, and rendered from the template's system-authored
+// default on BOTH faces (the user never enters a value), so hiding + stripping it keeps parity without
+// data loss. Everything the aggregate now persists (furnished, registrationResponsibility, dynamic
+// fields like lockInMonths / petAllowed) is un-hidden -- hiding them would re-introduce the very data
+// loss this change removed (design D5).
+const NON_PERSISTED_FIELDS = new Set(["stampDuty"]);
 
 const uiSections = computed<UiSection[]>(() =>
   (schema.value?.sections ?? [])
@@ -195,12 +228,12 @@ function summary(s: UiSection): string {
 // map (field key -> value) straight to /api/templates/document/preview, so arbitrary template-declared
 // fields render without any well-known-key remapping.
 //
-// SUBMIT is still a STOPGAP: Save & continue maps the generic working-set back into the existing typed
-// create payload (fixed Agreement columns) by well-known field keys. Template-declared DYNAMIC fields
-// (lockInMonths, petAllowed, ...) are therefore DROPPED on save until agreement-attributes-and-pinning
-// (M5) lands the schema-driven, attribute-persisting submit + generate-as-draft pin. See flow-journal
-// 8.4 (persistence gap) and 8.5 (preview/draft parity, owned by the documents window).
-// PENDING-M5: replace buildAgreementInput/toParty with the schema-driven attribute submit.
+// SUBMIT now persists the FULL capture state (M5, agreement-capture-persistence): Save & continue
+// sends the typed fixed columns (property/rent/deposit/dates/parties) AND the flat working-set map
+// (captureData) + added optional sections (activeSections). Template-declared DYNAMIC fields
+// (lockInMonths, petAllowed, ...) therefore round-trip and render in the stored/signed draft, matching
+// the preview. The fixed typed columns stay authoritative server-side (a stale map entry never
+// overrides them); server-managed keys in captureData are ignored server-side (anti-mass-assignment).
 // ---------------------------------------------------------------------------
 function flatWorking(): Record<string, string> {
   const flat: Record<string, string> = {};
@@ -246,6 +279,11 @@ function buildAgreementInput(): CreateAgreementInput {
     // generated draft renders it (not the default). Same (state, type) the form + preview resolve.
     state: props.state,
     type: props.type,
+    // Persist the FULL capture state (M5): the same flat working-set map + added optional sections
+    // the live preview uses, so a saved agreement round-trips its complete content and the stored/
+    // signed draft matches the preview. Sent on both create and the CR-B edit PUT.
+    captureData: f,
+    activeSections: activeSections.value,
   };
 }
 
@@ -271,6 +309,7 @@ async function refreshPreview(): Promise<void> {
       flatWorking(),
       previewDimensions(),
       activeSections.value,
+      savedTrackingNumber.value ?? undefined,
     );
   } catch (e) {
     // Never log the working set / rendered document (party PII); surface a terse message only.
@@ -365,13 +404,31 @@ function trapTab(e: KeyboardEvent): void {
 // so we clear it on a successful Save & continue and on explicit reset, and drop it if older than the
 // TTL. "Persists nothing" is a SERVER-side statement; this is the bounded client-side exposure.
 // ---------------------------------------------------------------------------
-const DRAFT_KEY = "am.preview.draft.v1";
+// The draft is SCOPED to the chosen (state, type): a draft captured for one template must never
+// resume into another. Without this, switching templates (e.g. housing -> commercial) leaks the
+// prior template's values -- including shared enum keys whose vocabulary differs (utilitiesBorneBy:
+// tenant/owner vs lessee/lessor) -- which the new template's server-side validation rejects (400).
+const DRAFT_KEY_PREFIX = "am.preview.draft.v1";
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+
+function draftKey(): string {
+  return `${DRAFT_KEY_PREFIX}.${props.state}.${props.type}`;
+}
+
+// One-time cleanup of the pre-scoping global draft key: it is unscoped client-side PII at rest that
+// the scoped loader never reads, so drop it so it cannot linger past its intent.
+function purgeLegacyGlobalDraft(): void {
+  try {
+    localStorage.removeItem(DRAFT_KEY_PREFIX);
+  } catch {
+    // ignore
+  }
+}
 
 function persistDraft(): void {
   try {
     localStorage.setItem(
-      DRAFT_KEY,
+      draftKey(),
       JSON.stringify({
         savedAt: Date.now(),
         data: working,
@@ -383,9 +440,19 @@ function persistDraft(): void {
   }
 }
 
+// Index the schema's fields by key so a resumed draft value can be validated against the current
+// template's field definition (keys are unique across a template).
+function buildFieldIndex(s: FormSchema | null): Map<string, FormField> {
+  const index = new Map<string, FormField>();
+  for (const section of s?.sections ?? []) {
+    for (const field of section.fields) index.set(field.key, field);
+  }
+  return index;
+}
+
 function loadDraft(): void {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(draftKey());
     if (!raw) return;
     const parsed = JSON.parse(raw) as {
       savedAt?: number;
@@ -397,12 +464,26 @@ function loadDraft(): void {
       return;
     }
     const data = parsed.data || {};
-    // Merge only keys that exist in the current (schema-fed) working structure.
+    // Merge only keys that exist in the current (schema-fed) working structure, and only when the
+    // stored value is still valid for the current template's field. The enum guard is the important
+    // one: a shared key (e.g. utilitiesBorneBy) can carry a value valid for another template but not
+    // this one (tenant/owner vs lessee/lessor), which the server would reject -- drop it instead.
+    const fieldByKey = buildFieldIndex(schema.value);
     for (const id of Object.keys(working)) {
       const stored = data[id];
       if (!stored) continue;
       for (const key of Object.keys(working[id])) {
-        if (stored[key] != null) working[id][key] = stored[key];
+        const value = stored[key];
+        if (value == null) continue;
+        const field = fieldByKey.get(key);
+        if (
+          field?.widget === "select" &&
+          field.options &&
+          !field.options.some((o) => o.value === value)
+        ) {
+          continue; // stored enum value is not an option for this template's field -- skip it.
+        }
+        working[id][key] = value;
       }
     }
     // Restore the added-optional set, dropping any title that is no longer an optional section in the
@@ -420,9 +501,52 @@ function loadDraft(): void {
 
 function clearDraft(): void {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(draftKey());
   } catch {
     // ignore
+  }
+}
+
+/**
+ * Seed the working set from a loaded agreement (edit mode). Restores the FULL capture state (M5): the
+ * stored captureData map (dynamic fields + working set) is the base, then the well-known fixed field
+ * keys (terms + owner/tenant name/father/address) are overlaid so the authoritative typed columns win
+ * (matching the server's D3 reconciliation). The added optional sections are re-activated from the
+ * stored activeSections (reconciled against the current schema). An agreement with no stored capture
+ * state (a legacy row) restores only the fixed fields + parties, exactly as before.
+ */
+function prefillFromAgreement(a: AgreementView): void {
+  // Fixed typed columns (authoritative) -- these overlay any stored map entry for the same key.
+  const fixed: Record<string, string> = {
+    propertyAddress: a.propertyAddress,
+    address: a.propertyAddress,
+    monthlyRent: String(a.monthlyRent),
+    rent: String(a.monthlyRent),
+    securityDeposit: String(a.securityDeposit),
+    deposit: String(a.securityDeposit),
+    startDate: a.startDate,
+    endDate: a.endDate,
+  };
+  for (const s of a.signers) {
+    const p = s.role.toLowerCase(); // "owner" | "tenant"
+    fixed[`${p}Name`] = s.name || `${s.firstName} ${s.lastName}`.trim();
+    fixed[`${p}FatherName`] = s.fatherName ?? "";
+    fixed[`${p}Address`] = s.currentAddress ?? "";
+  }
+  // The stored capture map (dynamic values + working set) is the base; the fixed columns win on top.
+  const flat: Record<string, string> = { ...(a.captureData ?? {}), ...fixed };
+  for (const id of Object.keys(working)) {
+    for (const key of Object.keys(working[id])) {
+      if (flat[key] != null) working[id][key] = flat[key];
+    }
+  }
+  // Re-activate the stored optional sections, dropping any title the current schema no longer declares
+  // as optional (renamed / removed / now mandatory) -- so a stale title can never silently activate.
+  if (Array.isArray(a.activeSections)) {
+    activeSections.value = reconcileActiveSections(
+      a.activeSections,
+      schema.value,
+    );
   }
 }
 
@@ -442,6 +566,24 @@ function resetDraft(): void {
 // ---------------------------------------------------------------------------
 const saving = ref(false);
 const saved = ref(false);
+// The saved agreement's id, held after a create so the Save-to-account (claim) action can target it.
+const savedId = ref<string | null>(props.agreementId ?? null);
+// Save-to-account (claim) state. Offered only for a freshly-created, not-yet-owned agreement while a
+// session is present; editing an already-owned agreement needs no claim.
+const claiming = ref(false);
+const claimed = ref(false);
+const claimError = ref<string | null>(null);
+const canSaveToAccount = computed(
+  () => !editMode.value && saved.value && !claimed.value && !!auth.session,
+);
+// The saved agreement's tracking reference (the one persisted number). Held after save so the
+// confirmation can show it and the preview/download can render the real number in the provenance
+// line (before save it is null -> the server shows its PREVIEW marker instead). In edit mode we seed
+// it from the loaded agreement so a retrieved agreement's preview/PDF already shows the real number
+// (not the PREVIEW marker) before any re-save.
+const savedTrackingNumber = ref<string | null>(
+  props.initialAgreement?.trackingNumber ?? null,
+);
 const saveError = ref<string | null>(null);
 const missingHint = ref<string | null>(null);
 
@@ -456,16 +598,247 @@ async function saveAndContinue(): Promise<void> {
   }
   saving.value = true;
   try {
-    const created = await createAgreement(buildAgreementInput());
-    await generateAgreementDocument(created.id);
-    saved.value = true;
-    clearDraft(); // client-side PII cleared once it is safely persisted server-side
+    if (editMode.value && props.agreementId) {
+      // Edit: full-replace the owned agreement, then regenerate its draft from the edited terms (the
+      // PUT cleared the old pinned draft). The agreement is already owned -- no claim needed.
+      const updated = await updateAgreement(
+        props.agreementId,
+        buildAgreementInput(),
+      );
+      await generateAgreementDocument(props.agreementId);
+      saved.value = true;
+      savedId.value = updated.id;
+      savedTrackingNumber.value = updated.trackingNumber;
+      void refreshPreview();
+    } else {
+      const created = await createAgreement(buildAgreementInput());
+      await generateAgreementDocument(created.id);
+      saved.value = true;
+      savedId.value = created.id;
+      savedTrackingNumber.value = created.trackingNumber; // now the client holds the reference
+      // If the user is signed in, claim it straight away so it lands in "My Agreements" without a
+      // second click. A failed claim is non-fatal -- the manual "Save to my account" button remains
+      // as a fallback (canSaveToAccount stays true while not yet claimed).
+      if (auth.session) {
+        try {
+          await claimAgreement(created.id);
+          claimed.value = true;
+        } catch {
+          claimError.value =
+            "Saved, but could not add it to your account. Use Save to my account to retry.";
+        }
+      }
+      void refreshPreview(); // re-render the preview so its provenance line shows the real number
+      clearDraft(); // client-side PII cleared once it is safely persisted server-side
+    }
   } catch (e) {
     saved.value = false;
     saveError.value =
       e instanceof Error ? e.message : "Could not save. Please try again.";
   } finally {
     saving.value = false;
+  }
+}
+
+/**
+ * Save-to-account: claim the freshly-created agreement into the signed-in identity so it appears in
+ * "My Agreements". Idempotent server-side; on success the shell returns to the list.
+ */
+async function saveToAccount(): Promise<void> {
+  if (!savedId.value) return;
+  claiming.value = true;
+  claimError.value = null;
+  try {
+    await claimAgreement(savedId.value);
+    claimed.value = true;
+    emit("saved-to-account");
+  } catch {
+    claimError.value = "Could not save to your account. Please try again.";
+  } finally {
+    claiming.value = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Finalise and pay. Finalising places the order and freezes the draft; paying then runs through the
+// provider's hosted checkout.
+//
+// The status shown here is whatever the SERVER reports, never what happened in the checkout window.
+// A customer who pays and closes the tab is still marked paid (the webhook settles it), and a
+// customer whose window merely closed is never told they paid. "Payment received" appears only on
+// PAID; anything else says plainly what is known.
+// ---------------------------------------------------------------------------
+const paying = ref(false);
+const payError = ref<string | null>(null);
+const payOutcome = ref<string | null>(null);
+const paidAmountLabel = ref<string | null>(null);
+
+/** Whether the pay action is offered: something is saved server-side and it is not already paid. */
+const canPay = computed(
+  () => saved.value && !!savedId.value && payOutcome.value !== "PAID",
+);
+
+const payMessage = computed(() => {
+  switch (payOutcome.value) {
+    case "PAID":
+      return `Payment received${paidAmountLabel.value ? ` (${paidAmountLabel.value})` : ""}. Nothing more to do.`;
+    case "PENDING":
+      // Deliberately not an error. The webhook is usually a moment behind, and reconciliation is
+      // the backstop - telling the customer it failed would be wrong and would invite a second
+      // payment.
+      return "Payment is being confirmed. This page will show it as soon as your bank confirms - you do not need to pay again.";
+    case "DISMISSED":
+      return "Payment window closed before payment was completed.";
+    case "FAILED":
+      return "That payment did not go through. You can try again.";
+    default:
+      return null;
+  }
+});
+
+// --- pre-payment contact confirmation -------------------------------------------------------
+//
+// Contacts are optional while drafting and are not collected by this form at all, so an agreement
+// arrives here with none. They are required before money moves: they address the signing
+// invitations, they receive the signed agreement, and they are how an anonymous customer gets back
+// to this agreement after closing the tab. So "finalise and pay" opens this step first rather than
+// going straight to checkout.
+//
+// The server refuses to create an order for an unreachable agreement regardless of what happens
+// here - this screen exists so customers meet that requirement somewhere sensible, not to enforce
+// it.
+
+const contactStep = ref(false);
+const contactParties = ref<PartyContact[]>([]);
+const contactSaving = ref(false);
+const contactError = ref<string | null>(null);
+
+// Shown only once the SERVER has confirmed payment (see finaliseAndPay). Never on the strength of
+// the checkout handler returning.
+const paymentConfirmed = ref(false);
+
+// Whether any party had an address for the recovery link. Drives what the confirmation screen is
+// allowed to claim: with nobody contactable it must tell the customer to keep the reference rather
+// than promising an email that will never arrive.
+const recoveryLinkSent = computed(() =>
+  contactParties.value.some((p) => p.email.trim() !== ""),
+);
+
+/** Open the contact step, seeded with whatever the server currently holds for each party. */
+async function openContactStep(): Promise<void> {
+  if (!savedId.value) return;
+  contactError.value = null;
+  try {
+    const agreement = await getAgreement(savedId.value);
+    contactParties.value = agreement.signers.map((s) => ({
+      id: s.id,
+      name: s.name,
+      role: s.role,
+      email: s.email ?? "",
+      mobile: s.mobile ?? "",
+    }));
+    contactStep.value = true;
+  } catch {
+    payError.value = "Could not load the party details. Please try again.";
+  }
+}
+
+/**
+ * Whether these contacts differ from what the server last gave us (seeded by openContactStep).
+ *
+ * Contacts now stay editable until payment settles, so the retry this once rescued is no longer
+ * blocked by the server. Skipping the identical save is still worth doing, for two reasons: it
+ * keeps a pointless write off a path the customer is trying to get through, and it means a
+ * confirm-with-no-edits can never be refused by whatever the freeze happens to be - which is the
+ * shape of the bug that stranded a customer here before.
+ *
+ * The parent's copy is the correct baseline: the step edits a local clone and never writes back
+ * into these objects.
+ */
+function contactsChanged(parties: PartyContact[]): boolean {
+  return parties.some((party) => {
+    const seeded = contactParties.value.find((p) => p.id === party.id);
+    return (
+      !seeded ||
+      seeded.email.trim() !== party.email.trim() ||
+      seeded.mobile.trim() !== party.mobile.trim()
+    );
+  });
+}
+
+/** Save the confirmed contacts, then continue into finalise + payment. */
+async function confirmContacts(parties: PartyContact[]): Promise<void> {
+  if (!savedId.value) return;
+  contactSaving.value = true;
+  contactError.value = null;
+  try {
+    if (contactsChanged(parties)) {
+      await updateAgreementContacts(
+        savedId.value,
+        parties.map((p) => ({
+          signerId: p.id,
+          email: p.email,
+          mobile: p.mobile,
+        })),
+      );
+      // The saved values are the new baseline, so a further retry after another failed payment
+      // still sees "nothing changed" and still reaches the pay button.
+      contactParties.value = parties.map((p) => ({ ...p }));
+    }
+    contactStep.value = false;
+    // Never throws - it reports its own failures through payError - so a payment problem can never
+    // be mislabelled here as a contact problem.
+    await finaliseAndPay();
+  } catch (e) {
+    // The contacts freeze is keyed on PAYMENT, not on the order existing, so this is reachable only
+    // once the money is settled. "Please try again" would be a lie there: the freeze is permanent
+    // and retrying refuses forever, so the message has to name the real condition instead.
+    contactError.value =
+      e instanceof AgreementHttpError && e.contactsFrozen
+        ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
+        : "Could not save those contact details. Please try again.";
+  } finally {
+    contactSaving.value = false;
+  }
+}
+
+async function finaliseAndPay(): Promise<void> {
+  if (!savedId.value) return;
+  paying.value = true;
+  payError.value = null;
+  payOutcome.value = null;
+  try {
+    // Finalise first: it is idempotent, so retrying after a dismissed or failed payment places no
+    // second order.
+    await finaliseAgreement(savedId.value);
+    const outcome = await payForAgreement(savedId.value, {
+      name: "AgreementMitra",
+      description: "Rental agreement",
+    });
+    payOutcome.value = outcome;
+    if (outcome === "PAID") {
+      // Read the amount back from the server rather than echoing anything the checkout window
+      // reported - the server is the only place the charged amount is authoritative.
+      try {
+        const progress = await getPaymentProgress(savedId.value);
+        paidAmountLabel.value =
+          progress.amountMinorUnits != null && progress.currency
+            ? formatMinorUnits(progress.amountMinorUnits, progress.currency)
+            : null;
+      } catch {
+        paidAmountLabel.value = null; // cosmetic only - never downgrade a confirmed payment
+      }
+      // Only here, inside the PAID branch, which the SERVER decided. The confirmation screen must
+      // never be reachable from the checkout handler's return value alone.
+      paymentConfirmed.value = true;
+    }
+  } catch (e) {
+    payError.value =
+      e instanceof Error && e.message
+        ? e.message
+        : "Could not start payment. Please try again.";
+  } finally {
+    paying.value = false;
   }
 }
 
@@ -478,6 +851,7 @@ async function downloadPdf(): Promise<void> {
       flatWorking(),
       previewDimensions(),
       activeSections.value,
+      savedTrackingNumber.value ?? undefined,
     );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -506,7 +880,13 @@ async function loadSchema(): Promise<void> {
     const fresh = emptyWorking(fetched);
     for (const id of Object.keys(working)) delete working[id];
     Object.assign(working, fresh);
-    loadDraft();
+    // Edit mode prefills the working set from the loaded agreement; a fresh draft resumes the client
+    // localStorage draft instead (the two must never mix -- an edit works against server terms only).
+    if (editMode.value && props.initialAgreement) {
+      prefillFromAgreement(props.initialAgreement);
+    } else {
+      loadDraft();
+    }
     void refreshPreview();
   } catch (e) {
     // Never echo the requested dimensions; the client already keeps them out of the message.
@@ -519,6 +899,7 @@ async function loadSchema(): Promise<void> {
 
 onMounted(() => {
   document.addEventListener("keydown", onKeydown);
+  purgeLegacyGlobalDraft();
   void loadSchema();
 });
 onBeforeUnmount(() => {
@@ -528,7 +909,29 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- The pre-payment contact step. A distinct screen rather than a panel inside the form: it is a
+       decision point on the way to paying, and the form behind it must not invite edits while the
+       customer is confirming who gets the agreement. Not a route - it needs the agreement this
+       flow is already holding, and the path switch in App.vue carries no state across routes. -->
+  <ContactConfirmation
+    v-if="contactStep"
+    :parties="contactParties"
+    :saving="contactSaving"
+    :error="contactError"
+    @confirm="confirmContacts"
+    @cancel="contactStep = false"
+  />
+  <!-- Reached only from the server-confirmed PAID branch. This is the customer's last screen and
+       the one place the reference and the recovery link are put in front of them. -->
+  <PaymentConfirmation
+    v-else-if="paymentConfirmed"
+    :reference="savedTrackingNumber ?? ''"
+    :amount-label="paidAmountLabel"
+    :link-sent="recoveryLinkSent"
+    @continue="paymentConfirmed = false"
+  />
   <div
+    v-else
     class="flex min-h-[80vh] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white lg:h-[calc(100vh-7rem)] lg:min-h-0"
   >
     <!-- Top bar: completeness meter + actions -->
@@ -551,6 +954,13 @@ onBeforeUnmount(() => {
           <b class="text-slate-900">{{ doneCount }}</b> of
           <b class="text-slate-900">{{ totalRequired }}</b> required sections
           ready
+        </span>
+        <span
+          v-if="remainingRequired > 0"
+          class="whitespace-nowrap text-xs font-medium text-amber-700"
+          data-testid="required-remaining"
+        >
+          Complete {{ remainingRequired }} more required section(s)
         </span>
       </div>
       <div class="flex gap-2">
@@ -586,7 +996,9 @@ onBeforeUnmount(() => {
           data-testid="save-continue"
           @click="saveAndContinue"
         >
-          {{ saving ? "Saving..." : "Save & continue" }}
+          {{
+            saving ? "Saving..." : editMode ? "Save changes" : "Save & continue"
+          }}
         </button>
       </div>
     </header>
@@ -743,7 +1155,9 @@ onBeforeUnmount(() => {
                 <span class="block text-sm font-medium text-slate-700">{{
                   s.title
                 }}</span>
-                <span class="block truncate text-xs italic text-slate-400">optional</span>
+                <span class="block truncate text-xs italic text-slate-400"
+                  >optional</span
+                >
               </span>
               <button
                 type="button"
@@ -824,12 +1238,81 @@ onBeforeUnmount(() => {
     >
       {{ saveError }}
     </p>
-    <p
+    <div
       v-if="saved && !saveError"
-      class="border-t border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700"
+      class="flex flex-wrap items-center gap-3 border-t border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700"
       data-testid="save-ok"
     >
-      Agreement saved and its draft generated - ready for signing.
+      <span class="flex-1">
+        {{
+          editMode
+            ? "Changes saved and the draft regenerated - ready for signing."
+            : "Agreement saved and its draft generated - ready for signing."
+        }}
+        Reference
+        <span class="font-semibold" data-testid="tracking-number">{{
+          savedTrackingNumber
+        }}</span
+        >.
+      </span>
+      <!-- Save-to-account (claim): only for a new, not-yet-owned agreement with a live session. -->
+      <button
+        v-if="canSaveToAccount"
+        type="button"
+        class="rounded bg-green-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+        :disabled="claiming"
+        data-testid="save-to-account"
+        @click="saveToAccount"
+      >
+        {{ claiming ? "Saving..." : "Save to my account" }}
+      </button>
+      <span
+        v-else-if="claimed"
+        class="text-xs font-semibold"
+        data-testid="claimed-ok"
+      >
+        Saved to My Agreements.
+      </span>
+      <!-- Finalise and pay. Idempotent server-side, so a retry after a closed or failed payment
+           window places no second order and takes no second payment. -->
+      <button
+        v-if="canPay"
+        type="button"
+        class="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+        :disabled="paying"
+        data-testid="finalise-and-pay"
+        @click="openContactStep"
+      >
+        {{ paying ? "Opening payment..." : "Finalise and pay" }}
+      </button>
+    </div>
+    <!-- Payment status. This reflects the SERVER's payment state, never what happened in the
+         checkout window: "Payment received" appears only once the server has confirmed it. -->
+    <p
+      v-if="payMessage"
+      class="border-t px-4 py-2 text-sm"
+      :class="
+        payOutcome === 'PAID'
+          ? 'border-green-200 bg-green-50 text-green-700'
+          : 'border-amber-200 bg-amber-50 text-amber-800'
+      "
+      data-testid="pay-status"
+    >
+      {{ payMessage }}
+    </p>
+    <p
+      v-if="payError"
+      class="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+      data-testid="pay-error"
+    >
+      {{ payError }}
+    </p>
+    <p
+      v-if="claimError"
+      class="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+      data-testid="claim-error"
+    >
+      {{ claimError }}
     </p>
   </div>
 
@@ -900,7 +1383,9 @@ onBeforeUnmount(() => {
       <footer
         class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4"
       >
-        <span class="mr-auto text-xs text-slate-400">escaped & sandboxed - you edit data, never markup</span>
+        <span class="mr-auto text-xs text-slate-400"
+          >escaped & sandboxed - you edit data, never markup</span
+        >
         <button
           type="button"
           class="rounded border border-slate-300 px-4 py-2 text-sm"

@@ -1,0 +1,40 @@
+# Production layer set (commercial) -- STATE+TYPE layer (Telangana commercial), highest precedence.
+# Telangana commercial specifics over the base structure: drop the generic national stamp clause in
+# favour of the Telangana-specific one (state layer), remove its now-dangling entry from the witnesseth
+# covenant list, default the jurisdiction city to Hyderabad, and order the sections so the document
+# reads Lessor -> Lessee -> Schedule -> Term -> Financial -> [optional add-ons] -> Now This Agreement
+# Witnesseth -> Annexure -> Statutory (Telangana) -> In Witness Whereof -> Witnesses, with the
+# statutory overlay last before the signature block.
+#
+# "Statutory (Telangana)" is OPT-IN OPTIONAL: absent from preview and a generated draft until the user
+# adds it from the catalog (marked optional in the state layer's addSection).
+#
+# The "In Witness Whereof" execution / signature block is MANDATORY (declared so in the base): a
+# generated draft must carry the per-signer signature zones + esign:<role> anchors to be signable via
+# Aadhaar eSign, so the block always renders.
+meta:
+  kind: state_type
+  dimensions: { state: TG, type: commercial }
+  version: 1
+
+ops:
+  # Drop the generic national stamp/registration clause; the state layer's tgStampRegistration
+  # supersedes it. Then re-author the witnesseth list without the removed clause so nothing dangles.
+  - { op: removeClause, id: stampRegistrationClause }
+  - { op: replaceSection, title: "Now This Agreement Witnesseth",
+      section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
+                 entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,
+                            inspectionClause, quietEnjoymentClause, handoverClause, disputeClause,
+                            disputeAlternativeClause,
+                            serviceOfNoticeClause, governingLawClause, severabilityClause,
+                            entireAgreementClause ] } }
+
+  # Telangana default jurisdiction.
+  - { op: overrideField, key: jurisdictionCity, default: "Hyderabad" }
+
+  # Full section order for the Telangana commercial set: Statutory then the signature block last.
+  - { op: reorderSections,
+      order: [ "Lessor", "Lessee", "Schedule of Premises", "Term", "Financial",
+               "Charges & Utilities", "Occupancy & Use", "Dispute Resolution",
+               "Now This Agreement Witnesseth", "Annexure", "Statutory (Telangana)",
+               "In Witness Whereof", "Witnesses" ] }

@@ -4,7 +4,11 @@
 import { computed } from "vue";
 import type { FormField } from "../../api/templateForm";
 
-const props = defineProps<{ field: FormField; modelValue: string; error?: string | null }>();
+const props = defineProps<{
+  field: FormField;
+  modelValue: string;
+  error?: string | null;
+}>();
 const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
 
 const checked = computed({
@@ -26,7 +30,11 @@ const checked = computed({
       />
       <span class="text-sm text-slate-700">{{ field.label }}</span>
     </label>
-    <span v-if="error" class="mt-1 text-xs text-red-600" :data-testid="`field-error-${field.key}`">
+    <span
+      v-if="error"
+      class="mt-1 text-xs text-red-600"
+      :data-testid="`field-error-${field.key}`"
+    >
       {{ error }}
     </span>
   </span>

@@ -1,6 +1,7 @@
 package in.agreementmitra.documents.template;
 
 import in.agreementmitra.ResourceNotFoundException;
+import in.agreementmitra.documents.DocumentFooterProperties;
 import in.agreementmitra.documents.HtmlPdfRenderer;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
@@ -39,9 +40,27 @@ class DocumentProjectionService implements DocumentProjectionApi {
    */
   private static final Dimensions DEFAULT_DIMENSIONS = new Dimensions("IN", "residential");
 
+  /**
+   * The provenance-line reference used when a request carries no {@code documentReference} -- the
+   * <b>stateless</b> preview before an agreement is saved (no id exists yet, so no tracking number
+   * can). It marks the document as a pre-save draft in both the preview and the PDF. Once the
+   * agreement is saved, the caller passes the real tracking number as {@code documentReference}
+   * (generate) or the client passes it into the preview request, and the real number replaces this
+   * marker. Because the provenance line is <b>body content</b> shared by both faces, preview and
+   * PDF stay byte-for-byte in parity.
+   */
+  static final String PREVIEW_FOOTER_LABEL = "PREVIEW - NOT FOR EXECUTION";
+
   private final TemplateResolver resolver;
   private final TemplateCompiler compiler;
   private final HtmlPdfRenderer htmlPdfRenderer;
+
+  /**
+   * The platform URL shown in the compiled document's provenance line (design D5), resolved once
+   * from configuration and passed into the pure compiler. Blank means "omit the URL part". The
+   * {@code documents} module holds no brand literal -- the value is app configuration.
+   */
+  private final String platformUrl;
 
   /**
    * Injected clock used only to resolve the SYSDATE fallback for the execution date (design D3):
@@ -55,10 +74,12 @@ class DocumentProjectionService implements DocumentProjectionApi {
       TemplateResolver resolver,
       TemplateCompiler compiler,
       HtmlPdfRenderer htmlPdfRenderer,
+      DocumentFooterProperties footerProperties,
       Clock clock) {
     this.resolver = resolver;
     this.compiler = compiler;
     this.htmlPdfRenderer = htmlPdfRenderer;
+    this.platformUrl = footerProperties.platformUrl();
     this.clock = clock;
   }
 
@@ -69,7 +90,10 @@ class DocumentProjectionService implements DocumentProjectionApi {
 
   @Override
   public byte[] previewPdf(DocumentProjectionRequest request) {
-    return htmlPdfRenderer.toPdf(compile(request, ProjectionMode.PREVIEW));
+    // Parity: the compiled body is identical to previewHtml (it carries the screen-only provenance
+    // line). The PDF renders as print media -- that body line is hidden -- and the renderer stamps
+    // the same reference + URL + page number as the per-page footer furniture in the margin.
+    return htmlPdfRenderer.toPdf(compile(request, ProjectionMode.PREVIEW), referenceFor(request));
   }
 
   /**
@@ -87,12 +111,19 @@ class DocumentProjectionService implements DocumentProjectionApi {
   @Override
   public DocumentProjectionResult generate(DocumentProjectionRequest request) {
     EffectiveTemplate effective = resolve(request.dimensions());
+    // The tracking number (request.documentReference) + platform URL render as the screen-only body
+    // provenance line (for the on-screen preview) AND as the per-page PDF footer furniture. Both
+    // are
+    // system-owned, so the effective-template identity (reproducibility pin) is unaffected.
+    String reference = referenceFor(request);
     String html =
-        compile(effective, request.data(), request.activeSections(), ProjectionMode.GENERATE);
-    // Stamp the non-PII document reference + page numbers at the render layer (design D4). The
-    // reference is furniture only -- it is NOT part of the compiled body HTML, so the
-    // effective-template identity (the reproducibility pin) is unaffected.
-    byte[] pdf = htmlPdfRenderer.toPdf(html, request.documentReference());
+        compile(
+            effective,
+            request.data(),
+            request.activeSections(),
+            reference,
+            ProjectionMode.GENERATE);
+    byte[] pdf = htmlPdfRenderer.toPdf(html, reference);
     return new DocumentProjectionResult(pdf, identityOf(effective));
   }
 
@@ -103,13 +134,19 @@ class DocumentProjectionService implements DocumentProjectionApi {
    * added.
    */
   private String compile(DocumentProjectionRequest request, ProjectionMode mode) {
-    return compile(resolve(request.dimensions()), request.data(), request.activeSections(), mode);
+    return compile(
+        resolve(request.dimensions()),
+        request.data(),
+        request.activeSections(),
+        referenceFor(request),
+        mode);
   }
 
   private String compile(
       EffectiveTemplate effective,
       Map<String, Object> data,
       List<String> activeSections,
+      String reference,
       ProjectionMode mode) {
     Map<String, Object> coerced = SubmittedDataValidator.validateAndCoerce(effective, data, mode);
     // Resolve the execution date once here (design D3) and pass the concrete value into the pure
@@ -120,7 +157,20 @@ class DocumentProjectionService implements DocumentProjectionApi {
     // construction). A null list is tolerated (treated as empty); titles matching no section are
     // ignored by the compiler.
     Set<String> active = activeSections == null ? Set.of() : new HashSet<>(activeSections);
-    return compiler.compile(effective, coerced, executionDate, active);
+    // The provenance line (reference + platform URL) is compiled body content shared by both faces,
+    // so preview and PDF stay byte-for-byte in parity.
+    return compiler.compile(effective, coerced, executionDate, active, reference, platformUrl);
+  }
+
+  /**
+   * The provenance-line reference for a request: the caller-supplied {@code documentReference} (the
+   * tracking number on generate, or the number the client passes into a post-save preview) when
+   * present and non-blank, else the {@link #PREVIEW_FOOTER_LABEL} marker (a pre-save preview with
+   * no id yet).
+   */
+  private static String referenceFor(DocumentProjectionRequest request) {
+    String reference = request.documentReference();
+    return reference == null || reference.isBlank() ? PREVIEW_FOOTER_LABEL : reference;
   }
 
   /**

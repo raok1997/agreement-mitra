@@ -31,7 +31,9 @@ class SigningRequestStateMachineTest {
     request.markRequested(
         "DOC-1",
         List.of(
-            SigningRequestInvitee.create(signerId, "https://sign/abc", "2026-12-31", 0, "INV-1")));
+            SigningRequestInvitee.create(
+                signerId, "https://sign/abc", "2026-12-31", 0, "INV-1", "invitee@example.com")),
+        null); // Leegality-style provider: no per-transaction webhook key
 
     assertThat(request.status()).isEqualTo(SignatureStatus.SIGN_REQUESTED);
     assertThat(request.providerDocumentId()).isEqualTo("DOC-1");
@@ -84,7 +86,7 @@ class SigningRequestStateMachineTest {
     request.markStamped();
     assertThat(request.status()).isEqualTo(SignatureStatus.STAMPED);
 
-    request.markRequested("DOC", List.of());
+    request.markRequested("DOC", List.of(), null);
     assertThat(request.status()).isEqualTo(SignatureStatus.SIGN_REQUESTED);
   }
 
@@ -95,7 +97,7 @@ class SigningRequestStateMachineTest {
     request.markStampFailed();
     assertThat(request.status()).isEqualTo(SignatureStatus.STAMP_FAILED);
 
-    assertThatThrownBy(() -> request.markRequested("DOC", List.of()))
+    assertThatThrownBy(() -> request.markRequested("DOC", List.of(), null))
         .isInstanceOf(IllegalStateException.class);
     assertThat(request.status()).isEqualTo(SignatureStatus.STAMP_FAILED);
   }
@@ -104,7 +106,7 @@ class SigningRequestStateMachineTest {
   void cannotRequestSigningBeforeStamping() {
     SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
     // PDF_GENERATED must go through STAMPED first.
-    assertThatThrownBy(() -> request.markRequested("DOC", List.of()))
+    assertThatThrownBy(() -> request.markRequested("DOC", List.of(), null))
         .isInstanceOf(IllegalStateException.class);
     assertThat(request.status()).isEqualTo(SignatureStatus.PDF_GENERATED);
   }
@@ -112,7 +114,7 @@ class SigningRequestStateMachineTest {
   private static SigningRequest requested() {
     SigningRequest request = SigningRequest.createPending(UUID.randomUUID());
     request.markStamped();
-    request.markRequested("DOC", List.of());
+    request.markRequested("DOC", List.of(), null);
     return request;
   }
 }

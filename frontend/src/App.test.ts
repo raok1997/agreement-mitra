@@ -129,11 +129,15 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
     mockedCreate.mockReset();
     mockedGenerate.mockReset();
     localStorage.clear();
+    // App resolves its route from the path, and "/" is now the public marketing page.
+    // These cases exercise the builder, so start them on the app route.
+    window.history.replaceState({}, "", "/start");
   });
 
   it("picks a template, fills the form, and saves through the existing endpoints", async () => {
     mockedCreate.mockResolvedValue({
       id: "agr-9",
+      trackingNumber: "AM-A5E4D9-010126",
       propertyAddress: "12 MG Road",
       monthlyRent: 0,
       securityDeposit: 0,
@@ -191,6 +195,7 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
     mockedGetForm.mockReset().mockResolvedValue(schemaWithOptional());
     mockedCreate.mockResolvedValue({
       id: "agr-10",
+      trackingNumber: "AM-A5E410-010126",
       propertyAddress: "12 MG Road",
       monthlyRent: 0,
       securityDeposit: 0,
@@ -255,5 +260,73 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="section-rail"]').exists()).toBe(false);
+  });
+});
+
+// The path switch that splits the public site from the app. Router-less by design
+// (flow-journal 8.3), so these assertions are what keeps the hand-rolled version honest.
+describe("App route switch", () => {
+  // jsdom runs history.back() as a queued task, so a fixed timeout races it -- and a
+  // late-firing popstate would leak into the next test's location. Await the event.
+  function goBack(): Promise<void> {
+    return new Promise((resolve) => {
+      window.addEventListener("popstate", () => resolve(), { once: true });
+      window.history.back();
+    });
+  }
+
+  beforeEach(() => {
+    mockedList.mockReset().mockResolvedValue(catalogRows());
+    mockedGetForm.mockReset().mockResolvedValue(schema());
+    localStorage.clear();
+  });
+
+  it('serves the marketing page at "/" without touching the API', async () => {
+    window.history.replaceState({}, "", "/");
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(false);
+    // The landing page must render even when the backend is down.
+    expect(mockedList).not.toHaveBeenCalled();
+  });
+
+  it("enters the builder at /start from a landing CTA, and back returns to the page", async () => {
+    window.history.replaceState({}, "", "/");
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="hero-start"]').trigger("click");
+    await flushPromises();
+    expect(window.location.pathname).toBe("/start");
+    expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(true);
+
+    // Entering the app is a real history entry, so Back must land on the marketing page.
+    await goBack();
+    await flushPromises();
+    expect(window.location.pathname).toBe("/");
+    expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("mounts the OAuth callback on /auth/callback rather than the marketing page", async () => {
+    window.history.replaceState({}, "", "/auth/callback");
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(false);
+    // No handoff in the fragment, so the callback view settles on its error state.
+    expect(wrapper.text()).toContain("complete sign-in");
+  });
+
+  it("falls through unknown deep links to the app, not the marketing page", async () => {
+    window.history.replaceState({}, "", "/start/anything");
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(false);
   });
 });

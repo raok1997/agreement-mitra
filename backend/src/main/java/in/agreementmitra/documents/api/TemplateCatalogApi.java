@@ -32,6 +32,25 @@ public interface TemplateCatalogApi {
   TemplateDetail detail(String id);
 
   /**
+   * Fetch one published catalog entry by id, or empty when there is none.
+   *
+   * <p>The non-throwing sibling of {@link #detail(String)}, for callers that treat an unresolvable
+   * template as <b>missing data rather than a failure</b> - the staff stamp queue, where an
+   * agreement pinned to a since-deprecated template is still outstanding work and must stay on the
+   * queue with less shown, not disappear from it.
+   *
+   * <p>It exists because {@code detail}'s exception cannot serve that case: this method runs inside
+   * the caller's transaction, so a thrown exception marks the shared transaction rollback-only and
+   * dooms the caller's commit <em>even if the caller catches it</em>. "Catch and carry on" is not
+   * available across a transactional boundary; not throwing is.
+   *
+   * <p>Discloses no more than {@code detail}: same published-only rule, and empty is returned
+   * identically for an unknown id and a non-published one, so this is not an existence oracle
+   * either.
+   */
+  Optional<TemplateDetail> find(String id);
+
+  /**
    * The id of the published catalog template for {@code (state, type)}, if one exists. This is the
    * catalog's <b>dimension-validation authority</b>: it is the intended integration point for the
    * form/document projections to reject an unknown {@code (state, type)} (closing the D7 gap where

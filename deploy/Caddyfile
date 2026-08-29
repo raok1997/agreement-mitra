@@ -1,0 +1,111 @@
+# Production edge config for agreementmitra.com.
+#
+# Topology: Cloudflare (orange cloud, SSL/TLS mode "Full (strict)") terminates
+# the public TLS connection and opens a second one to this origin, which presents
+# a Cloudflare Origin CA certificate. The origin IP is never published in DNS.
+#
+# One origin serves the SPA and /api, so the opaque session cookie is same-site
+# and there is no CORS to configure. This is what resolves the open "/api
+# problem" in docs/DOMAIN-AND-EMAIL-SETUP.md section 4.
+
+{
+	# No admin API in production. It is unauthenticated on localhost by default
+	# and there is no reason for it to exist on this box.
+	admin off
+
+	servers {
+		# Cloudflare terminates the client connection, so without this every
+		# request would appear to originate from a Cloudflare IP. Rate limiting
+		# and the redacted security-event logging that `signing-auth` will add
+		# are both meaningless on a proxy IP, so real-client-IP recovery has to
+		# be correct from day one.
+		#
+		# REFRESH THESE: the canonical list is https://www.cloudflare.com/ips/.
+		# Cloudflare changes it rarely but does change it; a stale list silently
+		# degrades to trusting nothing (safe) or, if ranges are added and traffic
+		# arrives from them, to logging proxy IPs (wrong, not dangerous).
+		trusted_proxies static \
+			173.245.48.0/20 \
+			103.21.244.0/22 \
+			103.22.200.0/22 \
+			103.31.4.0/22 \
+			141.101.64.0/18 \
+			108.162.192.0/18 \
+			190.93.240.0/20 \
+			188.114.96.0/20 \
+			197.234.240.0/22 \
+			198.41.128.0/17 \
+			162.158.0.0/15 \
+			104.16.0.0/13 \
+			104.24.0.0/14 \
+			172.64.0.0/13 \
+			131.0.72.0/22 \
+			2400:cb00::/32 \
+			2606:4700::/32 \
+			2803:f800::/32 \
+			2405:b500::/32 \
+			2405:8100::/32 \
+			2a06:98c0::/29 \
+			2c0f:f248::/32
+
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+# Redirect www to the apex so there is a single canonical origin (and a single
+# cookie scope). Cloudflare proxies both hostnames to here.
+www.agreementmitra.com {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	redir https://agreementmitra.com{uri} permanent
+}
+
+agreementmitra.com {
+	# Cloudflare Origin CA certificate. Publicly untrusted by design: only
+	# Cloudflare ever connects to this origin, and "Full (strict)" mode is what
+	# makes it validate. During first bring-up (before the zone is active) these
+	# files are a self-signed placeholder; swapping in the real Origin cert is a
+	# file replace plus `docker compose restart caddy`, no config change.
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+
+	encode zstd gzip
+
+	# Mirrors frontend/public/_headers, which only applies on Cloudflare Pages
+	# and is inert here. Keep the two in sync if either changes.
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# API first: this must take precedence over the SPA fallback below, or a
+	# misrouted API call would receive index.html and a fetch() expecting JSON
+	# would fail confusingly instead of loudly.
+	handle /api/* {
+		reverse_proxy backend:8090 {
+			# The draft-upload route accepts up to 11 MB (spring.servlet
+			# .multipart.max-request-size) and PDF renders can be slow, so do not
+			# let a default read timeout truncate either.
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
+
+	handle {
+		root * /srv
+
+		# Hashed build assets are immutable; index.html must never be cached
+		# long or a deploy will not reach returning visitors.
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		header /index.html Cache-Control "public, max-age=0, must-revalidate"
+
+		# SPA fallback: App.vue resolves its route from window.location.pathname,
+		# so a deep link to /start or /auth/callback must be served index.html.
+		try_files {path} /index.html
+		file_server
+	}
+}

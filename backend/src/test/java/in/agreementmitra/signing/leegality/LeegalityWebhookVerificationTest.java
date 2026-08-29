@@ -3,6 +3,7 @@ package in.agreementmitra.signing.leegality;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.signing.WebhookHeaders;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -10,6 +11,11 @@ import org.springframework.web.client.RestClient;
 /**
  * Unit tests for Leegality webhook verification — pure HMAC logic, no Spring, no network. The MAC
  * is {@code HMAC-SHA1(documentId, webhookSecret)} carried in the JSON body.
+ *
+ * <p>Since the seam gained a header parameter (for ZOOP's per-transaction header key), this adapter
+ * receives the headers and the stored key too and must IGNORE both - every call here passes empty
+ * headers and a null stored key, so a regression that started depending on either would fail
+ * immediately.
  */
 class LeegalityWebhookVerificationTest {
 
@@ -19,7 +25,7 @@ class LeegalityWebhookVerificationTest {
   private final LeegalityEsignProvider adapter =
       new LeegalityEsignProvider(
           RestClient.create(), // never called by verifyWebhook
-          new LeegalityProperties("", "", MAC_KEY, "profile"),
+          LeegalityProperties.of("", "", MAC_KEY, "profile"),
           new ObjectMapper());
 
   @Test
@@ -28,7 +34,7 @@ class LeegalityWebhookVerificationTest {
     String payload =
         "{\"documentId\":\"" + DOC + "\",\"mac\":\"" + mac + "\",\"event\":\"SIGNED\"}";
 
-    assertThat(adapter.verifyWebhook(payload)).contains(DOC);
+    assertThat(adapter.verifyWebhook(payload, WebhookHeaders.empty(), null)).contains(DOC);
   }
 
   @Test
@@ -37,7 +43,7 @@ class LeegalityWebhookVerificationTest {
     String tampered = mac.substring(0, mac.length() - 1) + (mac.endsWith("0") ? "1" : "0");
     String payload = "{\"documentId\":\"" + DOC + "\",\"mac\":\"" + tampered + "\"}";
 
-    assertThat(adapter.verifyWebhook(payload)).isEmpty();
+    assertThat(adapter.verifyWebhook(payload, WebhookHeaders.empty(), null)).isEmpty();
   }
 
   @Test
@@ -46,14 +52,16 @@ class LeegalityWebhookVerificationTest {
     String macForOther = LeegalityEsignProvider.hmacSha1Hex("OTHER-DOC", MAC_KEY);
     String payload = "{\"documentId\":\"" + DOC + "\",\"mac\":\"" + macForOther + "\"}";
 
-    assertThat(adapter.verifyWebhook(payload)).isEmpty();
+    assertThat(adapter.verifyWebhook(payload, WebhookHeaders.empty(), null)).isEmpty();
   }
 
   @Test
   void missingFieldsAreRejected() {
-    assertThat(adapter.verifyWebhook("{\"documentId\":\"" + DOC + "\"}")).isEmpty();
-    assertThat(adapter.verifyWebhook("{\"mac\":\"abc\"}")).isEmpty();
-    assertThat(adapter.verifyWebhook("not json")).isEmpty();
+    assertThat(
+            adapter.verifyWebhook("{\"documentId\":\"" + DOC + "\"}", WebhookHeaders.empty(), null))
+        .isEmpty();
+    assertThat(adapter.verifyWebhook("{\"mac\":\"abc\"}", WebhookHeaders.empty(), null)).isEmpty();
+    assertThat(adapter.verifyWebhook("not json", WebhookHeaders.empty(), null)).isEmpty();
   }
 
   @Test
@@ -65,7 +73,7 @@ class LeegalityWebhookVerificationTest {
 
   @Test
   void verifyWebhookReturnsOptional() {
-    Optional<String> result = adapter.verifyWebhook("{}");
+    Optional<String> result = adapter.verifyWebhook("{}", WebhookHeaders.empty(), null);
     assertThat(result).isEmpty();
   }
 }

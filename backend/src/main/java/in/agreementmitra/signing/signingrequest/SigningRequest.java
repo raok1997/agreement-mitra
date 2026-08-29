@@ -90,6 +90,17 @@ class SigningRequest implements Persistable<UUID> {
   @Column(name = "audit_trail_key")
   private String auditTrailKey;
 
+  /**
+   * The per-transaction webhook credential this provider issued at create time, <b>encrypted at
+   * rest</b> (design D3). Null for a provider that authenticates its callback some other way (the
+   * Leegality body MAC uses a config-wide secret) and for every pre-existing row.
+   *
+   * <p>Never logged, never returned by any API, and only ever decrypted in memory at verification
+   * time to be compared in constant time. {@link #toString()} does not render it.
+   */
+  @Column(name = "webhook_security_key")
+  private String webhookSecurityKey;
+
   @Transient private boolean isNew = true;
 
   protected SigningRequest() {
@@ -136,9 +147,18 @@ class SigningRequest implements Persistable<UUID> {
     transitionTo(SignatureStatus.STAMP_FAILED);
   }
 
-  /** Record the provider document id + per-invitee URLs and move to {@code SIGN_REQUESTED}. */
-  void markRequested(String providerDocumentId, List<SigningRequestInvitee> inviteeRows) {
+  /**
+   * Record the provider document id, the per-invitee URLs, and (where the provider issues one) the
+   * <b>already-encrypted</b> per-transaction webhook credential, then move to {@code
+   * SIGN_REQUESTED}. The aggregate never sees the plaintext key: encryption happens in the
+   * persistence step before this is called.
+   */
+  void markRequested(
+      String providerDocumentId,
+      List<SigningRequestInvitee> inviteeRows,
+      String encryptedWebhookKey) {
     this.providerDocumentId = providerDocumentId;
+    this.webhookSecurityKey = encryptedWebhookKey;
     inviteeRows.forEach(this::addInvitee);
     transitionTo(SignatureStatus.SIGN_REQUESTED);
   }
@@ -255,6 +275,13 @@ class SigningRequest implements Persistable<UUID> {
 
   String auditTrailKey() {
     return auditTrailKey;
+  }
+
+  /**
+   * The stored (encrypted) per-transaction webhook credential; null when the provider issues none.
+   */
+  String webhookSecurityKey() {
+    return webhookSecurityKey;
   }
 
   @Override

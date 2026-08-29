@@ -1,6 +1,7 @@
 package in.agreementmitra.signing.leegality;
 
 import java.net.http.HttpClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClient;
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(LeegalityProperties.class)
+@ConditionalOnProperty(name = "esign.provider", havingValue = "leegality")
 class LeegalityConfig {
 
   /**

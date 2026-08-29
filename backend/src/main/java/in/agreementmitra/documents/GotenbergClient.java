@@ -41,34 +41,42 @@ class GotenbergClient {
 
   private final RestClient restClient;
   private final Semaphore renderPermits;
+  private final String platformUrl;
 
-  GotenbergClient(RestClient gotenbergRestClient, GotenbergProperties properties) {
+  GotenbergClient(
+      RestClient gotenbergRestClient,
+      GotenbergProperties properties,
+      DocumentFooterProperties footerProperties) {
     this.restClient = gotenbergRestClient;
     this.renderPermits = new Semaphore(properties.maxConcurrentRenders());
+    this.platformUrl = footerProperties.platformUrl();
   }
 
   /**
    * Render {@code html} to PDF bytes via Gotenberg. The HTML must be self-contained (no external
-   * references are fetched -- Gotenberg denies Chromium's outbound network). When {@code
-   * documentReference} is non-null, a footer band carrying that reference and a "Page X of Y"
-   * indicator is stamped on every page (document furniture, design D4); a null reference renders
-   * the bare document unchanged. The reference is system-generated and non-PII; it is HTML-escaped
-   * defensively and never logged.
+   * references are fetched -- Gotenberg denies Chromium's outbound network). The render emulates
+   * <b>print</b> media, and a footer band is stamped in the reserved bottom margin on <b>every</b>
+   * page: the escaped {@code reference} (the tracking number or a preview marker) with the platform
+   * URL on the left, and a "Page X of Y" indicator on the right. Rendering the footer as furniture
+   * in the margin (not as body flow) keeps it off its own page and clear of the content; the
+   * on-screen provenance line is a screen-only body element that print media hides. The reference
+   * is non-PII; it and the URL are HTML-escaped defensively; the HTML/PDF are never logged.
    *
    * @throws DocumentRenderException if Gotenberg is unreachable/times out or returns no document
    */
-  byte[] renderHtml(String html, String documentReference) {
+  byte[] renderHtml(String html, String reference) {
     MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
     form.add("files", namedHtml(html, "index.html")); // Gotenberg's required main-file name
     form.add("paperWidth", A4_WIDTH_IN);
     form.add("paperHeight", A4_HEIGHT_IN);
-    if (documentReference != null) {
-      // Empty header + our footer: reserve the top/bottom band and suppress Chromium's defaults.
-      form.add("files", namedHtml(EMPTY_HEADER, "header.html"));
-      form.add("files", namedHtml(footerHtml(documentReference), "footer.html"));
-      form.add("marginTop", FURNITURE_MARGIN_IN);
-      form.add("marginBottom", FURNITURE_MARGIN_IN);
-    }
+    // Print media so a screen-only body element (the on-screen provenance line) does not appear in
+    // the PDF; empty header + our footer reserve the bottom band and suppress Chromium's defaults;
+    // the footer is stamped on every page (reference + URL + page number).
+    form.add("emulatedMediaType", "print");
+    form.add("files", namedHtml(EMPTY_HEADER, "header.html"));
+    form.add("files", namedHtml(footerHtml(reference), "footer.html"));
+    form.add("marginTop", FURNITURE_MARGIN_IN);
+    form.add("marginBottom", FURNITURE_MARGIN_IN);
 
     boolean acquired = false;
     try {
@@ -112,21 +120,42 @@ class GotenbergClient {
   }
 
   /**
-   * The footer template: the escaped document reference on the left and Chromium's {@code
-   * pageNumber} / {@code totalPages} placeholders ("Page X of Y") on the right. Chromium renders
-   * header/footer templates with a zeroed font by default, so the size is set inline. The reference
-   * is system-generated and non-PII but is escaped defensively (markup/data discipline).
+   * The footer template: the escaped {@code reference} and platform URL on the left, and Chromium's
+   * {@code pageNumber} / {@code totalPages} placeholders on the right, on every page.
+   *
+   * <p><b>"Agreement page X of Y", not "Page X of Y".</b> This footer is stamped while the
+   * agreement is rendered, before the e-stamp certificate is bound in front of it as page 1 - so
+   * the count can only ever describe the agreement. Left as a bare "Page X of Y" it read as a claim
+   * about the file, and a five-page document declaring four pages is the sort of discrepancy a
+   * registrar or a bank counts sheets to find. Naming what is being counted makes it true again.
+   * Chromium renders header/footer templates with a zeroed font by default, so the size is set
+   * inline. The reference is system-generated and non-PII but is escaped defensively (markup/data
+   * discipline); the URL is inert display text (no anchor, never fetched -- the render stays
+   * offline). A blank platform URL renders the reference alone.
+   *
+   * <p>Package-private (not {@code private}) so a same-package unit test can assert the layout,
+   * escaping, and the page-number placeholders without a Gotenberg round-trip.
    */
-  private static String footerHtml(String documentReference) {
-    String ref = HtmlUtils.htmlEscape(documentReference, "UTF-8");
-    return "<html><head><style>*{margin:0;padding:0;}</style></head>"
-        + "<body style=\"font-family:Georgia,serif;font-size:8px;color:#666;width:100%;"
-        + "padding:0 20mm;\">"
-        + "<div style=\"display:flex;justify-content:space-between;width:100%;\">"
-        + "<span>"
-        + ref
-        + "</span>"
-        + "<span>Page <span class=\"pageNumber\"></span> of <span class=\"totalPages\"></span></span>"
-        + "</div></body></html>";
+  String footerHtml(String reference) {
+    String ref = HtmlUtils.htmlEscape(reference == null ? "" : reference, "UTF-8");
+    String left =
+        platformUrl.isBlank()
+            ? ref
+            : ref + " &middot; " + HtmlUtils.htmlEscape(platformUrl, "UTF-8");
+    // A table layout (not flex): Chromium reliably fills the .pageNumber / .totalPages placeholders
+    // in a table-based footer, whereas a flex row can leave .totalPages blank. font-size is inline
+    // (Chromium zeroes the header/footer font by default).
+    return "<html><head><style>*{margin:0;padding:0;}"
+        + "td{font-family:Georgia,serif;font-size:8px;color:#666;white-space:nowrap;}</style></head>"
+        + "<body style=\"width:100%;\">"
+        + "<table style=\"width:100%;border-collapse:collapse;\"><tr>"
+        + "<td style=\"text-align:left;padding-left:20mm;\">"
+        + left
+        + "</td>"
+        + "<td style=\"text-align:right;padding-right:20mm;\">"
+        + "Agreement page <span class=\"pageNumber\"></span> of"
+        + " <span class=\"totalPages\"></span>"
+        + "</td>"
+        + "</tr></table></body></html>";
   }
 }

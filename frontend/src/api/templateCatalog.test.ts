@@ -56,7 +56,11 @@ describe("template-catalog api client", () => {
   it("rejects on a 404 (unknown or non-published id)", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 404, json: () => Promise.resolve({}) }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({}),
+      }),
     );
 
     await expect(getTemplate("missing")).rejects.toThrow(/404/);

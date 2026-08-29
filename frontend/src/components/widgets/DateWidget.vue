@@ -16,9 +16,15 @@ const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
       :class="error ? 'border-red-400' : 'border-slate-300'"
       :aria-invalid="!!error"
       :data-testid="`field-${field.key}`"
-      @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      @input="
+        emit('update:modelValue', ($event.target as HTMLInputElement).value)
+      "
     />
-    <span v-if="error" class="mt-1 text-xs text-red-600" :data-testid="`field-error-${field.key}`">
+    <span
+      v-if="error"
+      class="mt-1 text-xs text-red-600"
+      :data-testid="`field-error-${field.key}`"
+    >
       {{ error }}
     </span>
   </span>

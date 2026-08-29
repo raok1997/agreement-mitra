@@ -19,12 +19,7 @@ class GotenbergHtmlPdfRenderer implements HtmlPdfRenderer {
   }
 
   @Override
-  public byte[] toPdf(String html) {
-    return gotenbergClient.renderHtml(html, null);
-  }
-
-  @Override
-  public byte[] toPdf(String html, String documentReference) {
-    return gotenbergClient.renderHtml(html, documentReference);
+  public byte[] toPdf(String html, String reference) {
+    return gotenbergClient.renderHtml(html, reference);
   }
 }

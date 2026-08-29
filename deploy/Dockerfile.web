@@ -1,0 +1,23 @@
+# Edge image: builds the Vue SPA, then serves it from Caddy alongside a reverse
+# proxy to the API. Build context is the REPOSITORY ROOT (it needs both
+# `frontend/` and `deploy/Caddyfile`).
+#
+# BUILD-GATE NOTE: this runs `build:only`, not `build`. `npm run build` chains
+# `security:scan`, which shells out to `osv-scanner`; that binary is absent from
+# a clean node image and the gate is deliberately fail-closed. Same reasoning as
+# the Cloudflare Pages build documented in docs/DOMAIN-AND-EMAIL-SETUP.md. A
+# green image build is NOT a passed dependency scan.
+
+FROM node:20-alpine AS spa
+WORKDIR /app
+
+# Lockfile first so the dependency layer caches independently of source churn.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build:only
+
+FROM caddy:2-alpine AS runtime
+COPY --from=spa /app/dist /srv
+COPY deploy/Caddyfile /etc/caddy/Caddyfile

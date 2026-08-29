@@ -7,37 +7,62 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.PDPageContentStream.AppendMode;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName;
-import org.apache.pdfbox.util.Matrix;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Component;
 
 /**
- * Composites a synthetic e-stamp onto a draft PDF with Apache PDFBox: prepends a hardcoded ₹100
- * (rendered "INR 100" — Standard-14 fonts have no ₹ glyph) Karnataka non-judicial stamp page as
- * page 1, then overlays a per-page header carrying the serial onto each draft page. The result has
- * {@code 1 + draftPages} pages; the input draft bytes are never mutated.
+ * Composites the staff-uploaded e-stamp certificate onto a draft PDF with Apache PDFBox: prepends
+ * the <b>scanned certificate image</b> as page 1, then overlays a per-page header carrying the
+ * <b>certificate number</b> onto each draft page. The result has {@code 1 + draftPages} pages; the
+ * input draft bytes and the input scan bytes are never mutated.
  *
- * <p>The draft is <b>untrusted</b> (only its {@code %PDF-} magic bytes were checked at upload), so
- * parsing fails <b>closed</b>: encrypted, corrupt, truncated, or zero-page drafts all raise {@link
- * StampFailedException} (never an unmapped error, hang, or OOM). Input size is already bounded by
- * the upload ceiling, so the in-memory parse cannot exhaust the heap on a large-but-legal file.
+ * <p>The scan is fitted inside the page's printable area with its <b>aspect ratio preserved</b> and
+ * is never <b>upscaled beyond its native resolution</b> (its pixel dimensions read as points at 72
+ * dpi) - a stretched or blown-up certificate would read as a forgery-grade artefact on a document
+ * that evidences real duty.
  *
- * <p>Overlay text uses a Standard-14 font (ASCII serial → no bundled font) and is positioned
- * relative to each page's media box, respecting page rotation, so it stays in-frame for any size or
- * orientation.
+ * <p>Both inputs are <b>untrusted</b>: the draft had only its {@code %PDF-} magic bytes checked at
+ * upload, and the scan was validated by {@link CertificateScanValidator} at intake. Parsing fails
+ * <b>closed</b>: encrypted, corrupt, truncated, or zero-page drafts and undecodable scans all raise
+ * {@link StampFailedException} (never an unmapped error, hang, or OOM). Both inputs' byte sizes are
+ * already bounded by their upload ceilings, so an in-memory parse cannot exhaust the heap on a
+ * large-but-legal file.
+ *
+ * <p>Overlay text uses a Standard-14 font (the certificate number is ASCII, so no bundled font is
+ * needed) and is positioned relative to each page's own media box, respecting page rotation, so it
+ * stays in-frame for any size or orientation.
  */
 @Component
 class PdfStampComposer {
 
   private static final float MARGIN = 24f;
-  private static final float HEADER_FONT_SIZE = 8f;
 
-  /** Compose the stamped PDF. Returns new bytes; the input array is not modified. */
-  byte[] compose(byte[] draftPdf, String serial) {
+  /** Printable inset for the prepended certificate page, in points. */
+  private static final float SCAN_PAGE_MARGIN = 28f;
+
+  /** Prefix of the per-page overlay. Kept ASCII so a Standard-14 font can render it. */
+
+  /**
+   * Compose the stamped PDF: {@code certificateScan} becomes page 1, the draft's pages follow, each
+   * Returns new bytes; neither input array is modified.
+   *
+   * <p><b>Nothing is stamped onto the agreement pages.</b> They used to carry an "e-Stamp
+   * Certificate No." header, and it stated a number the platform could not vouch for: the value
+   * printed was whatever was transcribed at intake, which in practice was the agreement's own
+   * tracking reference rather than a number from the certificate. A legal instrument asserting its
+   * own stamp evidence has to be right about it, and a header that can be wrong is worse than no
+   * header. The certificate number is still stored against the agreement (and still enforced as
+   * single-use); it is simply no longer printed as though the document could attest to it.
+   *
+   * <p>The tie between the certificate page and the body survives without it: every rendered page
+   * already carries the tracking reference in its footer, and the certificate is bound into the
+   * same file as page 1.
+   *
+   * @throws StampFailedException if either input cannot be parsed/decoded, or composition fails
+   */
+  byte[] compose(byte[] draftPdf, byte[] certificateScan) {
     try (PDDocument draft = Loader.loadPDF(draftPdf)) {
       if (draft.isEncrypted()) {
         throw new StampFailedException("draft is encrypted");
@@ -47,10 +72,10 @@ class PdfStampComposer {
       }
       try (PDDocument result = new PDDocument();
           ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-        addStampPage(result, serial);
+        addCertificatePage(result, certificateScan);
         for (PDPage page : draft.getPages()) {
-          // importPage shares objects with `draft` by reference — save while `draft` is still open.
-          overlaySerial(result, result.importPage(page), serial);
+          // importPage shares objects with `draft` by reference - save while `draft` is still open.
+          result.importPage(page);
         }
         result.save(out);
         return out.toByteArray();
@@ -58,56 +83,48 @@ class PdfStampComposer {
     } catch (InvalidPasswordException e) {
       throw new StampFailedException("draft is password-protected", e);
     } catch (IOException e) {
-      throw new StampFailedException("draft could not be parsed or composited", e);
+      throw new StampFailedException("draft or certificate scan could not be composited", e);
+    } catch (IllegalArgumentException | IllegalStateException e) {
+      // PDFBox reports an unrecognised image type as IllegalArgumentException rather than
+      // IOException
+      // ("Image type UNKNOWN not supported"). Fold it into the same fail-closed path: an
+      // undecodable
+      // scan must surface as a stamping failure, never as an unmapped 500.
+      throw new StampFailedException("certificate scan could not be decoded", e);
     }
   }
 
-  private void addStampPage(PDDocument doc, String serial) throws IOException {
+  /**
+   * Page 1: the scanned certificate, centred inside the printable area, aspect preserved, never
+   * upscaled. An undecodable scan raises {@link IOException} from PDFBox and fails closed above.
+   */
+  private void addCertificatePage(PDDocument doc, byte[] certificateScan) throws IOException {
     PDPage page = new PDPage(PDRectangle.A4);
     doc.addPage(page);
-    PDType1Font bold = new PDType1Font(FontName.HELVETICA_BOLD);
-    PDType1Font normal = new PDType1Font(FontName.HELVETICA);
-    float top = PDRectangle.A4.getHeight() - 90f;
+    PDImageXObject image = PDImageXObject.createFromByteArray(doc, certificateScan, "estamp-scan");
+    float boxWidth = PDRectangle.A4.getWidth() - 2 * SCAN_PAGE_MARGIN;
+    float boxHeight = PDRectangle.A4.getHeight() - 2 * SCAN_PAGE_MARGIN;
+    float[] drawn = fitWithoutUpscaling(image.getWidth(), image.getHeight(), boxWidth, boxHeight);
+    float x = (PDRectangle.A4.getWidth() - drawn[0]) / 2f;
+    float y = (PDRectangle.A4.getHeight() - drawn[1]) / 2f;
     try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-      line(cs, bold, 18f, top, "GOVERNMENT OF KARNATAKA");
-      line(cs, bold, 14f, top - 32f, "NON-JUDICIAL STAMP PAPER");
-      line(cs, normal, 12f, top - 72f, "Denomination: INR 100");
-      line(cs, normal, 12f, top - 94f, "Stamp Serial No.: " + serial);
-      line(cs, normal, 10f, top - 140f, "(SYNTHETIC e-STAMP - SANDBOX - NO DUTY PAID)");
+      cs.drawImage(image, x, y, drawn[0], drawn[1]);
     }
   }
 
-  private void line(PDPageContentStream cs, PDType1Font font, float size, float y, String text)
-      throws IOException {
-    cs.beginText();
-    cs.setFont(font, size);
-    cs.newLineAtOffset(70f, y);
-    cs.showText(text);
-    cs.endText();
-  }
-
-  private void overlaySerial(PDDocument doc, PDPage page, String serial) throws IOException {
-    PDRectangle box = page.getMediaBox();
-    int rotation = ((page.getRotation() % 360) + 360) % 360;
-    PDType1Font font = new PDType1Font(FontName.HELVETICA);
-    try (PDPageContentStream cs =
-        new PDPageContentStream(doc, page, AppendMode.APPEND, true, true)) {
-      cs.beginText();
-      cs.setFont(font, HEADER_FONT_SIZE);
-      cs.setNonStrokingColor(0.4f, 0.4f, 0.4f);
-      cs.setTextMatrix(headerMatrix(box, rotation));
-      cs.showText("Non Judicial Stamp No. " + serial);
-      cs.endText();
+  /**
+   * The drawn {@code [width, height]} in points for an image of {@code imageWidth x imageHeight}
+   * pixels inside a {@code boxWidth x boxHeight} area: scaled down to fit, aspect ratio preserved,
+   * and capped at scale 1.0 so a small scan is never blown up past its native resolution.
+   * Package-private so the geometry is unit-testable without cracking open a PDF.
+   */
+  static float[] fitWithoutUpscaling(
+      float imageWidth, float imageHeight, float boxWidth, float boxHeight) {
+    if (imageWidth <= 0 || imageHeight <= 0) {
+      return new float[] {0f, 0f};
     }
-  }
-
-  /** Place the header near the visual top-left of the page, accounting for its rotation. */
-  private static Matrix headerMatrix(PDRectangle box, int rotation) {
-    return switch (rotation) {
-      case 90 -> Matrix.getRotateInstance(Math.toRadians(90), box.getWidth() - MARGIN, MARGIN);
-      case 180 -> Matrix.getRotateInstance(Math.toRadians(180), box.getWidth() - MARGIN, MARGIN);
-      case 270 -> Matrix.getRotateInstance(Math.toRadians(270), MARGIN, box.getHeight() - MARGIN);
-      default -> Matrix.getTranslateInstance(MARGIN, box.getHeight() - MARGIN);
-    };
+    float scale = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+    scale = Math.min(scale, 1f);
+    return new float[] {imageWidth * scale, imageHeight * scale};
   }
 }

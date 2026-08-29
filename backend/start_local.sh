@@ -20,6 +20,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Load local-only secrets from a git-ignored .env.local if present (see .env.example for the keys):
+# GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_SECRET for optional Google login, plus any S3_*/DB_* overrides.
+# `set -a` exports every var the file defines; values already in the environment are NOT overwritten
+# by a plain `KEY=value` here unless the file itself exports them, so a real env still wins by default.
+if [ -f .env.local ]; then
+  echo "Loading local env from backend/.env.local"
+  set -a
+  # Strip CR so a file saved from PowerShell/Windows (CRLF) sources cleanly -- otherwise a
+  # trailing \r ends up inside each value (e.g. the client secret) and breaks the OAuth call.
+  # shellcheck disable=SC1091
+  . <(tr -d '\r' < .env.local)
+  set +a
+fi
+
 # Local docker-compose defaults — only applied if unset (a real env always wins).
 export S3_ACCESS_KEY="${S3_ACCESS_KEY:-minioadmin}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-minioadmin}"

@@ -15,14 +15,24 @@ const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
       :class="error ? 'border-red-400' : 'border-slate-300'"
       :aria-invalid="!!error"
       :data-testid="`field-${field.key}`"
-      @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)"
+      @change="
+        emit('update:modelValue', ($event.target as HTMLSelectElement).value)
+      "
     >
       <option value="">{{ field.required ? "Select..." : "(none)" }}</option>
-      <option v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
+      <option
+        v-for="opt in field.options ?? []"
+        :key="opt.value"
+        :value="opt.value"
+      >
         {{ opt.label }}
       </option>
     </select>
-    <span v-if="error" class="mt-1 text-xs text-red-600" :data-testid="`field-error-${field.key}`">
+    <span
+      v-if="error"
+      class="mt-1 text-xs text-red-600"
+      :data-testid="`field-error-${field.key}`"
+    >
       {{ error }}
     </span>
   </span>

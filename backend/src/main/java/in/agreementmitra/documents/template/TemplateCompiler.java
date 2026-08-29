@@ -139,6 +139,25 @@ final class TemplateCompiler {
       Map<String, Object> data,
       String resolvedExecutionDate,
       Set<String> activeSections) {
+    return compile(effective, data, resolvedExecutionDate, activeSections, null, null);
+  }
+
+  /**
+   * As {@link #compile(EffectiveTemplate, Map, String, Set)}, additionally emitting a system-owned
+   * <b>provenance line at the document foot</b>: the escaped {@code reference} (a tracking number
+   * or a preview marker) and the escaped {@code platformUrl}, each part omitted when blank. Both
+   * are values passed in -- the compiler reads no configuration -- rendered as literal text, so
+   * they appear <b>identically in the preview HTML and the PDF</b> (parity, they are body content)
+   * and cannot inject markup. A {@code null}/blank {@code reference} and {@code platformUrl} emit
+   * no line, so a pre-identifier preview can carry only the URL, or nothing.
+   */
+  String compile(
+      EffectiveTemplate effective,
+      Map<String, Object> data,
+      String resolvedExecutionDate,
+      Set<String> activeSections,
+      String reference,
+      String platformUrl) {
     Set<String> active = activeSections == null ? Set.of() : activeSections;
     // Bind the resolved execution date under the reserved key on a COPY (the request data is never
     // mutated); the resolved value overrides any submitted agreementDate.
@@ -184,8 +203,40 @@ final class TemplateCompiler {
     if (!hasSignaturesSection) {
       html.append(SIGNATURE_BLOCK);
     }
+    html.append(provenanceLine(reference, platformUrl));
     html.append("</body>\n</html>\n");
     return html.toString();
+  }
+
+  /**
+   * A system-owned provenance line for the document foot: the escaped {@code reference} and escaped
+   * {@code platformUrl} separated by a middot, each omitted when blank; the empty string when both
+   * are blank. Rendered as literal text (it cannot inject markup).
+   *
+   * <p>It is a <b>screen-only</b> body element ({@code .doc-provenance} is {@code display:none} by
+   * default, shown only under {@code @media screen}): the on-screen preview iframe (screen media)
+   * shows it, so the reader sees the reference + URL in the preview; the Gotenberg PDF renders as
+   * print media, which hides it -- so it never orphans onto its own page or overlaps content. In
+   * the PDF the same reference + URL are stamped per page as footer furniture in the reserved
+   * margin.
+   */
+  private static String provenanceLine(String reference, String platformUrl) {
+    String ref = reference == null ? "" : reference.strip();
+    String url = platformUrl == null ? "" : platformUrl.strip();
+    if (ref.isEmpty() && url.isEmpty()) {
+      return "";
+    }
+    StringBuilder line = new StringBuilder("<div class=\"doc-provenance\">");
+    if (!ref.isEmpty()) {
+      line.append("<span>").append(escape(ref)).append("</span>");
+    }
+    if (!ref.isEmpty() && !url.isEmpty()) {
+      line.append("<span> &middot; </span>");
+    }
+    if (!url.isEmpty()) {
+      line.append("<span>").append(escape(url)).append("</span>");
+    }
+    return line.append("</div>\n").toString();
   }
 
   /**
@@ -249,13 +300,23 @@ final class TemplateCompiler {
    * {@code SIGNATURES} body: the execution / signature block. Opens with the system-owned "IN
    * WITNESS WHEREOF" paragraph, then renders one signature <b>zone</b> per section entry -- each
    * entry is a signer <b>name field key</b> ({@code ownerName}, {@code tenantName}). A zone shows a
-   * signature area, the signer's name value (escaped, from the data map), a "(as per Aadhaar)"
-   * caption, a date/place line, and a stable, non-PII eSign <b>anchor</b> {@code esign:<role>}
-   * whose role is derived from the entry key ({@code ownerName -> owner}). The anchor is a
-   * detectable text token the {@code signing} module maps to the provider's signature field -- the
-   * compiler stays eSign-agnostic (it emits a token, not a provider field). Domain-neutral: the
-   * compiler holds no party model; it renders whatever signatory name keys the section declares,
-   * each value escaped.
+   * signature area, the signer's name value (escaped, from the data map), and the field's role
+   * label. The label states the role only: nothing here verifies the captured name against the
+   * Aadhaar record, so the document must not claim that it matches one. There is no date/place line
+   * either - an eSigned instrument takes its date from the eSign appearance, so those blanks could
+   * never be completed.
+   *
+   * <p><b>The anchor sits INSIDE the signature area</b>, because its position IS the position the
+   * signature occupies: the {@code signing} module locates the token {@code esign:<role>} and asks
+   * the provider to sign there. Emitted after the block (as it once was) it marked the bottom of
+   * the zone, and every signature landed on the line below the name. Keep it in the area.
+   *
+   * <p>The anchor is a stable, non-PII text token whose role is derived from the entry key ({@code
+   * ownerName -> owner}); the compiler stays eSign-agnostic (it emits a token, not a provider
+   * field). It is painted in the page colour so a reader never sees it - see the {@code
+   * .sign-anchor} rule for why it must stay in the text layer. Domain-neutral: the compiler holds
+   * no party model; it renders whatever signatory name keys the section declares, each value
+   * escaped.
    */
   private static void appendSignatures(
       StringBuilder html,
@@ -274,17 +335,14 @@ final class TemplateCompiler {
         continue; // a signatures section lists signer name field keys; ignore anything else
       }
       html.append("<div class=\"sign-zone\">\n")
-          .append("<div class=\"sign-area\"></div>\n")
+          .append("<div class=\"sign-area\"><span class=\"sign-anchor\">esign:")
+          .append(escape(anchorRole(entry)))
+          .append("</span></div>\n")
           .append("<div class=\"sign-name\">")
           .append(escape(valueOrPlaceholder(field, values.get(field.key()))))
           .append("</div>\n")
           .append("<div class=\"sign-meta\">")
           .append(escape(field.label()))
-          .append(" (as per Aadhaar)</div>\n")
-          .append(
-              "<div class=\"sign-meta\">Date: ____________&nbsp;&nbsp;Place: ____________</div>\n")
-          .append("<div class=\"sign-anchor\">esign:")
-          .append(escape(anchorRole(entry)))
           .append("</div>\n")
           .append("</div>\n");
     }
@@ -496,9 +554,10 @@ final class TemplateCompiler {
   /**
    * The unescaped slot/cell text for a value: its string form, or a {@code [ label ]} placeholder
    * when the value is missing or blank. A {@code DATE} field's ISO value is formatted for display
-   * as {@code dd-MMM-yyyy} ({@code 13-Jul-2026}) and an {@code ENUM} field's token is humanised
-   * ({@code bank_transfer -> Bank Transfer}); every other field renders its raw string form. Never
-   * returns {@code null}. The caller escapes the result.
+   * as {@code dd-MMM-yyyy} ({@code 13-Jul-2026}), an {@code ENUM} field's token is humanised
+   * ({@code bank_transfer -> Bank Transfer}), and a {@code BOOL} field renders as {@code Yes} /
+   * {@code No}; every other field renders its raw string form. Never returns {@code null}. The
+   * caller escapes the result.
    */
   private static String valueOrPlaceholder(Field field, Object value) {
     if (value == null || (value instanceof String s && s.isBlank())) {
@@ -525,6 +584,9 @@ final class TemplateCompiler {
     return switch (field.type()) {
       case DATE -> formatIsoDate(raw);
       case ENUM -> OptionLabels.humanize(raw);
+      // "Pets allowed: false" is a machine value on the face of a legal instrument. The stored
+      // value stays boolean - showWhen still evaluates on it - only the rendering changes.
+      case BOOL -> Boolean.parseBoolean(raw) ? "Yes" : "No";
       default -> raw;
     };
   }
@@ -599,10 +661,16 @@ final class TemplateCompiler {
       .sign-line { margin-top: 34px; border-top: 1px solid #333; padding-top: 3px; font-size: 11px; width: 48%; }
       .sign-grid { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 22px; }
       .sign-zone { flex: 1 1 40%; min-width: 200px; }
-      .sign-area { height: 46px; border-bottom: 1px solid #333; }
+      .sign-area { height: 46px; border-bottom: 1px solid #333; display: flex; align-items: flex-end; }
       .sign-name { margin-top: 5px; font-weight: 600; }
       .sign-meta { font-size: 11px; color: #555; margin-top: 2px; }
-      .sign-anchor { font-size: 9px; color: #9a9a9a; margin-top: 8px; letter-spacing: 0.4px; }
+      /* Painted in the page colour: a reader must never see a machine token on a legal
+         instrument, but the glyphs MUST stay in the PDF text layer - that layer is how the
+         signing module locates where to place a signature. display:none / visibility:hidden
+         would drop the glyphs and every signing request would then be refused. */
+      .sign-anchor { font-size: 8px; color: #ffffff; letter-spacing: 0.4px; padding-bottom: 2px; }
+      .doc-provenance { display: none; margin-top: 18px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 10px; color: #666; text-align: center; }
+      @media screen { .doc-provenance { display: block; } }
       """;
 
   // System-owned closing block: a witness paragraph and blank signature lines. Domain-neutral (the

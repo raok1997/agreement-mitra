@@ -1,0 +1,19 @@
+# Cloudflare Pages response headers.
+#
+# This is identity/legal infrastructure, so the public site ships the baseline
+# browser protections even though it holds no data itself -- the same origin
+# serves the agreement builder.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# Hashed build assets are immutable; index.html must never be cached long or a
+# deploy will not reach returning visitors.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

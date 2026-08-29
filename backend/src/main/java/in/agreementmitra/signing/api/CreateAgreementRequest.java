@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Request body for creating an agreement. Carries only client-settable fields — no id, no {@code
@@ -33,6 +34,15 @@ import java.util.List;
  * client-settable template UUID); when absent (or only one supplied) the agreement keeps today's
  * default behaviour (no selection -> default effective template at render). They are plain
  * selection tokens, not user data.
+ *
+ * <p>{@code captureData}/{@code activeSections} are the OPTIONAL full capture state (M5): the flat
+ * working-set field map (field key -> value) the guided form produced, plus the added
+ * optional-section titles. They are <b>user content</b>, persisted so a saved agreement round-trips
+ * its complete content and the stored/signed draft matches the preview -- validated at render by
+ * the {@code documents} projection, never trusted blindly. Anti-mass-assignment is preserved: any
+ * server-managed key in {@code captureData} (id, owner, {@code createdAt}, duration, template pin)
+ * is ignored server-side, and the fixed typed columns stay authoritative. Absent {@code
+ * captureData} persists a null capture state (the pre-M5 fixed-column behaviour).
  */
 @ValidSignerSet
 @EndAfterStart
@@ -56,12 +66,14 @@ public record CreateAgreementRequest(
         @Valid
         List<SignerRequest> signers,
     String state,
-    String type) {
+    String type,
+    Map<String, String> captureData,
+    List<String> activeSections) {
 
   /**
    * Backward-compatible constructor without catalog dimensions: an agreement created with no {@code
    * (state, type)} keeps today's default effective-template behaviour. Delegates to the canonical
-   * constructor with null dimensions.
+   * constructor with null dimensions and no capture state.
    */
   public CreateAgreementRequest(
       String propertyAddress,
@@ -70,7 +82,45 @@ public record CreateAgreementRequest(
       LocalDate startDate,
       LocalDate endDate,
       List<SignerRequest> signers) {
-    this(propertyAddress, monthlyRent, securityDeposit, startDate, endDate, signers, null, null);
+    this(
+        propertyAddress,
+        monthlyRent,
+        securityDeposit,
+        startDate,
+        endDate,
+        signers,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  /**
+   * Backward-compatible constructor without capture state (the pre-M5 shape): keeps existing
+   * callers and tests compiling. The agreement persists a null capture state and renders via the
+   * fixed-column fallback. Delegates to the canonical constructor with no {@code
+   * captureData}/{@code activeSections}.
+   */
+  public CreateAgreementRequest(
+      String propertyAddress,
+      BigDecimal monthlyRent,
+      BigDecimal securityDeposit,
+      LocalDate startDate,
+      LocalDate endDate,
+      List<SignerRequest> signers,
+      String state,
+      String type) {
+    this(
+        propertyAddress,
+        monthlyRent,
+        securityDeposit,
+        startDate,
+        endDate,
+        signers,
+        state,
+        type,
+        null,
+        null);
   }
 
   /** One owner or tenant. No id — assigned server-side. */

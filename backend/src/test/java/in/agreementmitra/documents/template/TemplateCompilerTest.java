@@ -361,6 +361,42 @@ class TemplateCompilerTest {
   }
 
   @Test
+  void signatureZoneCarriesNoWetInkFurnitureAndMakesNoAadhaarClaim() {
+    // An eSigned instrument takes its date from the eSign appearance, so a Date/Place line could
+    // never be completed - and nothing here verifies the typed name against the Aadhaar record, so
+    // the document must not say it matches one.
+    String html = new TemplateCompiler().compile(signaturesTemplate(), signatureData());
+
+    assertThat(html).doesNotContain("Date:").doesNotContain("Place:");
+    assertThat(html).doesNotContain("as per Aadhaar");
+  }
+
+  @Test
+  void signatureAnchorSitsInsideTheSignatureAreaAndIsPaintedInvisible() {
+    // The anchor's position IS the signature's position: emitted after the block it marked the
+    // bottom of the zone, and every signature landed on the line below the name. It must also be
+    // invisible on the page while staying in the text layer - the signing module reads that layer.
+    String html = new TemplateCompiler().compile(signaturesTemplate(), signatureData());
+
+    assertThat(html)
+        .contains("<div class=\"sign-area\"><span class=\"sign-anchor\">esign:owner</span></div>");
+    // Suppression that removes the glyphs would break placement outright, so assert on the
+    // anchor's own rule rather than the whole stylesheet (other rules legitimately hide things).
+    String anchorRule =
+        html.substring(
+            html.indexOf(".sign-anchor {"), html.indexOf("}", html.indexOf(".sign-anchor {")));
+    assertThat(anchorRule).contains("color: #ffffff");
+    assertThat(anchorRule).doesNotContain("display: none").doesNotContain("visibility: hidden");
+  }
+
+  private static Map<String, Object> signatureData() {
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("ownerName", "Asha Rao");
+    data.put("tenantName", "Ravi Kumar");
+    return data;
+  }
+
+  @Test
   void signaturesAnchorRoleDerivesFromTheNameFieldKey() {
     // A signatory key other than owner/tenant still derives esign:<role> by stripping "Name".
     List<Field> fields =

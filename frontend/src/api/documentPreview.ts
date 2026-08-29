@@ -35,6 +35,12 @@ interface DocumentProjectionRequestBody {
    * only system-owned section titles (template metadata), never user data.
    */
   activeSections: string[];
+  /**
+   * The provenance-line reference shown at the document foot: after save, the agreement's tracking
+   * number (so the post-save preview matches the saved document); omitted before save (the server
+   * then shows its PREVIEW marker). Non-PII display text, HTML-escaped server-side.
+   */
+  documentReference?: string;
 }
 
 /**
@@ -49,9 +55,11 @@ async function postDocumentPreview(
   accept: string,
   dimensions?: FormDimensions,
   activeSections: string[] = [],
+  documentReference?: string,
 ): Promise<Response> {
   const body: DocumentProjectionRequestBody = { data, activeSections };
   if (dimensions) body.dimensions = dimensions;
+  if (documentReference) body.documentReference = documentReference;
   const res = await fetch(PREVIEW, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: accept },
@@ -70,12 +78,14 @@ export async function fetchDocumentPreviewHtml(
   data: PreviewData,
   dimensions?: FormDimensions,
   activeSections: string[] = [],
+  documentReference?: string,
 ): Promise<string> {
   const res = await postDocumentPreview(
     data,
     "text/html",
     dimensions,
     activeSections,
+    documentReference,
   );
   return res.text();
 }
@@ -88,12 +98,14 @@ export async function fetchDocumentPreviewPdf(
   data: PreviewData,
   dimensions?: FormDimensions,
   activeSections: string[] = [],
+  documentReference?: string,
 ): Promise<Blob> {
   const res = await postDocumentPreview(
     data,
     "application/pdf",
     dimensions,
     activeSections,
+    documentReference,
   );
   return res.blob();
 }

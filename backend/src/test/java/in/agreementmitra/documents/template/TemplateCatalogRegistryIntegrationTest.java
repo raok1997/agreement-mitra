@@ -35,6 +35,11 @@ class TemplateCatalogRegistryIntegrationTest {
   private final TemplateResolver classpathResolver =
       new TemplateResolver(new ClasspathLayerSource(TemplateCatalogSeeder.REFERENCE_LAYER_SET_REF));
 
+  // A direct classpath resolver over the commercial layer set, for the commercial parity check.
+  private final TemplateResolver commercialClasspathResolver =
+      new TemplateResolver(
+          new ClasspathLayerSource(TemplateCatalogSeeder.SETS_ROOT + "commercial/"));
+
   @Test
   void seedPublishesTheReferenceTemplates() {
     List<TemplateCatalogEntry> published = repository.findPublished(null, null, "%");
@@ -62,6 +67,23 @@ class TemplateCatalogRegistryIntegrationTest {
     assertSameHash("TG", "residential");
     // (IN, residential): base + type only.
     assertSameHash("IN", "residential");
+  }
+
+  @Test
+  void discoveredCommercialTemplateResolvesViaTheRegistryToTheCommercialDocument() {
+    // The seeder discovered the commercial layer-set folder, so (TG, commercial) resolves via the
+    // registry to the commercial document -- correctly headed, with the Telangana overlay -- and to
+    // a content hash identical to a direct classpath resolution of the same set.
+    EffectiveTemplate viaRegistry = templateResolver.resolve(new Dimensions("TG", "commercial"));
+    assertThat(viaRegistry.template().meta().document().title())
+        .isEqualTo("Commercial Lease Agreement");
+    assertThat(viaRegistry.template().sections().stream().map(Section::title))
+        .contains("Statutory (Telangana)", "In Witness Whereof");
+
+    EffectiveTemplate viaClasspath =
+        commercialClasspathResolver.resolve(new Dimensions("TG", "commercial"));
+    assertThat(viaRegistry.contentHash()).isEqualTo(viaClasspath.contentHash());
+    assertThat(viaRegistry.provenance()).isEqualTo(viaClasspath.provenance());
   }
 
   private void assertSameHash(String state, String type) {

@@ -9,11 +9,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.PageFurniture;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -283,6 +291,43 @@ class AgreementDocumentFormatE2EIntegrationTest {
     assertThat(new String(pdf, 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
   }
 
+  // --- signature zone: invisible anchors that still reach the PDF text layer
+  // -------------------
+
+  /**
+   * The anchor is painted in the page colour so no reader sees a machine token on a legal
+   * instrument -- but signature placement locates it by reading the PDF's TEXT LAYER. Hiding it
+   * with {@code display:none} or {@code visibility:hidden} would render nothing, drop the glyphs,
+   * and every signing request would then be refused with "anchor missing".
+   *
+   * <p>Only a real Chromium render can tell those apart, which is why this lives here and not in a
+   * compiler unit test: the HTML looks identical either way.
+   */
+  @Test
+  void invisibleSignatureAnchorsStillReachThePdfTextLayer() throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(
+                post(PREVIEW)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_PDF)
+                    .content(previewBody(telanganaData(), List.of())))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    String text;
+    try (org.apache.pdfbox.pdmodel.PDDocument document =
+        org.apache.pdfbox.Loader.loadPDF(result.getResponse().getContentAsByteArray())) {
+      text = new org.apache.pdfbox.text.PDFTextStripper().getText(document);
+    }
+
+    assertThat(text).contains("esign:owner").contains("esign:tenant");
+    // ...and the wet-ink furniture is gone from the rendered instrument: an eSigned document takes
+    // its date from the eSign appearance, and nothing here verifies a name against Aadhaar.
+    assertThat(text).doesNotContain("as per Aadhaar");
+    assertThat(text).doesNotContain("Place: ____");
+  }
+
   // --- helpers
   // ------------------------------------------------------------------------------------
 
@@ -299,5 +344,90 @@ class AgreementDocumentFormatE2EIntegrationTest {
       }
     }
     throw new AssertionError("section not found in FormSchema: " + title);
+  }
+
+  // --- page furniture: the band the signature strip lives in must stay empty
+  // --------------------
+
+  /**
+   * Nothing the renderer prints may enter the band reserved for the per-page eSign signature strip.
+   *
+   * <p><b>This is the test that was missing.</b> The strip is placed by the {@code signing} module,
+   * which cannot see this module's margins; this module cannot see the strip. For a while neither
+   * side checked the overlap, and the result was a signature drawn across the last lines of text on
+   * every page of a legal instrument - accepted by the provider without error, visible only by
+   * looking at a rendered page.
+   *
+   * <p>So the contract is asserted from both ends against {@link PageFurniture}: here, that the
+   * band is empty; and in the placement adapter's own test, that the strip lands inside it. Only a
+   * real Chromium render can prove this half - the compiled HTML says nothing about where Chromium
+   * will break a page.
+   */
+  @Test
+  void bodyTextNeverEntersTheReservedSignatureStripBand() throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(
+                post(PREVIEW)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_PDF)
+                    // Enough content to run past one page, so the assertion covers a page whose
+                    // text reaches the bottom rather than a short one that never gets near it.
+                    .content(
+                        previewBody(
+                            telanganaData(), List.of("Occupancy & Use", "Annexure", "Witnesses"))))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+
+    // A single-page render would pass this trivially without ever exercising a page whose text runs
+    // to the bottom -- which is exactly the case that was broken.
+    assertThat(pageCount(pdf)).as("pages rendered").isGreaterThan(1);
+    assertThat(glyphsInStripBand(pdf))
+        .as("glyphs found inside the reserved signature-strip band (page:yFromBottom)")
+        .isEmpty();
+  }
+
+  private static int pageCount(byte[] pdf) throws IOException {
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      return document.getNumberOfPages();
+    }
+  }
+
+  /**
+   * Every glyph sitting in the strip band, as {@code page:y} labels. Deliberately returns the
+   * offenders rather than a boolean: a failure that names the page and height is one somebody can
+   * act on, and the glyph text itself is never included (the instrument carries party PII).
+   */
+  private static List<String> glyphsInStripBand(byte[] pdf) throws IOException {
+    List<String> intrusions = new ArrayList<>();
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDFTextStripper stripper =
+          new PDFTextStripper() {
+            @Override
+            protected void writeString(String text, List<TextPosition> positions) {
+              PDPage page = getCurrentPage();
+              float pageHeight = page.getCropBox().getHeight();
+              for (TextPosition position : positions) {
+                String unicode = position.getUnicode();
+                if (unicode == null || unicode.isBlank()) {
+                  continue;
+                }
+                // PDFBox reports y from the TOP; the band is measured from the bottom.
+                float yFromBottom = pageHeight - position.getYDirAdj();
+                if (yFromBottom >= PageFurniture.FOOTER_BAND_TOP_PT
+                    && yFromBottom < PageFurniture.CONTENT_FLOOR_PT) {
+                  intrusions.add(getCurrentPageNo() + ":" + Math.round(yFromBottom));
+                }
+              }
+            }
+          };
+      stripper.setSortByPosition(true);
+      stripper.setStartPage(1);
+      stripper.setEndPage(document.getNumberOfPages());
+      stripper.getText(document);
+    }
+    return intrusions;
   }
 }

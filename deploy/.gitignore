@@ -1,0 +1,4 @@
+# Real credentials and TLS material live on the server only. The *.example
+# templates beside them are the tracked documentation of what is required.
+env/*.env
+certs/

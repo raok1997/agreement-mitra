@@ -25,10 +25,16 @@ const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
         class="w-full border-0 bg-transparent py-2 focus:outline-none"
         :aria-invalid="!!error"
         :data-testid="`field-${field.key}`"
-        @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+        @input="
+          emit('update:modelValue', ($event.target as HTMLInputElement).value)
+        "
       />
     </span>
-    <span v-if="error" class="mt-1 text-xs text-red-600" :data-testid="`field-error-${field.key}`">
+    <span
+      v-if="error"
+      class="mt-1 text-xs text-red-600"
+      :data-testid="`field-error-${field.key}`"
+    >
       {{ error }}
     </span>
   </span>

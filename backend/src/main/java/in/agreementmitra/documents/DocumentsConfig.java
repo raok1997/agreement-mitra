@@ -16,7 +16,7 @@ import org.springframework.web.client.RestClient;
  * fails cleanly rather than hanging a request thread). Mirrors the Leegality/Storage config style.
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(GotenbergProperties.class)
+@EnableConfigurationProperties({GotenbergProperties.class, DocumentFooterProperties.class})
 class DocumentsConfig {
 
   @Bean

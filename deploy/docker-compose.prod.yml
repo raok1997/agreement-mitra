@@ -1,0 +1,142 @@
+# Production stack for the Contabo VPS. Run from `deploy/`:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# EXPOSURE MODEL: only caddy publishes ports. Postgres, MinIO, Gotenberg and the
+# API are reachable on the internal compose network and nowhere else -- there is
+# no host port binding to firewall off, so a ufw mistake cannot expose them.
+# Reach them for admin over an SSH tunnel (see docs/DEPLOYMENT.md).
+#
+# CONFIG MODEL: each service reads its own gitignored env file from `deploy/env/`
+# rather than a single shared .env, so no service sees another's credentials.
+# Generate them with `./provision.sh secrets` -- templates are the *.env.example
+# files beside them. Nothing secret is ever written into this file.
+
+name: agreementmitra
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: ./env/postgres.env
+    environment:
+      # Flyway and the audit trail both care about time. Pin it rather than
+      # inheriting whatever the host has.
+      TZ: Asia/Kolkata
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    logging: *logging
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file: ./env/minio.env
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging: *logging
+
+  gotenberg:
+    build:
+      context: ../docker/gotenberg
+    restart: unless-stopped
+    environment:
+      # SSRF/exfil guard: the render loads only the self-contained HTML the app
+      # uploads, so Chromium has no legitimate reason to reach the network.
+      # Non-secret, so it stays inline.
+      CHROMIUM_DENY_PUBLIC_IPS: "true"
+      CHROMIUM_DENY_PRIVATE_IPS: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          # Chromium is the memory hog in this stack, and the app allows 4
+          # concurrent renders (GOTENBERG_MAX_CONCURRENT_RENDERS).
+          memory: 3g
+    logging: *logging
+
+  backend:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    env_file: ./env/backend.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      # Flyway migrations run before the app reports ready; give a cold start
+      # room rather than flapping the container.
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    logging: *logging
+
+  caddy:
+    build:
+      # Repository root: the image needs frontend/ and deploy/Caddyfile.
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Cloudflare Origin CA cert + key. A self-signed placeholder during first
+      # bring-up; see docs/DEPLOYMENT.md.
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging: *logging
+
+volumes:
+  pgdata:
+  miniodata:
+  caddy_data:
+  caddy_config:

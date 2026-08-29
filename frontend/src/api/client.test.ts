@@ -31,7 +31,9 @@ describe("requestSignature", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) }),
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, json: () => Promise.resolve(session) }),
     );
 
     await expect(requestSignature("agr-42")).resolves.toEqual(session);
@@ -40,7 +42,11 @@ describe("requestSignature", () => {
   it("rejects when the response is not ok", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({}),
+      }),
     );
 
     await expect(requestSignature("agr-42")).rejects.toThrow(/500/);

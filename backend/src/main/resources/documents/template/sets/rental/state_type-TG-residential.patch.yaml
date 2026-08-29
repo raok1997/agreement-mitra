@@ -31,7 +31,7 @@ ops:
   - { op: replaceSection, title: "Now This Agreement Witnesseth",
       section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
                  entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,
-                            inspectionClause, handoverClause, disputeClause,
+                            inspectionClause, handoverClause, disputeClause, disputeAlternativeClause,
                             serviceOfNoticeClause, governingLawClause, severabilityClause,
                             entireAgreementClause ] } }
 
