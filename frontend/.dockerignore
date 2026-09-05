@@ -1,0 +1,11 @@
+# The web image runs `npm ci`, so a host node_modules must never be copied in:
+# it would be the wrong platform's binaries and would bloat the context.
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+
+.env
+.env.*
+!.env.example

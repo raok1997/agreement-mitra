@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
@@ -56,7 +57,7 @@ class LeegalityEsignProviderWireMockTest {
     adapter =
         new LeegalityEsignProvider(
             client,
-            new LeegalityProperties(base, AUTH_TOKEN, "mac", PROFILE_ID),
+            LeegalityProperties.of(base, AUTH_TOKEN, "mac", PROFILE_ID),
             new ObjectMapper());
   }
 
@@ -73,6 +74,11 @@ class LeegalityEsignProviderWireMockTest {
             .withRequestBody(matchingJsonPath("$.profileId", equalTo(PROFILE_ID)))
             .withRequestBody(matchingJsonPath("$.file.file")) // base64 PDF present
             .withRequestBody(matchingJsonPath("$.invitees[0].aadhaarConfig.verifyName"))
+            // Each signer's eSign anchor is mapped to the vendor's signature field.
+            .withRequestBody(
+                matchingJsonPath("$.invitees[0].signature.anchorText", equalTo("esign:owner")))
+            .withRequestBody(
+                matchingJsonPath("$.invitees[1].signature.anchorText", equalTo("esign:tenant")))
             .willReturn(
                 okJson(
                     """
@@ -86,8 +92,9 @@ class LeegalityEsignProviderWireMockTest {
             "agr-1",
             "%PDF-1.4".getBytes(StandardCharsets.UTF_8),
             List.of(
-                new SignRequest.Invitee("Asha", "asha@example.com", null, true),
-                new SignRequest.Invitee("Tara", "tara@example.com", "9999999999", true)));
+                new SignRequest.Invitee("Asha", "asha@example.com", null, true, "esign:owner"),
+                new SignRequest.Invitee(
+                    "Tara", "tara@example.com", "9999999999", true, "esign:tenant")));
 
     SignSession session = adapter.createSignRequest(request);
 
@@ -99,6 +106,41 @@ class LeegalityEsignProviderWireMockTest {
     assertThat(session.invitees().get(1).expiryDate()).isEqualTo("2026-01-02");
     assertThat(session.invitees().get(0).providerInviteeId()).isEqualTo("INV-1");
     assertThat(session.invitees().get(1).providerInviteeId()).isEqualTo("INV-2");
+  }
+
+  @Test
+  void takesThePrimaryPlacementWhenAnInviteeCarriesSeveral() {
+    // This vendor's request shape as integrated here holds ONE signature field, so an invitee
+    // carrying a block placement plus an every-page strip sends the first. Pinned as a test rather
+    // than left to a comment: when Leegality becomes the production adapter, the dropped strip has
+    // to be a known gap, not a surprise on a signed document.
+    server.stubFor(
+        post(urlEqualTo("/api/v3.0/sign/request"))
+            .willReturn(
+                okJson(
+                    """
+                    {"status":"SUCCESS","data":{"documentId":"DOC-1","invitees":[
+                      {"inviteeId":"INV-1","signUrl":"https://sign/1","expiryDate":"2026-01-01"}]}}
+                    """)));
+
+    adapter.createSignRequest(
+        new SignRequest(
+            "agr-1",
+            "%PDF-1.4".getBytes(StandardCharsets.UTF_8),
+            List.of(
+                new SignRequest.Invitee(
+                    "Asha",
+                    "asha@example.com",
+                    null,
+                    true,
+                    List.of(
+                        SignRequest.Placement.anchored("esign:owner"),
+                        SignRequest.Placement.everyPageFooter())))));
+
+    server.verify(
+        postRequestedFor(urlEqualTo("/api/v3.0/sign/request"))
+            .withRequestBody(
+                matchingJsonPath("$.invitees[0].signature.anchorText", equalTo("esign:owner"))));
   }
 
   @Test

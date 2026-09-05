@@ -18,6 +18,18 @@ services:
     ports: ["9000:9000", "9001:9001"]
     volumes: ["miniodata:/data"]
 
+  # Document rendering (CR-3a): headless Chromium HTML->PDF via Gotenberg (thin image with
+  # bundled Noto fonts). The app is a plain HTTP client at GOTENBERG_URL -- no browser binary
+  # in the app. Chromium's outbound network is denied (SSRF/exfil guard): both private and
+  # public IPs are refused, and Gotenberg's default deny-list already blocks file:// outside
+  # /tmp. The render loads only the self-contained HTML the app uploads.
+  gotenberg:
+    build: ./docker/gotenberg
+    environment:
+      CHROMIUM_DENY_PUBLIC_IPS: "true"
+      CHROMIUM_DENY_PRIVATE_IPS: "true"
+    ports: ["3000:3000"]
+
 volumes:
   pgdata:
   miniodata:

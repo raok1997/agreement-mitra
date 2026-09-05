@@ -1,0 +1,37 @@
+# Reference layer set -- BASE layer (national base): a full template-definition that stands alone.
+# System-authored, dummy content only. FIXTURE ONLY: the resolver's end-to-end example and the
+# worked reference for layered composition. Deliberately NOT wired to TemplateAssembler /
+# DocumentRenderer. The type / state / state+type patches beside this file layer over it.
+meta:
+  id: rental-base
+  dimensions:
+    state: IN
+    type: residential
+  version: 1
+  status: draft
+
+fields:
+  - { key: ownerName,     label: "Owner name",          type: text,  required: true }
+  - { key: tenantName,    label: "Tenant name",         type: text,  required: true }
+  - { key: monthlyRent,   label: "Monthly rent (INR)",  type: money, required: true }
+  - { key: durationMonths, label: "Duration (months)",  type: int,   required: true,
+      validation: { min: 1, max: 60 } }
+  - { key: furnished,     label: "Furnished",           type: bool,  required: false, default: false }
+  - { key: registrationResponsibility, label: "Registration responsibility", type: enum,
+      required: false, options: [ owner, tenant ] }
+
+clauses:
+  - id: parties
+    text: "This Agreement is made between {{ownerName}} (Owner) and {{tenantName}} (Tenant)."
+  - id: rent
+    text: "The Tenant shall pay a monthly rent of INR {{monthlyRent}}."
+  - id: term
+    text: "The tenancy is for a term of {{durationMonths}} month(s)."
+  - id: furnishing
+    text: "The premises are let furnished, with fixtures as scheduled."
+    showWhen: "furnished == true"
+
+sections:
+  - { title: Parties,   entries: [ ownerName, tenantName, parties ] }
+  - { title: Financial, entries: [ monthlyRent, rent ] }
+  - { title: Term,      entries: [ durationMonths, furnished, term, furnishing ] }

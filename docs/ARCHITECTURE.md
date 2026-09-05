@@ -74,6 +74,43 @@ Chromium + bundled Noto fonts (Devanagari, Tamil, etc.) is the path that
 future-proofs the vernacular feature. English-only would be simpler today, but
 we build the Chromium pipeline from the start to avoid a later rearchitecture.
 
+## Access to an agreement: what authorises what
+
+Three values can identify an agreement, and only one of them authorises anything.
+Conflating them is the most likely way to introduce a serious PII leak here, so
+the distinction is recorded rather than left to be rediscovered.
+
+- **The agreement UUID is a bearer capability.** 122 bits, unguessable. Any caller
+  presenting it may read an **unowned** agreement; once claimed, only the owner
+  may. That is the existing model and it predates recovery.
+- **The tracking reference authorises nothing.** `AM` + eight characters + a check
+  character - roughly 40 bits. It appears on the rendered document, in emails, and
+  in support conversations. It is a *selector*, never a credential.
+- **An identity session** is what a claimed agreement requires.
+
+**Recovery works by delivering the UUID out of band, not by looking up the
+reference.** Entering a reference causes a link to be emailed to the parties
+already on the agreement; it never returns agreement data, and it answers
+identically whether or not the reference matched. This is what lets a 40-bit
+value be usable in a support conversation without making every paid agreement
+enumerable.
+
+A future change that "simplifies" this into a reference lookup that returns the
+agreement would reverse it. So would adding a "not found" response to the
+recovery endpoint. Both leak full signer PII - names, fathers' names, addresses,
+rent - to anyone who guesses a code.
+
+**Claiming is the revocation.** The emailed link does not expire. It stops working
+when the agreement acquires an owner, because anonymous access to a claimed
+agreement is already refused. That behaviour is load-bearing now, not incidental:
+it is the only off-switch a permanent link has, and the customer is told about it.
+
+**One definition of "contactable".** A party is reachable when they have a contact
+on an **enabled delivery channel**. That single rule gates order creation and eSign
+initiation. It replaced an earlier email-or-mobile check that disagreed with
+email-only delivery, letting a mobile-only party sign an agreement they could never
+be sent. Two rules that disagree is the defect; keep it one.
+
 ## What we are deliberately NOT doing yet
 
 - No microservices, no message broker (add RabbitMQ/Kafka only when multi-step

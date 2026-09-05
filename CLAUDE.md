@@ -156,6 +156,23 @@ Use `./run-tests.sh` (from `backend/`) to run them without remembering the
 Docker/Testcontainers env — it auto-detects the Docker socket and runs `check`
 (pass a task to override, e.g. `./run-tests.sh test`).
 
+**Never set `TESTCONTAINERS_RYUK_DISABLED=true`.** Ryuk is the reaper that removes
+test containers when the test JVM dies *without* running its shutdown hook - an
+OOM-kill, a Ctrl-C, a crash. The hook covers a clean exit only, so with the reaper
+off every aborted run strands a Postgres + a MinIO container. They are invisible
+(random names, no compose project) and they accumulate until the Docker engine
+wedges - one incident reached 112 orphans / 4.4 GB of volumes, another 32 orphans
+holding ~1.8 GiB of a 3.7 GiB Docker VM. **The build fails closed on this**: the
+Ryuk guard in `build.gradle.kts` refuses to run `test` when the variable is set.
+Deliberate one-off override: `./gradlew test -Pallow.ryuk.disabled=true`.
+
+If container-backed tests appear to *skip*, the cause is socket resolution, not the
+reaper - use `./run-tests.sh`, which resolves the socket per Docker context and
+leaves Windows/Docker Desktop npipe alone. To clear orphans an earlier run already
+left: `./scripts/sweep-test-containers.sh` (dry-run by default, `--force` to remove;
+selects on the `org.testcontainers` label and skips compose-managed containers, so it
+cannot touch the local dev stack).
+
 Frontend (from `frontend/`):
 - `npm run dev` — Vite dev server
 - `npm run build` — production build

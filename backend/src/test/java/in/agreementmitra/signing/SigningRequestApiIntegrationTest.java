@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.Payments;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,7 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -76,19 +78,93 @@ class SigningRequestApiIntegrationTest {
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private in.agreementmitra.signing.BlobStore blobStore;
+  @Autowired private in.agreementmitra.identity.IdentityService identityService;
+  @Autowired private in.agreementmitra.identity.oauth.HandoffService handoffService;
+  @Autowired private in.agreementmitra.identity.session.SessionService sessionService;
+
+  private String staffToken;
 
   @BeforeEach
   void resetStubs() {
     WIREMOCK.resetAll();
+    staffToken =
+        in.agreementmitra.support.StaffSessions.staffSession(
+            identityService,
+            handoffService,
+            sessionService,
+            jdbc,
+            "signing-staff-" + UUID.randomUUID());
   }
 
   // --- helpers ---------------------------------------------------------------
 
-  /** A persisted agreement WITH an uploaded draft — the precondition for requesting signing. */
+  /**
+   * A persisted agreement with an uploaded draft AND an attached e-stamp -- both are preconditions
+   * for requesting signing now that stamping is a staff-driven, out-of-band step.
+   */
   private UUID createAgreement() {
+    UUID id = createDraftedAgreement();
+    uploadStamp(id);
+    return id;
+  }
+
+  /**
+   * A persisted agreement with a draft, FINALISED (so the order exists and the terms are frozen)
+   * but with no e-stamp yet -- exercises the stamp-required 409.
+   */
+  private UUID createDraftedAgreement() {
     UUID id = createBareAgreement();
     uploadDraft(id);
+    finalise(id);
     return id;
+  }
+
+  /**
+   * Place the order the way the customer does. Returns the tracking reference they are given.
+   *
+   * <p>The payment gate ships {@code REQUIRED}, so the order is taken past it here too - this file
+   * is about the stamp/draft/contact preconditions on signing, not about payment. The gate is still
+   * evaluated on every request below; it simply passes. Its refusal path is covered in {@code
+   * PaymentGateIntegrationTest} and {@code RazorpayPaymentGateIntegrationTest}.
+   */
+  private String finalise(UUID agreementId) {
+    @SuppressWarnings("unchecked")
+    ResponseEntity<Map> resp =
+        rest.postForEntity("/api/agreements/" + agreementId + "/finalise", null, Map.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    Payments.waive(jdbc, agreementId);
+    return (String) resp.getBody().get("trackingReference");
+  }
+
+  /** Perform the staff e-stamp upload over HTTP, exactly as an operator would. */
+  private void uploadStamp(UUID agreementId) {
+    String reference =
+        jdbc.queryForObject(
+            "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, agreementId);
+    String certificate =
+        "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
+    var form = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+    form.add(
+        "scan",
+        new org.springframework.core.io.ByteArrayResource(
+            in.agreementmitra.support.TestImages.certificateScan()) {
+          @Override
+          public String getFilename() {
+            return "certificate.png";
+          }
+        });
+    form.add("agreementReference", reference);
+    form.add("certificateNumber", certificate);
+    form.add("issueDate", "2026-01-15");
+    form.add("dutyAmount", "500.00");
+    form.add("jurisdiction", "KA");
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+    headers.setBearerAuth(staffToken);
+    ResponseEntity<String> resp =
+        rest.exchange(
+            "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
   }
 
   /** A persisted agreement with NO draft yet — used to exercise the draft-required 409. */
@@ -98,11 +174,36 @@ class SigningRequestApiIntegrationTest {
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
-            "termMonths", 11,
+            "startDate", "2026-01-01",
+            "endDate", "2026-12-01",
             "signers",
                 List.of(
-                    Map.of("name", "Asha Owner", "email", "asha@example.com", "role", "OWNER"),
-                    Map.of("name", "Tara Tenant", "email", "tara@example.com", "role", "TENANT")));
+                    Map.of(
+                        "firstName",
+                        "Asha",
+                        "lastName",
+                        "Owner",
+                        "fatherName",
+                        "Ravi Owner",
+                        "currentAddress",
+                        "1 A St",
+                        "email",
+                        "asha@example.com",
+                        "role",
+                        "OWNER"),
+                    Map.of(
+                        "firstName",
+                        "Tara",
+                        "lastName",
+                        "Tenant",
+                        "fatherName",
+                        "Hari Tenant",
+                        "currentAddress",
+                        "3 C St",
+                        "email",
+                        "tara@example.com",
+                        "role",
+                        "TENANT")));
     @SuppressWarnings("unchecked")
     ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -250,7 +351,7 @@ class SigningRequestApiIntegrationTest {
   }
 
   @Test
-  void createAutoStampsStoresStampedPdfAndPersistsStampInfo() throws Exception {
+  void theStoredStampedPdfIsWhatReachesTheProvider() throws Exception {
     UUID agreementId = createAgreement();
     stubCreate("DOC-STAMP-1");
 
@@ -258,53 +359,84 @@ class SigningRequestApiIntegrationTest {
         rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 
-    // Stamp DATA persisted on the agreement (internal columns; jurisdiction "KA", no real duty).
+    // The stamp DATA came from the staff upload: a real certificate number and dutyPaid = true.
     Map<String, Object> row =
         jdbc.queryForMap(
-            "SELECT stamp_serial, stamped_pdf_key, stamp_denomination, stamp_jurisdiction,"
-                + " stamp_duty_paid FROM agreement WHERE id = ?",
+            "SELECT stamp_certificate_number, stamped_pdf_key, stamp_duty_amount,"
+                + " stamp_jurisdiction, stamp_duty_paid FROM agreement WHERE id = ?",
             agreementId);
-    String serial = (String) row.get("stamp_serial");
-    assertThat(serial).matches("BW \\d{10}");
+    String certificate = (String) row.get("stamp_certificate_number");
+    assertThat(certificate).startsWith("IN-KA");
     assertThat(row.get("stamp_jurisdiction")).isEqualTo("KA");
-    assertThat(row.get("stamp_denomination")).isEqualTo(100);
-    assertThat(row.get("stamp_duty_paid")).isEqualTo(false);
+    assertThat(row.get("stamp_duty_paid")).isEqualTo(true);
     assertThat(row.get("stamped_pdf_key")).isEqualTo("stamped/" + agreementId + ".pdf");
 
-    // The stamped PDF (what was handed to the provider) is stored in MinIO: stamp page prepended
-    // (1 + 1 draft page = 2) and the serial overlay present.
+    // The stamped PDF is the one the provider received: scan page prepended (1 + 1 draft page = 2)
+    // with the certificate-number overlay on the document page. Nothing is re-composited here.
     byte[] stamped = blobStore.get("stamped/" + agreementId + ".pdf");
     try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(stamped)) {
       assertThat(doc.getNumberOfPages()).isEqualTo(2);
-      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(serial);
+      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(certificate);
     }
 
-    // FSM advanced PDF_GENERATED → STAMPED → SIGN_REQUESTED (final state observed).
+    // FSM: PDF_GENERATED -> STAMPED (staff upload) -> SIGN_REQUESTED (this call).
     assertThat(statusOfDoc("DOC-STAMP-1")).isEqualTo("SIGN_REQUESTED");
   }
 
   @Test
-  void unparseableDraftReturns422StampFailedAndCallsNoProvider() {
-    UUID agreementId = createBareAgreement();
-    // Passes the upload magic-byte check but is not a real PDF — fails at the stamp step.
-    uploadDraft(agreementId, "%PDF-1.4 not a real pdf".getBytes(StandardCharsets.UTF_8));
+  void createWithoutAnAttachedStampReturns409AndCallsNoProvider() {
+    UUID agreementId = createDraftedAgreement(); // draft uploaded, no e-stamp yet
+    long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
     ResponseEntity<String> resp =
         rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
 
-    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(resp.getHeaders().getContentType())
         .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
-    // The body never echoes draft content.
-    assertThat(resp.getBody()).contains("stamp-failed").doesNotContain("not a real pdf");
-    // The request landed in STAMP_FAILED and the provider was never called.
+    // Distinguishable from draft-required / contact-required.
+    assertThat(resp.getBody()).contains("stamp-required").doesNotContain("draft-required");
+    // No signing-request row, and the provider was never called.
+    assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class))
+        .isEqualTo(before);
+    WIREMOCK.verify(0, postRequestedFor(urlEqualTo("/api/v3.0/sign/request")));
+  }
+
+  @Test
+  void aRequestRestsInPdfGeneratedUntilStaffUploadTheStamp() {
+    // PDF_GENERATED is durable now: the order is placed at finalisation and waits there,
+    // potentially
+    // for days, while staff buy the e-stamp out-of-band. Nothing may reap or expire it.
+    UUID agreementId = createDraftedAgreement();
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("PDF_GENERATED");
+
+    uploadStamp(agreementId); // ADVANCES the existing request; it does not create one
+
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("STAMPED");
     assertThat(
             jdbc.queryForObject(
-                "SELECT status FROM signing_request WHERE agreement_id = ?",
-                String.class,
+                "SELECT COUNT(*) FROM signing_request WHERE agreement_id = ?",
+                Long.class,
                 agreementId))
-        .isEqualTo("STAMP_FAILED");
-    WIREMOCK.verify(0, postRequestedFor(urlEqualTo("/api/v3.0/sign/request")));
+        .isEqualTo(1); // exactly one order, created once, at finalisation
+  }
+
+  @Test
+  void theCustomerAndTheDocumentCarryTheSameTrackingReference() {
+    UUID agreementId = createBareAgreement();
+    String persisted =
+        jdbc.queryForObject(
+            "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, agreementId);
+
+    ResponseEntity<String> read = rest.getForEntity("/api/agreements/" + agreementId, String.class);
+
+    // The response's trackingNumber IS the persisted reference - not a separately-derived veneer.
+    assertThat(read.getBody()).contains("\"trackingNumber\":\"" + persisted + "\"");
+  }
+
+  private String statusOfAgreement(UUID agreementId) {
+    return jdbc.queryForObject(
+        "SELECT status FROM signing_request WHERE agreement_id = ?", String.class, agreementId);
   }
 
   @Test
@@ -319,7 +451,8 @@ class SigningRequestApiIntegrationTest {
     assertThat(get.getBody())
         .doesNotContain("stamp")
         .doesNotContain("stamped")
-        .doesNotContain("BW ");
+        .doesNotContain("certificate")
+        .doesNotContain("IN-KA");
   }
 
   @Test

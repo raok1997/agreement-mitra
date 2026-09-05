@@ -20,6 +20,20 @@ interface SigningRequestRepository extends JpaRepository<SigningRequest, UUID> {
   boolean existsByAgreementId(UUID agreementId);
 
   /**
+   * The agreement's most-recent signing request (by creation), or empty if none -- backs the
+   * agreement-list's derived status. One agreement may accrue several requests over time; the
+   * latest carries the current lifecycle state.
+   */
+  Optional<SigningRequest> findFirstByAgreementIdOrderByCreatedAtDesc(UUID agreementId);
+
+  /**
+   * Requests resting in one status, oldest-first and bounded by {@code pageable} -- backs the staff
+   * stamp-intake queue. Ordering by creation makes the longest-waiting order the most visible one,
+   * which is the only ordering an operator actually wants from a fulfilment queue.
+   */
+  List<SigningRequest> findByStatusOrderByCreatedAtAsc(SignatureStatus status, Pageable pageable);
+
+  /**
    * Recoverable rows for the reconciliation scan, oldest-first and bounded by {@code pageable}:
    * stale {@code SIGN_REQUESTED} rows (a possibly-missed webhook) past {@code staleBefore}, plus
    * {@code SIGNED} rows with no artifact key yet (a failed download) past {@code graceBefore} (so a

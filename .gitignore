@@ -18,5 +18,10 @@
 build/
 bin/
 .gradle/
+# Transient javac argfiles dropped by long compile invocations
+javac.*.args
 
 node_modules/
+
+# Runtime logs (daily-start / restart scripts)
+logs/

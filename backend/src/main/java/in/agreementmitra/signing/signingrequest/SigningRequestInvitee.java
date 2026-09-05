@@ -36,6 +36,19 @@ class SigningRequestInvitee {
   @Column(name = "sign_url", nullable = false)
   private String signUrl;
 
+  /**
+   * The address this signing invitation was <b>issued to</b>, captured from the provider's own
+   * create response. Paired with {@link #status}, it is the ONLY basis on which the signed
+   * agreement may be emailed to this party (design D2): invited here, then observed {@code SIGNED}.
+   *
+   * <p>Null on every row created before this column existed, which resolves to "no verified
+   * address" and escalates to staff - deliberately, because the alternative is falling back to a
+   * draft-time address that nobody ever proved belongs to this party. Party PII: redacted in logs,
+   * never returned unredacted by any API.
+   */
+  @Column(name = "invited_email")
+  private String invitedEmail;
+
   @Column(name = "expiry")
   private String expiry;
 
@@ -62,20 +75,33 @@ class SigningRequestInvitee {
       String signUrl,
       String expiry,
       Short signingOrder,
-      String providerInviteeId) {
+      String providerInviteeId,
+      String invitedEmail) {
     this.id = id;
     this.signerId = signerId;
     this.signUrl = signUrl;
     this.expiry = expiry;
     this.signingOrder = signingOrder;
     this.providerInviteeId = providerInviteeId;
+    this.invitedEmail = invitedEmail;
     this.status = InviteeStatus.PENDING;
   }
 
   static SigningRequestInvitee create(
-      UUID signerId, String signUrl, String expiry, int signingOrder, String providerInviteeId) {
+      UUID signerId,
+      String signUrl,
+      String expiry,
+      int signingOrder,
+      String providerInviteeId,
+      String invitedEmail) {
     return new SigningRequestInvitee(
-        UUID.randomUUID(), signerId, signUrl, expiry, (short) signingOrder, providerInviteeId);
+        UUID.randomUUID(),
+        signerId,
+        signUrl,
+        expiry,
+        (short) signingOrder,
+        providerInviteeId,
+        invitedEmail);
   }
 
   void attachTo(SigningRequest signingRequest) {
@@ -104,6 +130,11 @@ class SigningRequestInvitee {
 
   String providerInviteeId() {
     return providerInviteeId;
+  }
+
+  /** The address the invitation was issued to; null for rows predating the column. */
+  String invitedEmail() {
+    return invitedEmail;
   }
 
   InviteeStatus status() {

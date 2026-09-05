@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.Payments;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -92,10 +93,22 @@ class SigningCompletionIntegrationTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private BlobStore blobStore;
   @Autowired private SigningReconciliationJob reconciliationJob;
+  @Autowired private in.agreementmitra.identity.IdentityService identityService;
+  @Autowired private in.agreementmitra.identity.oauth.HandoffService handoffService;
+  @Autowired private in.agreementmitra.identity.session.SessionService sessionService;
+
+  private String staffToken;
 
   @BeforeEach
   void resetStubs() {
     WIREMOCK.resetAll();
+    staffToken =
+        in.agreementmitra.support.StaffSessions.staffSession(
+            identityService,
+            handoffService,
+            sessionService,
+            jdbc,
+            "completion-staff-" + UUID.randomUUID());
   }
 
   // --- helpers ---------------------------------------------------------------
@@ -106,17 +119,95 @@ class SigningCompletionIntegrationTest {
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
-            "termMonths", 11,
+            "startDate", "2026-01-01",
+            "endDate", "2026-12-01",
             "signers",
                 List.of(
-                    Map.of("name", "Asha Owner", "email", "asha@example.com", "role", "OWNER"),
-                    Map.of("name", "Tara Tenant", "email", "tara@example.com", "role", "TENANT")));
+                    Map.of(
+                        "firstName",
+                        "Asha",
+                        "lastName",
+                        "Owner",
+                        "fatherName",
+                        "Ravi Owner",
+                        "currentAddress",
+                        "1 A St",
+                        "email",
+                        "asha@example.com",
+                        "role",
+                        "OWNER"),
+                    Map.of(
+                        "firstName",
+                        "Tara",
+                        "lastName",
+                        "Tenant",
+                        "fatherName",
+                        "Hari Tenant",
+                        "currentAddress",
+                        "3 C St",
+                        "email",
+                        "tara@example.com",
+                        "role",
+                        "TENANT")));
     @SuppressWarnings("unchecked")
     ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     UUID id = UUID.fromString((String) created.getBody().get("id"));
-    uploadDraft(id); // signing now requires an uploaded draft (CR-5)
+    uploadDraft(id); // signing requires an uploaded draft (CR-5)
+    finalise(id); // ...the customer finalises, which places the order (PDF_GENERATED)
+    uploadStamp(id); // ...and staff attach the purchased e-stamp
     return id;
+  }
+
+  /**
+   * Place the order the way the customer does; this is what creates the PDF_GENERATED request.
+   *
+   * <p>The payment gate ships {@code REQUIRED}, so the order is taken past it here too - this file
+   * is about webhook verification, completion, and reconciliation, not about payment. The gate is
+   * still evaluated at signing initiation below; it simply passes.
+   */
+  private void finalise(UUID agreementId) {
+    ResponseEntity<String> resp =
+        rest.postForEntity("/api/agreements/" + agreementId + "/finalise", null, String.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    Payments.waive(jdbc, agreementId);
+  }
+
+  /**
+   * Perform the staff e-stamp upload over HTTP. Stamping is no longer automatic: signing refuses
+   * with 409 until a staff member has attached a purchased certificate.
+   */
+  private void uploadStamp(UUID agreementId) {
+    String reference =
+        jdbc.queryForObject(
+            "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, agreementId);
+    var form = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+    form.add(
+        "scan",
+        new org.springframework.core.io.ByteArrayResource(
+            in.agreementmitra.support.TestImages.certificateScan()) {
+          @Override
+          public String getFilename() {
+            return "certificate.png";
+          }
+        });
+    form.add("agreementReference", reference);
+    form.add(
+        "certificateNumber",
+        "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase());
+    form.add("issueDate", "2026-01-15");
+    form.add("dutyAmount", "500.00");
+    form.add("jurisdiction", "KA");
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+    headers.setBearerAuth(staffToken);
+    ResponseEntity<String> resp =
+        rest.exchange(
+            "/api/staff/estamp",
+            org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(form, headers),
+            String.class);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
   }
 
   private void uploadDraft(UUID agreementId) {

@@ -81,6 +81,26 @@ class SecurityBaselineIntegrationTest {
   }
 
   @Test
+  void staffStampIntakeChallengesAnAnonymousCallerWith401() {
+    // The staff surface is the one place a 401 is right: it tells an operator whose session lapsed
+    // to re-authenticate, instead of the blanket 403 every other route still returns.
+    HttpHeaders multipart = new HttpHeaders();
+    multipart.setContentType(MediaType.MULTIPART_FORM_DATA);
+    ResponseEntity<String> resp =
+        rest.exchange(
+            "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(null, multipart), String.class);
+    assertThat(resp.getStatusCode().value()).isEqualTo(401);
+  }
+
+  @Test
+  void unlistedStaffSubPathsRemainDeniedByDefault() {
+    // Only the exact POST /api/staff/estamp is authorized; anything else under /api/staff/ falls
+    // through to anyRequest().denyAll().
+    assertThat(rest.getForEntity("/api/staff/anything", String.class).getStatusCode().value())
+        .isIn(401, 403);
+  }
+
+  @Test
   void actuatorHealthIsReachableWithHardeningHeaders() {
     ResponseEntity<String> resp = rest.getForEntity("/actuator/health", String.class);
     assertThat(resp.getStatusCode().value()).isEqualTo(200);

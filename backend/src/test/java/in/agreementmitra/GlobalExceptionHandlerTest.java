@@ -129,14 +129,69 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void contactRequiredConflictMapsTo409WithADistinctTypeUrn() {
+    ProblemDetail problem = handler.handleConflict(ConflictException.contactRequired());
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:contact-required")
+        .isNotEqualTo("urn:agreementmitra:problem:draft-required");
+    // Reworded deliberately. "email or mobile" described a rule that no longer exists - a mobile
+    // alone does not make a party reachable while SMS is disabled - and "before signing" named the
+    // wrong gate, since the check now first fires at order creation.
+    assertThat(problem.getDetail())
+        .isEqualTo("Every party needs a contact we can reach them on before payment.");
+  }
+
+  @Test
+  void contactRequiredCarriesUnreachablePartiesAsStructuredDataNotInTheDetail() {
+    ProblemDetail problem =
+        handler.handleConflict(ConflictException.contactRequired(java.util.List.of("tenant 1")));
+
+    // The detail stays a fixed constant, per this handler's contract that no client-facing text is
+    // derived from an exception message. Which party to fix travels as a property instead, carrying
+    // role-and-position labels only - never a name, address, or number.
+    assertThat(problem.getDetail())
+        .isEqualTo("Every party needs a contact we can reach them on before payment.");
+    assertThat(problem.getProperties())
+        .containsEntry("unreachableParties", java.util.List.of("tenant 1"));
+  }
+
+  @Test
   void invalidUploadMapsTo400WithConstantDetailNotReflectingMessage() {
     var ex = new InvalidUploadException("filename=evil.exe magic-byte mismatch");
 
     ProblemDetail problem = handler.handleInvalidUpload(ex);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-    assertThat(problem.getDetail()).isEqualTo("The upload must be a single PDF file.");
+    assertThat(problem.getDetail())
+        .isEqualTo("The upload must be a single file of an accepted type and size.");
     assertThat(problem.getDetail()).doesNotContain("evil.exe");
+  }
+
+  @Test
+  void documentDataInvalidMapsTo400WithErrorsCarryingKeysAndRuleTokensOnly() throws Exception {
+    var rejectedValue = "9999999999";
+    var ex =
+        new DocumentDataInvalidException(
+            List.of(
+                new FieldErrorDetail("monthlyRent", "min"),
+                new FieldErrorDetail("purpose", "enum")));
+
+    ProblemDetail problem = handler.handleDocumentDataInvalid(ex);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:document-data-invalid");
+    assertThat(problem.getDetail()).isEqualTo("One or more submitted fields are invalid.");
+
+    @SuppressWarnings("unchecked")
+    List<FieldErrorDetail> errors = (List<FieldErrorDetail>) problem.getProperties().get("errors");
+    assertThat(errors)
+        .containsExactly(
+            new FieldErrorDetail("monthlyRent", "min"), new FieldErrorDetail("purpose", "enum"));
+    // The serialized body carries field keys + rule tokens only, never a submitted data value.
+    assertThat(mapper.writeValueAsString(problem)).doesNotContain(rejectedValue);
   }
 
   @Test

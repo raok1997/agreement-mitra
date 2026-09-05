@@ -1,0 +1,14 @@
+# Keep the build context small and free of local/dev state. Everything the image
+# needs is listed explicitly in the Dockerfile COPY steps.
+.gradle/
+build/
+bin/
+.idea/
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Never let local env files into an image layer.
+.env
+.env.*
+!.env.example

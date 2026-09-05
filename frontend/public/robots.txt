@@ -1,0 +1,11 @@
+# AgreementMitra -- https://agreementmitra.com
+#
+# The marketing page at "/" is the only thing worth indexing. Everything under
+# /start is the authenticated-or-anonymous agreement builder: it renders nothing
+# useful without a session or a filled form, and its URLs can carry agreement ids.
+User-agent: *
+Allow: /$
+Disallow: /start
+Disallow: /auth/
+
+Sitemap: https://agreementmitra.com/sitemap.xml

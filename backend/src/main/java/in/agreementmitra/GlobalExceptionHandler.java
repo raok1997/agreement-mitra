@@ -49,10 +49,25 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_NOT_FOUND = "urn:agreementmitra:problem:resource-not-found";
   private static final String TYPE_DRAFT_FROZEN = "urn:agreementmitra:problem:draft-frozen";
   private static final String TYPE_DRAFT_REQUIRED = "urn:agreementmitra:problem:draft-required";
+  private static final String TYPE_CONTACT_REQUIRED = "urn:agreementmitra:problem:contact-required";
+  private static final String TYPE_NOT_SIGNABLE = "urn:agreementmitra:problem:not-signable";
+  private static final String TYPE_STAMP_REQUIRED = "urn:agreementmitra:problem:stamp-required";
+  private static final String TYPE_STAMP_ALREADY_ATTACHED =
+      "urn:agreementmitra:problem:stamp-already-attached";
+  private static final String TYPE_CERTIFICATE_ALREADY_USED =
+      "urn:agreementmitra:problem:certificate-already-used";
+  private static final String TYPE_ORDER_NOT_PLACED = "urn:agreementmitra:problem:order-not-placed";
+  private static final String TYPE_PAYMENT_REQUIRED = "urn:agreementmitra:problem:payment-required";
+  private static final String TYPE_PAYMENT_REFERENCE_ALREADY_USED =
+      "urn:agreementmitra:problem:payment-reference-already-used";
+  private static final String TYPE_AGREEMENT_CLOSED = "urn:agreementmitra:problem:agreement-closed";
+  private static final String TYPE_CONTACTS_FROZEN = "urn:agreementmitra:problem:contacts-frozen";
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
   private static final String TYPE_PAYLOAD_TOO_LARGE =
       "urn:agreementmitra:problem:payload-too-large";
   private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
+  private static final String TYPE_DOCUMENT_DATA_INVALID =
+      "urn:agreementmitra:problem:document-data-invalid";
 
   @Override
   protected ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -135,6 +150,63 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               TYPE_DRAFT_REQUIRED,
               "Draft required",
               "A draft must be uploaded before signing can be requested.");
+      case CONTACT_REQUIRED -> contactRequiredProblem(ex);
+      case NOT_SIGNABLE ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_NOT_SIGNABLE,
+              "Not signable",
+              "The document has no signature anchor, so a signing request cannot be created.");
+      case STAMP_REQUIRED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_STAMP_REQUIRED,
+              "Stamp required",
+              "An e-stamp must be attached before signing can be requested.");
+      case STAMP_ALREADY_ATTACHED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_STAMP_ALREADY_ATTACHED,
+              "Stamp already attached",
+              "This agreement is not awaiting an e-stamp upload.");
+      case CERTIFICATE_ALREADY_USED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_CERTIFICATE_ALREADY_USED,
+              "Certificate already used",
+              "This e-stamp certificate has already been used.");
+      case ORDER_NOT_PLACED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_ORDER_NOT_PLACED,
+              "Order not placed",
+              "This agreement has not been finalised yet.");
+      case PAYMENT_REQUIRED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_PAYMENT_REQUIRED,
+              "Payment required",
+              "This agreement must be paid for before this step can proceed.");
+      case PAYMENT_REFERENCE_ALREADY_USED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_PAYMENT_REFERENCE_ALREADY_USED,
+              "Payment reference already used",
+              "This payment reference has already been recorded.");
+      case AGREEMENT_CLOSED ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_AGREEMENT_CLOSED,
+              "Agreement closed",
+              "This agreement has been closed and cannot be changed.");
+      // Its own type, not draft-frozen: a client has to be able to say WHICH thing is locked, and
+      // that a paid order's contacts will never accept a retry.
+      case CONTACTS_FROZEN ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_CONTACTS_FROZEN,
+              "Contacts frozen",
+              "Contact details cannot be changed once payment for this agreement is settled.");
     };
   }
 
@@ -145,7 +217,7 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         HttpStatus.BAD_REQUEST,
         TYPE_INVALID_UPLOAD,
         "Invalid upload",
-        "The upload must be a single PDF file.");
+        "The upload must be a single file of an accepted type and size.");
   }
 
   @ExceptionHandler(StampFailedException.class)
@@ -157,6 +229,23 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         TYPE_STAMP_FAILED,
         "Stamping failed",
         "The uploaded draft could not be stamped.");
+  }
+
+  @ExceptionHandler(DocumentDataInvalidException.class)
+  ProblemDetail handleDocumentDataInvalid(DocumentDataInvalidException ex) {
+    // Submitted document-projection data failed schema validation (wrong type, out-of-bounds, bad
+    // pattern, non-member enum, or a missing required field in generate mode). 400 + errors[], the
+    // same shape as bean-validation failures. The exception already carries only field keys + rule
+    // tokens (never a rejected value), so errors[] is safe to surface verbatim -- never-echo holds.
+    // Passive today: no endpoint raises this yet; CR-2's preview endpoint exercises the HTTP path.
+    ProblemDetail body =
+        problem(
+            HttpStatus.BAD_REQUEST,
+            TYPE_DOCUMENT_DATA_INVALID,
+            "Validation failed",
+            "One or more submitted fields are invalid.");
+    body.setProperty("errors", ex.errors());
+    return body;
   }
 
   @Override
@@ -195,6 +284,32 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                         : SIGNER_SET_FIELD,
                     error.getDefaultMessage()))
         .toList();
+  }
+
+  /**
+   * A party is not reachable on any enabled delivery channel.
+   *
+   * <p>The {@code detail} stays a fixed constant, per this class's contract. What the customer
+   * needs beyond that - <b>which</b> party to fix - travels as a structured {@code
+   * unreachableParties} property instead, carrying role-and-position labels ("tenant 1") only.
+   * Those are safe by construction: no name, no address, no number, and nothing the caller does not
+   * already hold, since they are acting on this agreement.
+   *
+   * <p>The wording deliberately says neither "email or mobile" nor "before signing". Reachability
+   * is per enabled channel now, so a mobile alone does not qualify while SMS is off; and the check
+   * first fires at order creation, well before signing.
+   */
+  private static ProblemDetail contactRequiredProblem(ConflictException ex) {
+    ProblemDetail body =
+        problem(
+            HttpStatus.CONFLICT,
+            TYPE_CONTACT_REQUIRED,
+            "Contact required",
+            "Every party needs a contact we can reach them on before payment.");
+    if (!ex.partyLabels().isEmpty()) {
+      body.setProperty("unreachableParties", ex.partyLabels());
+    }
+    return body;
   }
 
   private static ProblemDetail problem(

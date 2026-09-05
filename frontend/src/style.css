@@ -67,3 +67,20 @@
     font-family: theme("fontFamily.sans");
   }
 }
+
+/*
+ * Print. The only screen meant for paper today is the payment confirmation, whose reference is the
+ * customer's only way back to the agreement if they have no account. Everything screen-specific
+ * (the app header, the on-screen buttons) opts out with Tailwind's `print:hidden`; what is left
+ * here is the page itself: a plain white sheet with a readable margin, and no tinted panels, since
+ * browsers strip background colours from print by default and a half-printed tint reads as damage.
+ */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #fff;
+  }
+}

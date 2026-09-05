@@ -2,12 +2,14 @@ package in.agreementmitra.signing.leegality;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.signing.ArtifactHosts;
 import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
 import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
 import in.agreementmitra.signing.SignedDocument;
+import in.agreementmitra.signing.WebhookHeaders;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -20,6 +22,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -36,6 +39,7 @@ import org.springframework.web.client.RestClient;
  * URLs, or webhook payloads verbatim.
  */
 @Component
+@ConditionalOnProperty(name = "esign.provider", havingValue = "leegality")
 class LeegalityEsignProvider implements EsignProvider {
 
   private static final Logger log = LoggerFactory.getLogger(LeegalityEsignProvider.class);
@@ -64,7 +68,23 @@ class LeegalityEsignProvider implements EsignProvider {
             .map(
                 i ->
                     new InvitePart(
-                        i.name(), i.email(), i.phone(), new AadhaarConfig(i.verifyName())))
+                        i.name(),
+                        i.email(),
+                        i.phone(),
+                        new AadhaarConfig(i.verifyName()),
+                        // Map the provider-agnostic esign:<role> anchor to the vendor's signature
+                        // field. Whether Leegality/Digio place by text anchor or coordinate is the
+                        // open question (docs/integrations/leegality.md); this adapter is where
+                        // that
+                        // translation lands. Exercised against the sandbox stub / WireMock.
+                        //
+                        // ONE placement only, deliberately. An invitee may carry several (the
+                        // block plus an every-page strip); this vendor's request shape as
+                        // integrated here takes a single signature field, so the PRIMARY anchor is
+                        // used and the rest are knowingly not sent. Stated rather than silent:
+                        // when this adapter becomes the production one, the every-page strip has
+                        // to be revisited here, not discovered missing on a signed document.
+                        i.primaryAnchor() == null ? null : new SignatureField(i.primaryAnchor())))
             .toList();
     var body =
         new CreateBody(
@@ -166,17 +186,45 @@ class LeegalityEsignProvider implements EsignProvider {
     return bytes == null ? new byte[0] : bytes;
   }
 
-  /** Reject any artifact URL whose host is not the configured provider host (SSRF guard). */
+  /**
+   * Reject any artifact URL whose host is not on the configured allowlist (SSRF guard).
+   *
+   * <p>An allowlist rather than a single pinned host (design D8), shared with the other adapters.
+   * When none is configured the allowlist collapses to the API host, so an existing deployment
+   * keeps exactly the behaviour it had.
+   */
   private void requireProviderHost(String url) {
-    URI artifact = URI.create(url);
-    URI base = URI.create(properties.baseUrl());
-    if (artifact.getHost() == null || !artifact.getHost().equalsIgnoreCase(base.getHost())) {
-      throw new IllegalStateException("Artifact URL host is not the configured provider host");
+    List<String> allowed =
+        properties.artifactHosts().isEmpty()
+            ? List.of(String.valueOf(URI.create(properties.baseUrl()).getHost()))
+            : properties.artifactHosts();
+    ArtifactHosts.require(url, allowed);
+  }
+
+  /**
+   * Leegality names the transaction in the body ({@code documentId}) - the same field the MAC
+   * covers. Returned untrusted, and used by the module only to look up a per-transaction secret,
+   * which Leegality does not issue (its secret is config-wide), so this is effectively
+   * informational here. Verification below does not depend on it.
+   */
+  @Override
+  public Optional<String> parseWebhookTransactionId(String payload) {
+    try {
+      return Optional.ofNullable(text(objectMapper.readTree(payload), "documentId"));
+    } catch (Exception e) {
+      return Optional.empty(); // never log the payload
     }
   }
 
+  /**
+   * Body-MAC verification: {@code HMAC-SHA1(documentId, webhookSecret)} carried in the JSON body.
+   * The transport headers and the per-transaction key are irrelevant to this vendor and are
+   * deliberately ignored - the parameters exist so a header-credential vendor (ZOOP v5) can live
+   * behind the same seam.
+   */
   @Override
-  public Optional<String> verifyWebhook(String payload) {
+  public Optional<String> verifyWebhook(
+      String payload, WebhookHeaders headers, String storedWebhookKey) {
     try {
       JsonNode root = objectMapper.readTree(payload);
       String documentId = text(root, "documentId");
@@ -259,9 +307,17 @@ class LeegalityEsignProvider implements EsignProvider {
 
   private record FilePart(String name, String file) {}
 
-  private record InvitePart(String name, String email, String phone, AadhaarConfig aadhaarConfig) {}
+  private record InvitePart(
+      String name,
+      String email,
+      String phone,
+      AadhaarConfig aadhaarConfig,
+      SignatureField signature) {}
 
   private record AadhaarConfig(boolean verifyName) {}
+
+  /** The signer's signature placement, carried to the vendor as a text anchor (esign:<role>). */
+  private record SignatureField(String anchorText) {}
 
   private record CreateResponse(String status, CreateData data) {}
 

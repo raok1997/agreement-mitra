@@ -1,0 +1,13 @@
+# Cloudflare Pages SPA fallback.
+#
+# App.vue resolves its route from window.location.pathname, so a hard load or a
+# deep link to /start or /auth/callback must still be served index.html rather
+# than 404. The 200 status is a rewrite, not a redirect: the URL stays put and
+# the SPA reads it.
+#
+# NOTE: /api is deliberately NOT rewritten here. The SPA calls the backend at a
+# same-origin "/api" (frontend/src/api/client.ts), which means /api must be
+# proxied to the Spring Boot origin ahead of this rule -- see
+# docs/DOMAIN-AND-EMAIL-SETUP.md. Leaving it out means a misrouted API call fails
+# loudly instead of silently returning index.html to a fetch() expecting JSON.
+/*    /index.html    200

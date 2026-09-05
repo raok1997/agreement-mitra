@@ -1,0 +1,14 @@
+# Reference layer set -- TYPE layer (residential). A patch over the composed-so-far base.
+# Exercises: overrideField (make registration responsibility required, default it), addClause, and
+# replaceSection (to place the new clause). System-authored dummy content; fixture only.
+meta:
+  kind: type
+  dimensions: { type: residential }
+  version: 1
+
+ops:
+  - { op: overrideField, key: registrationResponsibility, required: true, default: owner }
+  - { op: addClause, after: rent,
+      clause: { id: use, text: "The premises shall be used for residential purposes only." } }
+  - { op: replaceSection, title: Financial,
+      section: { title: Financial, entries: [ monthlyRent, rent, use ] } }

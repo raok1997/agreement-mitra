@@ -1,0 +1,42 @@
+# Production layer set (rental) -- STATE layer (Telangana). A patch over the composed template that
+# adds Telangana's statutory overlay: governing tenancy law, stamping / registration before the
+# jurisdictional Sub-Registrar, and who bears the registration charges. Added as one small state
+# layer over the shared national base -- no per-state copy of the whole agreement.
+meta:
+  kind: state
+  dimensions: { state: TG }
+  version: 1
+
+ops:
+  - { op: addField,
+      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false } }
+  - { op: addField,
+      field: { key: registrationChargesBorneBy, label: "Registration charges borne by", type: enum,
+               required: false, default: tenant, options: [ owner, tenant, shared ] } }
+
+  - { op: addClause,
+      clause: { id: tgGoverningLaw,
+                text: "This Agreement shall be governed by the laws of India and the tenancy laws
+                       applicable in the State of Telangana, including the Telangana Buildings (Lease,
+                       Rent and Eviction) Control Act, 1960, as amended." } }
+  - { op: addClause,
+      clause: { id: tgStampRegistration,
+                text: "This Agreement shall be duly stamped and, where the term exceeds eleven (11)
+                       months, compulsorily registered before the jurisdictional Sub-Registrar in the
+                       State of Telangana under the Registration Act, 1908. The stamp duty and
+                       registration charges shall be borne by the {{registrationChargesBorneBy}}." } }
+  - { op: addClause,
+      clause: { id: tgStampAmount, showWhen: "stampDutyAmount > 0",
+                text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }
+  - { op: addClause,
+      clause: { id: tgEssentialServices,
+                text: "In accordance with the tenancy law applicable in Telangana, the Owner shall not
+                       withhold or disconnect essential supplies or services (including water and
+                       electricity) to the Premises during the subsistence of this Agreement." } }
+
+  # Optional/opt-in per the requester's decision (2026-07-13): the Telangana statutory overlay is an
+  # add-on the user adds from the catalog, absent from preview + signed draft until added.
+  - { op: addSection,
+      section: { title: "Statutory (Telangana)", optional: true,
+                 entries: [ stampDutyAmount, registrationChargesBorneBy,
+                            tgGoverningLaw, tgStampRegistration, tgStampAmount, tgEssentialServices ] } }

@@ -1,0 +1,23 @@
+# TEST FIXTURE ONLY -- a minimal layer set for the optional-section opt-in behaviour
+# (openspec/changes/optional-section-opt-in). The base declares a single mandatory Parties
+# section; the state-TG patch beside this file adds an OPTIONAL "Pets" section, so a
+# (TG, residential) resolution carries one mandatory + one optional section to toggle via
+# activeSections. System-authored dummy content only.
+meta:
+  id: optional-demo-base
+  dimensions:
+    state: IN
+    type: residential
+  version: 1
+  status: published
+
+fields:
+  - { key: ownerName,  label: "Owner name",  type: text, required: true }
+  - { key: tenantName, label: "Tenant name", type: text, required: true }
+
+clauses:
+  - id: parties
+    text: "This Agreement is made between {{ownerName}} (Owner) and {{tenantName}} (Tenant)."
+
+sections:
+  - { title: Parties, entries: [ ownerName, tenantName, parties ] }

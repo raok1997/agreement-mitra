@@ -1,0 +1,332 @@
+# Production layer set (rental) -- BASE layer: the India-standard residential rental agreement
+# (Leave and Licence), a full stand-alone template definition. State/type patches beside this file
+# layer over it (type-residential, state-TG, state_type-TG-residential).
+#
+# STRUCTURE (rental-document-content-v2 / M5): reads like the reference Leave-and-Licence deed --
+# a centred meta.document header; separate Owner and Tenant party cards (render: parties); a
+# Schedule of Property, a Term, and a Financial key/value set (render: keyvalue); coarse optional
+# Charges & Utilities / Occupancy & Use / Dispute Resolution add-on sections (optional: true, opt-in
+# via M2 activeSections, each field defaulted); a document-only "Now This Agreement Witnesseth"
+# covenant list (render: clauses, ZERO fields, so M3 omits it from the capture form while M1 still
+# renders it); and an optional fixtures/inventory Annexure (render: annexure). The individually
+# addable add-ons (rent escalation, lock-in, notice, pets, parking, maintenance, utilities,
+# late-payment penalty, occupants, dispute, custom clause, furnishing inventory) live here in the
+# shared base -- available to National and Telangana alike -- rather than only in the Telangana
+# layer; the Telangana layers add only the statutory overlay and jurisdiction default over this set.
+#
+# PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
+# (ownerName, tenantName, propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate,
+# endDate). Those are the ONLY fields marked required here -- every other field is optional or carries
+# a system-authored default, so the signed draft (generate) and the live preview stay in parity.
+# A mandatory section (optional: false) always renders; its individual fields may still be optional.
+# Sandbox + dummy data only.
+meta:
+  id: rental-national
+  dimensions:
+    state: IN
+    type: residential
+  version: 1
+  status: published
+  # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
+  # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
+  # layer resolves the execution date to SYSDATE and binds it under the reserved key. The Telangana
+  # layers MAY override the subtitle / execution line; the national wording is the default.
+  document:
+    title: "Rental Agreement"
+    subtitle: "Residential Tenancy (Leave & Licence)"
+    executionLine: "This Agreement is executed on {{agreementDate}} in respect of the property in the Schedule below."
+
+fields:
+  # --- Owner (Lessor) ---
+  - { key: ownerName,        label: "Owner name",                        type: text,     required: true }
+  - { key: ownerFatherName,  label: "Owner father's / spouse's name",    type: text,     required: false }
+  - { key: ownerAddress,     label: "Owner current address",             type: longtext, required: false }
+  # --- Tenant (Licensee) ---
+  - { key: tenantName,       label: "Tenant name",                       type: text,     required: true }
+  - { key: tenantFatherName, label: "Tenant father's / spouse's name",   type: text,     required: false }
+  - { key: tenantAddress,    label: "Tenant current address",            type: longtext, required: false }
+  # --- Schedule of Property ---
+  - { key: propertyAddress,  label: "Scheduled property address",        type: longtext, required: true }
+  - { key: propertyType,     label: "Property type",                     type: enum,     required: false,
+      default: apartment,
+      options: [ apartment, independent_house, villa, gated_community, pg_room ] }
+  - { key: bhkConfiguration, label: "Configuration",                     type: enum,     required: false,
+      default: "2BHK",
+      options: [ studio, "1BHK", "2BHK", "3BHK", "4BHK", "5BHK" ] }
+  - { key: carpetAreaSqft,   label: "Carpet area (sq. ft.)",             type: int,      required: false,
+      validation: { min: 1, max: 100000 } }
+  - { key: furnishingStatus, label: "Furnishing status",                 type: enum,     required: false,
+      default: unfurnished,
+      options: [ unfurnished, semi_furnished, fully_furnished ] }
+  # --- Term ---
+  - { key: agreementDate,    label: "Agreement date",                    type: date,     required: false }
+  - { key: startDate,        label: "Tenancy start date",                type: date,     required: true }
+  - { key: endDate,          label: "Tenancy end date",                  type: date,     required: true }
+  - { key: durationMonths,   label: "Duration (months)",                 type: int,      required: true,
+      default: 11, validation: { min: 1, max: 60 } }
+  # Lock-in / notice add-ons: defaulted-optional here (each individually addable via its showWhen
+  # clause), so gating them out of a generated draft never trips required-validation.
+  - { key: lockInMonths,     label: "Lock-in (months)",                  type: int,      required: false,
+      default: 6, validation: { min: 0, max: 60 } }
+  - { key: noticePeriodMonths, label: "Notice period (months)",          type: int,      required: false,
+      default: 1, validation: { min: 0, max: 12 } }
+  # --- Financial ---
+  - { key: monthlyRent,      label: "Monthly rent (INR)",                type: money,    required: true }
+  - { key: securityDeposit,  label: "Security deposit (INR)",            type: money,    required: true }
+  - { key: rentDueDay,       label: "Rent due day (of month)",           type: int,      required: false,
+      default: 5, validation: { min: 1, max: 28 } }
+  - { key: rentEscalationPercent, label: "Annual rent escalation (%)",   type: int,      required: false,
+      default: 5, validation: { min: 0, max: 100 } }
+  - { key: paymentMode,      label: "Rent payment mode",                 type: enum,     required: false,
+      default: bank_transfer,
+      options: [ bank_transfer, upi, cheque, cash ] }
+  # --- Charges & utilities (optional add-on section) ---
+  - { key: maintenanceBorneBy, label: "Maintenance borne by",           type: enum,     required: false,
+      default: tenant, options: [ tenant, owner, shared ] }
+  - { key: maintenanceAmount, label: "Maintenance amount (INR / month)", type: money,    required: false }
+  - { key: utilitiesBorneBy, label: "Utilities borne by",               type: enum,     required: false,
+      default: tenant, options: [ tenant, owner, shared ] }
+  - { key: latePaymentPenalty, label: "Late-payment penalty (INR)",     type: money,    required: false }
+  - { key: gracePeriodDays,  label: "Grace period (days)",               type: int,      required: false,
+      default: 5, validation: { min: 0, max: 30 } }
+  # --- Occupancy & use (optional add-on section) ---
+  - { key: permittedUse,     label: "Permitted use",                     type: enum,     required: false,
+      default: residential, options: [ residential, commercial ] }
+  - { key: maxOccupants,     label: "Maximum occupants",                 type: int,      required: false,
+      validation: { min: 1, max: 30 } }
+  - { key: petsAllowed,      label: "Pets allowed",                      type: bool,     required: false,
+      default: false }
+  - { key: parkingType,      label: "Parking allotted",                  type: enum,     required: false,
+      default: none, options: [ none, two_wheeler, four_wheeler, both ] }
+  # --- Dispute resolution & custom clause (optional add-on section) ---
+  - { key: disputeResolution, label: "Dispute resolution",              type: enum,     required: false,
+      default: courts, options: [ courts, arbitration, mediation ] }
+  - { key: jurisdictionCity, label: "Jurisdiction city",                 type: text,     required: false }
+  - { key: specialConditions, label: "Special conditions",              type: longtext, required: false }
+  # --- Fixtures / inventory annexure (optional add-on section) ---
+  - { key: fixturesInventory, label: "Fixtures and inventory schedule",  type: longtext, required: false,
+      default: "Modular kitchen with hob and chimney; two ceiling fans; three tube lights; one geyser; wardrobes in both bedrooms; window curtains." }
+  # --- Witnesses (optional add-on section; all default empty, opt-in via activeSections) ---
+  - { key: witness1Name,     label: "Witness 1 name",                    type: text,     required: false }
+  - { key: witness1Address,  label: "Witness 1 address",                 type: longtext, required: false }
+  - { key: witness2Name,     label: "Witness 2 name",                    type: text,     required: false }
+  - { key: witness2Address,  label: "Witness 2 address",                 type: longtext, required: false }
+
+clauses:
+  - id: recital
+    text: >-
+      This Residential Rental Agreement (Leave and Licence) is made between {{ownerName}}, son /
+      daughter / spouse of {{ownerFatherName}}, residing at {{ownerAddress}} (the "Owner"), and
+      {{tenantName}}, son / daughter / spouse of {{tenantFatherName}}, residing at {{tenantAddress}}
+      (the "Tenant").
+  - id: scheduleClause
+    text: >-
+      The Owner lets to the Tenant the residential premises situated at {{propertyAddress}}, being a
+      {{bhkConfiguration}} {{propertyType}}, {{furnishingStatus}}, together with its
+      fixtures and fittings (the "Premises").
+  - id: termClause
+    text: >-
+      This tenancy is granted for a term of {{durationMonths}} month(s) commencing on {{startDate}}
+      and ending on {{endDate}}, unless sooner determined in accordance with this Agreement.
+  - id: lockInClause
+    showWhen: "lockInMonths > 0"
+    text: >-
+      Neither party shall terminate this Agreement during the lock-in period of {{lockInMonths}}
+      month(s) from the commencement date, save with the other party's prior written consent.
+  - id: noticeClause
+    text: >-
+      After the lock-in period, either party may terminate this Agreement by giving
+      {{noticePeriodMonths}} month(s) prior written notice to the other, or rent in lieu thereof.
+  - id: rentClause
+    text: >-
+      The Tenant shall pay a monthly rent of INR {{monthlyRent}}, payable in advance on or before
+      day {{rentDueDay}} of each calendar month, without deduction, by {{paymentMode}}.
+  - id: escalationClause
+    showWhen: "rentEscalationPercent > 0"
+    text: >-
+      The monthly rent shall be enhanced by {{rentEscalationPercent}} percent on completion of every
+      twelve (12) months of the tenancy or on each renewal, whichever is applicable.
+  - id: depositClause
+    text: >-
+      The Tenant has paid to the Owner an interest-free refundable security deposit of INR
+      {{securityDeposit}}, refundable on vacating the Premises after adjusting arrears of rent, unpaid
+      utility charges, and the cost of making good any damage beyond normal wear and tear.
+  - id: maintenanceClause
+    text: >-
+      Society and building maintenance charges shall be borne by the {{maintenanceBorneBy}}.
+  - id: maintenanceAmountClause
+    showWhen: "maintenanceAmount > 0"
+    text: >-
+      The maintenance charges payable amount to INR {{maintenanceAmount}} per month.
+  - id: utilitiesClause
+    text: >-
+      Electricity, water, gas, internet, and other utility charges consumed at the Premises shall be
+      borne by the {{utilitiesBorneBy}} as per actual usage during the tenancy.
+  - id: latePaymentClause
+    showWhen: "latePaymentPenalty > 0"
+    text: >-
+      If the rent is not paid within {{gracePeriodDays}} day(s) of the due date, the Tenant shall pay
+      a late-payment charge of INR {{latePaymentPenalty}}.
+  - id: useClause
+    text: >-
+      The Premises shall be used for {{permittedUse}} purposes only, and shall not be used for any
+      unlawful, hazardous, or nuisance-causing activity.
+  - id: occupancyClause
+    showWhen: "maxOccupants > 0"
+    text: >-
+      The Premises shall be occupied by no more than {{maxOccupants}} person(s), being the Tenant and
+      the Tenant's immediate family.
+  - id: petsAllowedClause
+    showWhen: "petsAllowed == true"
+    text: >-
+      The Tenant is permitted to keep domestic pets at the Premises, subject to applicable society
+      rules, and shall remain responsible for any damage or nuisance caused.
+  - id: petsNotAllowedClause
+    showWhen: "petsAllowed == false"
+    text: >-
+      The Tenant shall not keep any pets or animals at the Premises without the Owner's prior written
+      consent.
+  - id: parkingClause
+    showWhen: 'parkingType != "none"'
+    text: >-
+      A parking space for a {{parkingType}} vehicle is allotted to the Tenant for the duration of the
+      tenancy.
+  - id: careOfPremisesClause
+    text: >-
+      The Tenant shall keep the Premises in good and tenantable condition and shall not make any
+      structural alteration or addition without the Owner's prior written consent.
+  - id: noSublettingClause
+    text: >-
+      The Tenant shall not sublet, assign, or part with possession of the Premises, in whole or in
+      part, without the Owner's prior written consent.
+  - id: inspectionClause
+    text: >-
+      The Owner or the Owner's authorised agent may enter and inspect the Premises at reasonable times
+      upon reasonable prior notice to the Tenant.
+  - id: handoverClause
+    text: >-
+      On expiry or earlier determination of this Agreement, the Tenant shall hand over vacant and
+      peaceful possession of the Premises together with all fixtures in their original condition,
+      normal wear and tear excepted.
+  # Two clauses, one per mode. A single sentence cannot read correctly for all three values: the
+  # humanised token is Title Case for the key/value cell ("Courts"), and "resolved through Courts"
+  # is not a sentence a deed would contain. Splitting on the value keeps both readings right.
+  - id: disputeClause
+    showWhen: 'disputeResolution == "courts"'
+    text: >-
+      Any dispute arising out of or in connection with this Agreement shall be subject to the
+      exclusive jurisdiction of the courts at {{jurisdictionCity}}.
+  - id: disputeAlternativeClause
+    showWhen: 'disputeResolution != "courts"'
+    text: >-
+      Any dispute arising out of or in connection with this Agreement shall first be referred to
+      {{disputeResolution}}; subject thereto, the courts at {{jurisdictionCity}} shall have
+      jurisdiction.
+  - id: specialConditionsClause
+    showWhen: 'specialConditions != ""'
+    text: >-
+      Special conditions agreed between the parties: {{specialConditions}}.
+  - id: stampRegistrationClause
+    text: >-
+      This Agreement shall be stamped and, where the term exceeds eleven (11) months, registered in
+      accordance with applicable law; the stamp duty and registration charges shall be borne as
+      mutually agreed between the parties.
+  - id: annexureClause
+    text: >-
+      Annexure A -- Schedule of Fixtures and Inventory. The Premises is handed over with the fixtures
+      and fittings listed in this Schedule, which the Tenant shall maintain in working order and
+      return at the end of the tenancy, normal wear and tear excepted.
+  # --- Boilerplate closing clauses (system-owned; no user slots beyond existing party fields). The
+  # id serviceOfNoticeClause is distinct from the Term's noticeClause (termination notice period). The
+  # national governingLawClause stays general -- the TG layer's tgGoverningLaw is the more-specific
+  # statutory overlay, not a contradiction.
+  - id: serviceOfNoticeClause
+    text: >-
+      Any notice required or permitted under this Agreement shall be in writing and served on the
+      other party at the address stated in this Agreement (or such other address later notified in
+      writing), by hand, registered post, or email, and shall be deemed duly served upon delivery.
+  - id: governingLawClause
+    text: >-
+      This Agreement shall be governed by and construed in accordance with the laws of India.
+  - id: severabilityClause
+    text: >-
+      If any provision of this Agreement is held to be invalid or unenforceable, the remaining
+      provisions shall continue in full force and effect, and the invalid provision shall be deemed
+      modified to the minimum extent necessary to render it valid and enforceable.
+  - id: entireAgreementClause
+    text: >-
+      This Agreement constitutes the entire agreement between the parties in respect of the Premises
+      and supersedes all prior discussions and understandings; no amendment or variation shall be
+      effective unless made in writing and signed by or on behalf of both parties.
+
+sections:
+  # Mandatory party cards (render: parties) -- Owner and Tenant draw as separate cards.
+  - title: "Owner"
+    render: parties
+    optional: false
+    entries: [ ownerName, ownerFatherName, ownerAddress ]
+  - title: "Tenant"
+    render: parties
+    optional: false
+    entries: [ tenantName, tenantFatherName, tenantAddress ]
+  # Mandatory key/value sets. M1 composes Term + Financial into the "Terms of Tenancy" table.
+  - title: "Schedule of Property"
+    render: keyvalue
+    optional: false
+    entries: [ propertyAddress, propertyType, bhkConfiguration, carpetAreaSqft, furnishingStatus, scheduleClause ]
+  - title: "Term"
+    render: keyvalue
+    optional: false
+    entries: [ agreementDate, startDate, endDate, durationMonths, lockInMonths, noticePeriodMonths,
+               termClause, lockInClause, noticeClause ]
+  - title: "Financial"
+    render: keyvalue
+    optional: false
+    entries: [ monthlyRent, securityDeposit, rentDueDay, rentEscalationPercent, paymentMode,
+               rentClause, escalationClause, depositClause ]
+  # Optional add-on sections (opt-in via M2 activeSections; each field defaulted so gating them out
+  # never trips required-validation). Individually addable.
+  - title: "Charges & Utilities"
+    render: keyvalue
+    optional: true
+    entries: [ maintenanceBorneBy, maintenanceAmount, utilitiesBorneBy, latePaymentPenalty, gracePeriodDays,
+               maintenanceClause, maintenanceAmountClause, utilitiesClause, latePaymentClause ]
+  - title: "Occupancy & Use"
+    render: keyvalue
+    optional: true
+    entries: [ permittedUse, maxOccupants, petsAllowed, parkingType,
+               occupancyClause, petsAllowedClause, petsNotAllowedClause, parkingClause ]
+  - title: "Dispute Resolution"
+    render: keyvalue
+    optional: true
+    entries: [ disputeResolution, jurisdictionCity, specialConditions, specialConditionsClause ]
+  # Document-only covenant list (render: clauses, ZERO fields -> omitted from the capture form by M3,
+  # still rendered by M1). Carries the recital, the permitted-use covenant, the always-on covenants,
+  # the dispute/jurisdiction covenant, and (national only) the generic stamp/registration clause.
+  - title: "Now This Agreement Witnesseth"
+    render: clauses
+    optional: false
+    entries: [ recital, useClause, careOfPremisesClause, noSublettingClause, inspectionClause,
+               handoverClause, disputeClause, disputeAlternativeClause, stampRegistrationClause,
+               serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]
+  # Optional fixtures/inventory annexure (render: annexure), opt-in, with a dummy inventory scaffold.
+  - title: "Annexure"
+    render: annexure
+    optional: true
+    entries: [ annexureClause, fixturesInventory ]
+  # Execution / signature block (render: signatures). The entries are the signer NAME field keys: the
+  # compiler renders one signature zone per entry (escaped name + system-owned Name/date/place labels)
+  # and emits a stable, non-PII eSign anchor esign:<role> derived from the key (ownerName -> owner).
+  # Mandatory (National always carries it). The name fields also drive the party cards above; listing
+  # them here is what declares the signatories -- M3 still omits this section from the capture form
+  # (its entries are already-captured fields, so it contributes no new form inputs).
+  - title: "In Witness Whereof"
+    render: signatures
+    optional: false
+    entries: [ ownerName, tenantName ]
+  # Optional witnesses (opt-in via activeSections; witness fields default empty). Printed escaped
+  # attestation data (render: keyvalue) -- witnesses are NOT eSign signers, so no anchor (design D3).
+  - title: "Witnesses"
+    render: keyvalue
+    optional: true
+    entries: [ witness1Name, witness1Address, witness2Name, witness2Address ]

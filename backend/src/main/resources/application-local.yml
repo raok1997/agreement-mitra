@@ -9,3 +9,12 @@
 spring:
   flyway:
     enabled: true
+
+# Dummy sandbox Google client so the app boots locally without real credentials (login stays
+# optional -- anonymous drafting needs none). A real local login needs real sandbox creds via
+# GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_SECRET. These are non-blank placeholders only; they satisfy
+# the fail-fast check and are NOT real secrets.
+auth:
+  google:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:local-dummy}
+    client-secret: ${GOOGLE_OAUTH_SECRET:dummy}

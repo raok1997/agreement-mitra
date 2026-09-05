@@ -1,0 +1,345 @@
+# Production layer set (commercial) -- BASE layer: the India-standard commercial lease agreement,
+# a full stand-alone template definition. State/type patches beside this file layer over it
+# (type-commercial, state-TG, state_type-TG-commercial).
+#
+# STRUCTURE mirrors the residential set (rental-document-content-v2 / M5) but speaks in commercial
+# terms: a centred meta.document header titled "Commercial Lease Agreement"; separate Lessor and
+# Lessee party cards (render: parties); a Schedule of Premises, a Term, and a Financial key/value set
+# (render: keyvalue); coarse optional Charges & Utilities / Occupancy & Use / Dispute Resolution
+# add-on sections (optional: true, opt-in via M2 activeSections, each field defaulted); a
+# document-only "Now This Agreement Witnesseth" covenant list (render: clauses, ZERO fields, so M3
+# omits it from the capture form while M1 still renders it); and an optional fixtures/inventory
+# Annexure (render: annexure). This is a NEW base rather than a patch over the residential base:
+# the composed template takes meta (hence the document header) verbatim from the base and no patch op
+# edits meta, so a residential base would mislabel the document. The clause wording reuses the
+# residential deed as its starting point where it fits; residential-only fields (BHK, furnishing,
+# pets, occupants) do not carry over.
+#
+# PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
+# (ownerName, tenantName, propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate,
+# endDate). Those are the ONLY fields marked required here -- relabelled for commercial (Lessor name,
+# Lessee name, Demised premises, Monthly lease rent, Lease term, ...) but the SAME keys, so the signed
+# draft (generate) and the live preview stay in parity. Every other field is optional or carries a
+# system-authored default. A mandatory section (optional: false) always renders; its individual
+# fields may still be optional. The eSign anchors derive from the keys (ownerName -> esign:owner,
+# tenantName -> esign:tenant); the Lessor/Lessee labels are display-only.
+# Sandbox + dummy data only.
+meta:
+  id: commercial-national
+  dimensions:
+    state: IN
+    type: commercial
+  version: 1
+  status: published
+  document:
+    title: "Commercial Lease Agreement"
+    subtitle: "Lease of Commercial Premises"
+    executionLine: "This Agreement is executed on {{agreementDate}} in respect of the commercial premises described in the Schedule below."
+
+fields:
+  # --- Lessor (Landlord) ---
+  - { key: ownerName,        label: "Lessor name",                        type: text,     required: true }
+  - { key: ownerFatherName,  label: "Lessor authorised signatory",        type: text,     required: false }
+  - { key: ownerAddress,     label: "Lessor address",                     type: longtext, required: false }
+  # --- Lessee (Tenant) ---
+  - { key: tenantName,       label: "Lessee name",                        type: text,     required: true }
+  - { key: tenantFatherName, label: "Lessee authorised signatory",        type: text,     required: false }
+  - { key: tenantAddress,    label: "Lessee address",                     type: longtext, required: false }
+  # --- Schedule of Premises ---
+  - { key: propertyAddress,  label: "Demised premises address",           type: longtext, required: true }
+  - { key: premisesType,     label: "Premises type",                      type: enum,     required: false,
+      default: office_space,
+      options: [ office_space, retail_shop, showroom, warehouse, industrial_unit, commercial_building ] }
+  - { key: carpetAreaSqft,   label: "Carpet area (sq. ft.)",              type: int,      required: false,
+      validation: { min: 1, max: 1000000 } }
+  - { key: superBuiltUpAreaSqft, label: "Super built-up area (sq. ft.)",  type: int,      required: false,
+      validation: { min: 1, max: 1000000 } }
+  - { key: permittedUse,     label: "Permitted use",                      type: enum,     required: false,
+      default: commercial,
+      options: [ commercial, office, retail, warehouse, industrial, showroom ] }
+  - { key: permittedBusinessUse, label: "Nature of business",             type: longtext, required: false,
+      default: "Business office for information technology and allied services." }
+  # --- Term ---
+  - { key: agreementDate,    label: "Agreement date",                     type: date,     required: false }
+  - { key: startDate,        label: "Lease commencement date",            type: date,     required: true }
+  - { key: endDate,          label: "Lease expiry date",                  type: date,     required: true }
+  - { key: durationMonths,   label: "Lease term (months)",                type: int,      required: true,
+      default: 36, validation: { min: 1, max: 240 } }
+  - { key: lockInMonths,     label: "Lock-in (months)",                   type: int,      required: false,
+      default: 12, validation: { min: 0, max: 120 } }
+  - { key: noticePeriodMonths, label: "Notice period (months)",           type: int,      required: false,
+      default: 3, validation: { min: 0, max: 24 } }
+  - { key: fitOutMonths,     label: "Fit-out / rent-free period (months)", type: int,     required: false,
+      default: 1, validation: { min: 0, max: 12 } }
+  # --- Financial ---
+  - { key: monthlyRent,      label: "Monthly lease rent (INR)",           type: money,    required: true }
+  - { key: securityDeposit,  label: "Security deposit (INR)",             type: money,    required: true }
+  - { key: depositMonths,    label: "Deposit (months of rent)",           type: int,      required: false,
+      default: 6, validation: { min: 0, max: 24 } }
+  - { key: rentDueDay,       label: "Rent due day (of month)",            type: int,      required: false,
+      default: 7, validation: { min: 1, max: 28 } }
+  - { key: rentEscalationPercent, label: "Annual rent escalation (%)",    type: int,      required: false,
+      default: 5, validation: { min: 0, max: 100 } }
+  - { key: gstRate,          label: "GST on rent (%)",                    type: int,      required: false,
+      default: 18, validation: { min: 0, max: 28 } }
+  - { key: gstBorneBy,       label: "GST borne by",                       type: enum,     required: false,
+      default: lessee, options: [ lessee, lessor ] }
+  - { key: paymentMode,      label: "Rent payment mode",                  type: enum,     required: false,
+      default: bank_transfer,
+      options: [ bank_transfer, upi, cheque, cash ] }
+  # --- Charges & utilities (optional add-on section) ---
+  - { key: camBorneBy,       label: "Common-area maintenance borne by",   type: enum,     required: false,
+      default: lessee, options: [ lessee, lessor, shared ] }
+  - { key: camAmount,        label: "CAM amount (INR / month)",           type: money,    required: false }
+  - { key: utilitiesBorneBy, label: "Utilities borne by",                 type: enum,     required: false,
+      default: lessee, options: [ lessee, lessor, shared ] }
+  - { key: structuralRepairsBorneBy, label: "Structural repairs borne by", type: enum,    required: false,
+      default: lessor, options: [ lessor, lessee, shared ] }
+  - { key: routineRepairsBorneBy, label: "Routine repairs borne by",      type: enum,     required: false,
+      default: lessee, options: [ lessee, lessor, shared ] }
+  # --- Occupancy & use (optional add-on section) ---
+  - { key: signageAllowed,   label: "Signage rights allowed",             type: bool,     required: false,
+      default: true }
+  # --- Dispute resolution & custom clause (optional add-on section) ---
+  - { key: disputeResolution, label: "Dispute resolution",                type: enum,     required: false,
+      default: arbitration, options: [ courts, arbitration, mediation ] }
+  - { key: jurisdictionCity, label: "Jurisdiction city",                  type: text,     required: false }
+  - { key: specialConditions, label: "Special conditions",                type: longtext, required: false }
+  # --- Fixtures / inventory annexure (optional add-on section) ---
+  - { key: fixturesInventory, label: "Fixtures and inventory schedule",   type: longtext, required: false,
+      default: "Reception counter; ten workstations; two cabins; one conference table; central air-conditioning; fire extinguishers; signage board." }
+  # --- Witnesses (optional add-on section; all default empty, opt-in via activeSections) ---
+  - { key: witness1Name,     label: "Witness 1 name",                     type: text,     required: false }
+  - { key: witness1Address,  label: "Witness 1 address",                  type: longtext, required: false }
+  - { key: witness2Name,     label: "Witness 2 name",                     type: text,     required: false }
+  - { key: witness2Address,  label: "Witness 2 address",                  type: longtext, required: false }
+
+clauses:
+  - id: recital
+    text: >-
+      This Commercial Lease Agreement is made between {{ownerName}}, represented by {{ownerFatherName}},
+      having its address at {{ownerAddress}} (the "Lessor"), and {{tenantName}}, represented by
+      {{tenantFatherName}}, having its address at {{tenantAddress}} (the "Lessee").
+  - id: scheduleClause
+    text: >-
+      The Lessor demises to the Lessee the commercial premises situated at {{propertyAddress}}, being a
+      {{premisesType}} admeasuring {{carpetAreaSqft}} sq. ft. carpet area ({{superBuiltUpAreaSqft}} sq.
+      ft. super built-up), together with its fixtures and fittings (the "Premises").
+  - id: termClause
+    text: >-
+      This lease is granted for a term of {{durationMonths}} month(s) commencing on {{startDate}} and
+      expiring on {{endDate}}, unless sooner determined in accordance with this Agreement.
+  - id: lockInClause
+    showWhen: "lockInMonths > 0"
+    text: >-
+      Neither party shall terminate this Agreement during the lock-in period of {{lockInMonths}}
+      month(s) from the commencement date, save with the other party's prior written consent; on
+      premature vacation the Lessee shall remain liable for the rent for the unexpired lock-in.
+  - id: noticeClause
+    text: >-
+      After the lock-in period, either party may terminate this Agreement by giving
+      {{noticePeriodMonths}} month(s) prior written notice to the other, or rent in lieu thereof.
+  - id: fitOutClause
+    showWhen: "fitOutMonths > 0"
+    text: >-
+      The Lessee shall be entitled to a rent-free fit-out period of {{fitOutMonths}} month(s) from the
+      commencement date solely for carrying out interior fit-outs; the security deposit and all other
+      charges shall nonetheless be payable from the commencement date.
+  - id: rentClause
+    text: >-
+      The Lessee shall pay a monthly lease rent of INR {{monthlyRent}}, payable in advance on or before
+      day {{rentDueDay}} of each calendar month, without deduction, by {{paymentMode}}.
+  - id: gstClause
+    showWhen: "gstRate > 0"
+    text: >-
+      In addition to the rent, Goods and Services Tax at {{gstRate}} percent (or as revised by law)
+      shall be payable by the {{gstBorneBy}} against a valid tax invoice.
+  - id: escalationClause
+    showWhen: "rentEscalationPercent > 0"
+    text: >-
+      The monthly rent shall stand enhanced by {{rentEscalationPercent}} percent on completion of every
+      twelve (12) months of the term or on each renewal, whichever is applicable.
+  - id: depositClause
+    text: >-
+      The Lessee has paid to the Lessor an interest-free refundable security deposit of INR
+      {{securityDeposit}} (equivalent to {{depositMonths}} month(s) rent), refundable on vacating the
+      Premises after adjusting arrears of rent, unpaid charges, and the cost of making good any damage
+      beyond normal wear and tear.
+  - id: camClause
+    text: >-
+      Common-area maintenance (CAM) charges for the upkeep of the common areas, services, and
+      facilities of the building shall be borne by the {{camBorneBy}}.
+  - id: camAmountClause
+    showWhen: "camAmount > 0"
+    text: >-
+      The CAM charges payable amount to INR {{camAmount}} per month.
+  - id: utilitiesClause
+    text: >-
+      Electricity, water, and other utility charges consumed at the Premises shall be borne by the
+      {{utilitiesBorneBy}} as per actual metered usage during the term.
+  - id: repairsClause
+    text: >-
+      Structural repairs to the Premises shall be borne by the {{structuralRepairsBorneBy}}; routine
+      and day-to-day repairs shall be borne by the {{routineRepairsBorneBy}}.
+  - id: useClause
+    text: >-
+      The Premises shall be used solely for {{permittedUse}} purposes, namely {{permittedBusinessUse}},
+      and shall NOT be used for residential purposes or for any unlawful, hazardous, or
+      nuisance-causing activity.
+  - id: licensesClause
+    text: >-
+      The Lessee shall, at its own cost, obtain and maintain all licences, permissions, and
+      registrations required to carry on its business at the Premises, and shall comply with all
+      applicable statutes, rules, and bye-laws.
+  - id: signageAllowedClause
+    showWhen: "signageAllowed == true"
+    text: >-
+      The Lessee may, at its own cost and subject to applicable municipal rules and the Lessor's
+      approval as to location and dimensions, display its name and business signage at the Premises.
+  - id: signageNotAllowedClause
+    showWhen: "signageAllowed == false"
+    text: >-
+      The Lessee shall not display any signage or advertisement at or on the Premises without the
+      Lessor's prior written consent.
+  - id: careOfPremisesClause
+    text: >-
+      The Lessee shall keep the Premises in good and tenantable condition and shall not make any
+      structural alteration or addition without the Lessor's prior written consent.
+  - id: noSublettingClause
+    text: >-
+      The Lessee shall not sublet, assign, or part with possession of the Premises, in whole or in
+      part, without the Lessor's prior written consent.
+  - id: inspectionClause
+    text: >-
+      The Lessor or the Lessor's authorised agent may enter and inspect the Premises at reasonable
+      times upon reasonable prior notice to the Lessee.
+  - id: quietEnjoymentClause
+    text: >-
+      The Lessee, paying the rent and observing the covenants herein, shall peaceably hold and enjoy
+      the Premises during the term without interruption by the Lessor.
+  - id: handoverClause
+    text: >-
+      On expiry or earlier determination of this Agreement, the Lessee shall hand over vacant and
+      peaceful possession of the Premises together with all Lessor fixtures in their original
+      condition, normal wear and tear excepted, and may remove its own trade fixtures making good any
+      damage caused by such removal.
+  # Two clauses, one per mode. A single sentence cannot read correctly for all three values: the
+  # humanised token is Title Case for the key/value cell ("Courts"), and "resolved through Courts"
+  # is not a sentence a deed would contain. Splitting on the value keeps both readings right.
+  - id: disputeClause
+    showWhen: 'disputeResolution == "courts"'
+    text: >-
+      Any dispute arising out of or in connection with this Agreement shall be subject to the
+      exclusive jurisdiction of the courts at {{jurisdictionCity}}.
+  - id: disputeAlternativeClause
+    showWhen: 'disputeResolution != "courts"'
+    text: >-
+      Any dispute arising out of or in connection with this Agreement shall first be referred to
+      {{disputeResolution}}; subject thereto, the courts at {{jurisdictionCity}} shall have
+      jurisdiction.
+  - id: specialConditionsClause
+    showWhen: 'specialConditions != ""'
+    text: >-
+      Special conditions agreed between the parties: {{specialConditions}}.
+  - id: stampRegistrationClause
+    text: >-
+      This Agreement shall be stamped and, where required by law, registered; the stamp duty and
+      registration charges shall be borne as mutually agreed between the parties.
+  - id: annexureClause
+    text: >-
+      Annexure A -- Schedule of Fixtures and Inventory. The Premises is handed over with the fixtures
+      and fittings listed in this Schedule, which the Lessee shall maintain in working order and return
+      at the end of the term, normal wear and tear excepted.
+  # --- Boilerplate closing clauses (system-owned; no user slots beyond existing party fields). The
+  # national governingLawClause stays general -- the TG layer's tgGoverningLaw is the more-specific
+  # statutory overlay, not a contradiction.
+  - id: serviceOfNoticeClause
+    text: >-
+      Any notice required or permitted under this Agreement shall be in writing and served on the other
+      party at the address stated in this Agreement (or such other address later notified in writing),
+      by hand, registered post, or email, and shall be deemed duly served upon delivery.
+  - id: governingLawClause
+    text: >-
+      This Agreement shall be governed by and construed in accordance with the laws of India.
+  - id: severabilityClause
+    text: >-
+      If any provision of this Agreement is held to be invalid or unenforceable, the remaining
+      provisions shall continue in full force and effect, and the invalid provision shall be deemed
+      modified to the minimum extent necessary to render it valid and enforceable.
+  - id: entireAgreementClause
+    text: >-
+      This Agreement constitutes the entire agreement between the parties in respect of the Premises
+      and supersedes all prior discussions and understandings; no amendment or variation shall be
+      effective unless made in writing and signed by or on behalf of both parties.
+
+sections:
+  # Mandatory party cards (render: parties) -- Lessor and Lessee draw as separate cards.
+  - title: "Lessor"
+    render: parties
+    optional: false
+    entries: [ ownerName, ownerFatherName, ownerAddress ]
+  - title: "Lessee"
+    render: parties
+    optional: false
+    entries: [ tenantName, tenantFatherName, tenantAddress ]
+  # Mandatory key/value sets. M1 composes Term + Financial into the "Terms of Lease" table.
+  - title: "Schedule of Premises"
+    render: keyvalue
+    optional: false
+    entries: [ propertyAddress, premisesType, carpetAreaSqft, superBuiltUpAreaSqft,
+               permittedUse, permittedBusinessUse, scheduleClause ]
+  - title: "Term"
+    render: keyvalue
+    optional: false
+    entries: [ agreementDate, startDate, endDate, durationMonths, lockInMonths, noticePeriodMonths,
+               fitOutMonths, termClause, lockInClause, noticeClause, fitOutClause ]
+  - title: "Financial"
+    render: keyvalue
+    optional: false
+    entries: [ monthlyRent, securityDeposit, depositMonths, rentDueDay, rentEscalationPercent,
+               gstRate, gstBorneBy, paymentMode,
+               rentClause, escalationClause, gstClause, depositClause ]
+  # Optional add-on sections (opt-in via M2 activeSections; each field defaulted so gating them out
+  # never trips required-validation). Individually addable.
+  - title: "Charges & Utilities"
+    render: keyvalue
+    optional: true
+    entries: [ camBorneBy, camAmount, utilitiesBorneBy, structuralRepairsBorneBy, routineRepairsBorneBy,
+               camClause, camAmountClause, utilitiesClause, repairsClause ]
+  - title: "Occupancy & Use"
+    render: keyvalue
+    optional: true
+    entries: [ signageAllowed, licensesClause, signageAllowedClause, signageNotAllowedClause ]
+  - title: "Dispute Resolution"
+    render: keyvalue
+    optional: true
+    entries: [ disputeResolution, jurisdictionCity, specialConditions, specialConditionsClause ]
+  # Document-only covenant list (render: clauses, ZERO fields -> omitted from the capture form by M3,
+  # still rendered by M1). Carries the recital, the permitted-use covenant, the always-on covenants,
+  # the dispute/jurisdiction covenant, and (national only) the generic stamp/registration clause.
+  - title: "Now This Agreement Witnesseth"
+    render: clauses
+    optional: false
+    entries: [ recital, useClause, careOfPremisesClause, noSublettingClause, inspectionClause,
+               quietEnjoymentClause, handoverClause, disputeClause, disputeAlternativeClause,
+               stampRegistrationClause,
+               serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]
+  # Optional fixtures/inventory annexure (render: annexure), opt-in, with a dummy inventory scaffold.
+  - title: "Annexure"
+    render: annexure
+    optional: true
+    entries: [ annexureClause, fixturesInventory ]
+  # Execution / signature block (render: signatures). The entries are the signer NAME field keys: the
+  # compiler renders one signature zone per entry (escaped name + system-owned Name/date/place labels)
+  # and emits a stable, non-PII eSign anchor esign:<role> derived from the key (ownerName -> owner).
+  # Mandatory (National always carries it) so a generated draft is signable via Aadhaar eSign.
+  - title: "In Witness Whereof"
+    render: signatures
+    optional: false
+    entries: [ ownerName, tenantName ]
+  # Optional witnesses (opt-in via activeSections; witness fields default empty). Printed escaped
+  # attestation data (render: keyvalue) -- witnesses are NOT eSign signers, so no anchor.
+  - title: "Witnesses"
+    render: keyvalue
+    optional: true
+    entries: [ witness1Name, witness1Address, witness2Name, witness2Address ]
