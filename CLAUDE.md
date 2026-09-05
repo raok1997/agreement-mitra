@@ -193,6 +193,19 @@ left: `./scripts/sweep-test-containers.sh` (dry-run by default, `--force` to rem
 selects on the `org.testcontainers` label and skips compose-managed containers, so it
 cannot touch the local dev stack).
 
+Container-backed tests that *fail* (rather than skip) with `Connection refused` on a
+Testcontainers-mapped port are a different problem: **an asynchronous host port
+forwarder**. Rancher Desktop's experimental `sshPortForwarder` publishes the mapped
+port 0.3-1.8s *after* the container reports ready, and Postgres' stock wait strategy is
+log-based - it only proves the service is up *inside* the container. Testcontainers
+returns, Flyway dials `localhost:<mapped>`, and the port is not bound yet. This is
+environmental, not a code bug, and it fails ~200+ tests at once via cascading
+`ApplicationContext failure threshold exceeded`. `HarnessTestConfig` handles it by
+pairing the log wait with a host-port TCP check (see the javadoc there - the port check
+is necessary but NOT sufficient on its own, since the forwarder accepts before the
+service behind it is ready, so the two strategies must stay paired). MinIO needs no such
+override: its default `Wait.forHttp` already dials the mapped port from the host.
+
 Frontend (from `frontend/`):
 - `npm run dev` — Vite dev server
 - `npm run build` — production build

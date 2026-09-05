@@ -1,12 +1,22 @@
 package in.agreementmitra.support;
 
+import static org.testcontainers.containers.PostgreSQLContainer.POSTGRESQL_PORT;
+
 import io.minio.MinioClient;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.util.concurrent.TimeUnit;
+import org.rnorth.ducttape.unreliables.Unreliables;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.wait.strategy.AbstractWaitStrategy;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.containers.wait.strategy.WaitAllStrategy;
+import org.testcontainers.containers.wait.strategy.WaitStrategy;
 
 /**
  * Shared integration-test infra, imported (not inherited) so it wires uniformly across
@@ -23,12 +33,59 @@ public class HarnessTestConfig {
   @Bean
   @ServiceConnection
   PostgreSQLContainer<?> postgresContainer() {
-    return new PostgreSQLContainer<>("postgres:16-alpine");
+    return new PostgreSQLContainer<>("postgres:16-alpine")
+        .waitingFor(
+            new WaitAllStrategy()
+                // Postgres' own default: the service is up INSIDE the container. Kept, because the
+                // host-port check below is necessary but not sufficient (see hostPortAccepts).
+                .withStrategy(
+                    Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2))
+                .withStrategy(hostPortAccepts(POSTGRESQL_PORT)));
   }
 
   @Bean
   MinIOContainer minioContainer() {
+    // No override: MinIOContainer's default is Wait.forHttp("/minio/health/live"), and an HTTP wait
+    // already dials the mapped port from the host — so it covers both readiness AND the forwarder.
     return new MinIOContainer("minio/minio:RELEASE.2023-09-04T19-57-37Z");
+  }
+
+  /**
+   * Waits until the container's mapped port actually accepts a TCP connection <em>from the
+   * host</em> — not merely until the service reports ready in its own logs.
+   *
+   * <p>Why this is needed: Postgres' stock wait strategy is log-based, which only proves the
+   * service is up <em>inside</em> the container. On VM-backed Docker runtimes whose host port
+   * forwarder is asynchronous — Rancher Desktop's experimental {@code sshPortForwarder}, measured
+   * here lagging readiness by 0.3–1.8s — the log line lands while the host-side port is still
+   * unbound. Testcontainers then returns, Flyway dials {@code localhost:<mapped>}, and gets {@code
+   * java.net.ConnectException: Connection refused}. This closes that window by polling the
+   * forwarded port the same way the application will reach it.
+   *
+   * <p>Deliberately paired with (never a replacement for) the log check: the same forwarder accepts
+   * TCP <em>before</em> the service behind it is ready, so on its own this would return too early
+   * and trade one flake for another. Harmless on Docker Desktop/Linux, where forwarding is
+   * synchronous and the first poll passes.
+   */
+  private static WaitStrategy hostPortAccepts(int containerPort) {
+    return new AbstractWaitStrategy() {
+      @Override
+      protected void waitUntilReady() {
+        Unreliables.retryUntilSuccess(
+            (int) startupTimeout.getSeconds(),
+            TimeUnit.SECONDS,
+            () -> {
+              try (Socket socket = new Socket()) {
+                socket.connect(
+                    new InetSocketAddress(
+                        waitStrategyTarget.getHost(),
+                        waitStrategyTarget.getMappedPort(containerPort)),
+                    1_000);
+              }
+              return true;
+            });
+      }
+    };
   }
 
   @Bean
