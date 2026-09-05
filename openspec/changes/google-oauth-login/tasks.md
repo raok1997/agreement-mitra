@@ -109,6 +109,15 @@ green (this CR adds no cross-module dependency; CR-B is where a UUID crosses the
   end-to-end by `GoogleLoginHandshakeIntegrationTest` (stubbed Google via WireMock + a Nimbus-signed
   ID token, real Postgres). A manual browser live-drive against a real sandbox Google client is still
   owed and left unchecked.
+  - **PARTIALLY ADVANCED 2026-09-05 in PRODUCTION**: Google sign-in demonstrably works end to end
+    there (the repo owner signed in and an anonymous draft carried across), so the handshake itself --
+    start, callback, session -- is proven in a real deployment, not only against WireMock.
+  - **Answers the open question:** there is no known stub/sandbox path; **prod has a real OAuth client,
+    local does not.** For local drives, create a SEPARATE dev OAuth client with redirect URI
+    `http://localhost:8090/api/auth/google/callback` rather than reusing prod's credentials.
+  - **Still not driven:** explicit logout, and the **log-redaction check** (no token, session value or
+    PII in logs). That clause is worth more against prod logs than local ones -- it is where real
+    identity data actually flows.
 - [x] 6.2 `./gradlew spotlessApply` (done) then the test suite via gradle directly with
   `TESTCONTAINERS_RYUK_DISABLED=true` on Windows (full `test` task GREEN, incl. `ModularityTests`) plus
   `spotbugsMain` SAST (GREEN). NOTE: the OSV dependency-scan gates (backend `securityScan` OSV over the

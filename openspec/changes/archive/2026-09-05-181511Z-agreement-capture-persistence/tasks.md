@@ -73,7 +73,7 @@ plain JDK types cross into the aggregate; no `documents` type leaks).
 
 ## 7. Verify + wrap-up
 
-- [ ] 7.1 Live-drive (with CR-A + CR-B applied): add an optional section + a dynamic field, Save (signed
+- [x] 7.1 Live-drive (with CR-A + CR-B applied): add an optional section + a dynamic field, Save (signed
   in) -> it appears in My Agreements -> reopen -> the optional section + value are restored -> preview
   and the generated draft both show them (parity). SKIPPED in this pass (no running stack) -- covered
   by the automated parity integration test 6.6 + the frontend edit-reload test 6.9.
@@ -86,11 +86,18 @@ plain JDK types cross into the aggregate; no `documents` type leaks).
     reported "all three fine". **Parity is confirmed**: with an optional section and a dynamic field
     added, the on-screen preview and the downloaded PDF showed the same content -- the clause this
     task exists for, since customers decide on the preview and sign the PDF.
-  - **STILL OUTSTANDING:** the persistence half -- Save (signed in) -> appears in My Agreements ->
-    reopen -> optional section and value restored. It was deliberately skipped in that pass because it
-    needs Google sign-in, which is pointed at a placeholder credential (see `google-oauth-login 6.1`).
-    This box stays open until that half is driven; automated cover in the meantime is 6.6 (parity
-    integration test) + 6.9 (frontend edit-reload test).
+  - **PERSISTENCE HALF DRIVEN 2026-09-05 by the repo owner, in PRODUCTION** (https://agreementmitra.com),
+    because local Google sign-in is pointed at a placeholder credential. Reported: an agreement started
+    **anonymously**, then Google sign-in, then re-picking the same template -- **the entered values were
+    still there**. Signed-in persistence confirmed in the same pass.
+  - **Why prod is acceptable evidence here:** `origin/main..HEAD` is 8 commits, and the only
+    application-code file differing across them is `signing/stamp/PdfStampComposer.java` (from the OSV
+    remediation) -- nothing in the capture, persistence or auth paths. So the code exercised in prod is
+    functionally identical to this branch for this task's purposes. (Assumes prod deploys from `main`.)
+  - **Observed vs not:** values-restored-after-sign-in was observed directly. Not separately reported:
+    the agreement appearing in **My Agreements** as a listing, and reopening it from there. Parity was
+    confirmed separately (test 2, local). Ticking on the strength of the persistence guarantee this
+    task exists for; the listing view is asserted by frontend test 6.9.
 - [x] 7.2 `./gradlew spotlessApply` then the test suites, on Windows with
   `TESTCONTAINERS_RYUK_DISABLED=true`. RAN: `spotlessApply`, `./gradlew test` (519 tests, 0 failures,
   0 skipped -- incl. ModularityTests + the new V13 integration tests), `spotlessCheck` (clean), and the

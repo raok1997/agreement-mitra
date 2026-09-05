@@ -93,6 +93,13 @@ green -- only a UUID + a status enum cross the `signing <-> identity` boundary (
     ownership -- the `404`-not-`403` rule in this task is about the handler-level owner check for an
     authenticated non-owner, which is a different code path. Flagged so a later reader does not read
     the `403` above as a regression.
+  - **PARTIALLY ADVANCED 2026-09-05 in PRODUCTION** (https://agreementmitra.com): the repo owner
+    confirmed anonymous draft -> Sign in with Google -> the draft's values survive the transition. That
+    is the first half of this task's happy path, on code functionally identical to this branch (only
+    `PdfStampComposer.java` differs from `main`).
+  - **Still not observed:** the agreement listed in **My Agreements**, editing an in-progress one, a
+    signed one rendering read-only, and -- the security clause -- an authenticated **non-owner** getting
+    `404` rather than `403`. The last needs a second Google identity and is what actually gates this box.
 - [x] 6.2 `./gradlew spotlessApply` then `./run-tests.sh` (or gradle directly with
   `TESTCONTAINERS_RYUK_DISABLED=true` on Windows); `./gradlew check` incl. `securityScan`;
   `npm run security:scan` in `frontend/`.

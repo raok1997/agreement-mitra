@@ -168,8 +168,15 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
     (`normalizeMakesLowercaseAndPaddedInputTheSameReference`, `normalizeIsNullSafeAnd...`,
     `aSingleMistypedCharacterIsRejected...`, `transposingTwoAdjacentCharactersIsRejected`,
     `theRetiredDerivedFormatIsRecognisedAndIsNeverValid`) covers all three clauses.
-- [ ] 9.4 Eligibility matrix: PAID/WAIVED/UNPAID x owned/unowned -- only paid-and-unowned is
+- [x] 9.4 Eligibility matrix: PAID/WAIVED/UNPAID x owned/unowned -- only paid-and-unowned is
   eligible.
+  - Closed 2026-09-05: `RecoveryIntegrationTest.onlyASettledUnownedAgreementIsRecoverable` walks all
+    five rows.
+  - **The task wording above is narrower than the implemented rule, and the code is right.**
+    `AgreementService.findRecoverableByTrackingReference` accepts `PAID` **or** `WAIVED`, both
+    unowned. A waiver is the deliberate decision to proceed without money, so a waived customer has
+    the same claim on reaching their agreement. The test asserts the WAIVED row explicitly so it
+    cannot be "tidied away" by someone reading only this sentence.
 - [x] 9.5 Recipient resolution returns **every** party contactable on an enabled channel, not
   only the payer, and ignores any supplied destination.
 - [x] 9.5a One recipient's dispatch failure does not suppress the others.
@@ -177,7 +184,11 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
   party name, property address, rent, or deposit.
 - [x] 9.7 Link construction uses the configured base URL and ignores request headers.
 - [x] 9.8 Redaction: recipient appears redacted in every log and audit path.
-- [ ] 9.9 Send-on-confirmation is idempotent across repeated confirmations.
+- [x] 9.9 Send-on-confirmation is idempotent across repeated confirmations.
+  - Closed 2026-09-05: `RazorpayPaymentIntegrationTest.aRedeliveredWebhookDoesNotMailTheCustomerTwice`
+    -- three identical signed webhook deliveries, one mail per party. The guarantee comes from
+    `PaymentConfirmations.apply` taking the order `FOR UPDATE` and returning `ALREADY_CONFIRMED`
+    **before** the publish; moving the publish above that guard would mail once per provider retry.
 - [x] 9.10 Frontend: the contact step renders as confirmation when nothing is missing, and as a
   form when something is; disabled channels are not described as delivery routes.
 - [x] 9.11 Frontend: payment confirmation view renders server-confirmed values and does not
@@ -189,34 +200,66 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
 - [x] 9.13 Order creation succeeds when every party is reachable on an enabled channel.
 - [x] 9.14 A party reachable only on a **disabled** channel is refused at order creation --
   the case that passes the old email-or-mobile gate today.
-- [ ] 9.15 Order creation ignores contact details supplied in its own request body.
+- [x] 9.15 Order creation ignores contact details supplied in its own request body.
+  - Closed 2026-09-05: `ContactGateIntegrationTest.orderCreationIgnoresContactDetailsSuppliedInItsOwnBody`
+    -- a body carrying `contacts` and `signers` for an unreachable party is still refused for that
+    same party, and the smuggled address is asserted absent from the stored signers.
 - [x] 9.15a Contacts save for the agreement's OWN owner (authenticated), not only for an
       anonymous caller -- the signed-in customer reaches the same contacts screen, and a
       refusal there also cost them the draft that is sent immediately afterwards.
 - [x] 9.15b Contacts on an agreement owned by somebody else answer 404 identically whether
       the caller is anonymous or authenticated as a different identity (no ownership oracle).
 
-- [ ] 9.16 eSign initiation now applies the same rule, rejecting a party it previously admitted.
+- [x] 9.16 eSign initiation now applies the same rule, rejecting a party it previously admitted.
+  - Closed 2026-09-05: `ContactGateIntegrationTest.esignInitiationRefusesAPartyTheOldEmailOrMobileRuleWouldHaveAdmitted`
+    -- a mobile-only party (admitted by the retired email-OR-mobile rule) is refused `409
+    contact-required` at `POST /api/signing/*/request`, and no signing_request row is written.
+  - Asserted as exactly `409`, not "some refusal": the route is `permitAll`, so a looser assertion
+    would have passed on an auth rejection and proved nothing about reachability.
+  - **Observed, not a defect:** unlike the checkout gate, this one does not name the offending party
+    -- the body is the generic "Every party needs a contact we can reach them on before payment",
+    which also says "before payment" on a signing path. Worth tidying; deliberately not asserted.
 - [x] 9.17 The recovery endpoint returns an identical response across all outcomes -- unknown
   reference, unpaid, claimed, no contact on file, throttled, success. Assert body and status
   equality explicitly, as one test, so a future change cannot regress one branch quietly.
-- [ ] 9.18 End-to-end: pay an agreement, capture the message sent at confirmation, open the
+- [x] 9.18 End-to-end: pay an agreement, capture the message sent at confirmation, open the
   link, and reach the agreement through the existing endpoints.
+  - Closed 2026-09-05: `RazorpayPaymentIntegrationTest.payingSendsEveryPartyALinkTheyCanOpen` --
+    anonymous checkout, signed webhook settles, the captured message carries the base URL and the
+    agreement id, and that link opens the agreement `200`.
 - [x] 9.19 End-to-end fallback: request recovery by reference, capture the message, open the
   link, reach the agreement.
-- [ ] 9.20 A link continues to work after an arbitrary delay while the agreement stays paid and
+- [x] 9.20 A link continues to work after an arbitrary delay while the agreement stays paid and
   unowned.
+  - Closed 2026-09-05: `aLinkKeepsWorkingWhileTheAgreementStaysPaidAndUnowned` ages both
+    `created_at` and `payment_recorded_at` by 400 days and reopens -- `200`. Guards D2's "no
+    per-link state, therefore no expiry" against someone later adding an implicit window.
 - [x] 9.21 Claiming the agreement makes a previously working link refuse access -- including a
   link held by a party other than the one who claimed.
 - [ ] 9.21a A party who did not pay can open their link and complete the remaining fulfilment
   steps.
-- [ ] 9.21b Every party on a paid agreement receives a link at payment confirmation.
-- [ ] 9.22 A recovered agreement remains unowned and can still be claimed afterwards.
-- [ ] 9.23 Terms and parties cannot be edited by a caller holding only the link.
+- [x] 9.21b Every party on a paid agreement receives a link at payment confirmation.
+  - Closed 2026-09-05: same test -- both owner and tenant receive exactly one message each.
+- [x] 9.22 A recovered agreement remains unowned and can still be claimed afterwards.
+  - Closed 2026-09-05: `aRecoveredAgreementStaysUnownedAndCanStillBeClaimedAfterwards` -- recovery
+    re-sends a link without taking ownership, and claiming afterwards still revokes the link.
+- [x] 9.23 Terms and parties cannot be edited by a caller holding only the link.
+  - Closed 2026-09-05: `aLinkHolderCannotEditTermsOrParties` -- read with the link succeeds, `PUT`
+    is refused, and the stored address is asserted unchanged so a silently-ignored write cannot pass.
 - [x] 9.24 Rate limit and lockout behaviour, including shape-identical throttled responses.
-- [ ] 9.25 With no enabled channel configured, nothing is dispatched and responses are
+- [x] 9.25 With no enabled channel configured, nothing is dispatched and responses are
   unchanged.
-- [ ] 9.26 A dispatch failure at payment confirmation does not fail the confirmation.
+  - Closed 2026-09-05: new `RecoveryWithNoEnabledChannelIntegrationTest` (its own class -- channel
+    enablement is context configuration, not per-test state). Asserts nothing is dispatched, the
+    eligible and unknown responses stay byte-identical, and the request is still audited.
+  - Why it matters beyond hygiene: a deployment with no channel configured must not become the one
+    case where the endpoint answers differently, or a misconfiguration turns into an enumeration
+    oracle.
+- [x] 9.26 A dispatch failure at payment confirmation does not fail the confirmation.
+  - Closed 2026-09-05: `RazorpayPaymentIntegrationTest.aDispatchFailureDoesNotUnsettleTheConfirmedPayment`
+    -- with the mail seam failing everything, the webhook is still acknowledged, the agreement is
+    still `PAID`, and it is still reachable. Asserts the outcome rather than trusting that
+    `RecoveryOnPaymentListener` swallows.
 - [x] 9.27 `ModularityTests` green.
   - Verified 2026-09-05 -- same run as 6.8.
 

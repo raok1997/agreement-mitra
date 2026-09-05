@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
+import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.TestPdfs;
 import java.util.List;
@@ -138,6 +139,79 @@ class ContactGateIntegrationTest {
     // Named by role and position so the customer can fix the right one - never by name or contact.
     assertThat(response.getBody()).contains("tenant 1");
     assertThat(response.getBody()).doesNotContain("Tara");
+  }
+
+  /**
+   * 9.15. Anti-mass-assignment at the checkout route. Contacts are set through {@code PATCH
+   * /contacts} and nowhere else; if order creation honoured contacts in its own body, a caller
+   * could satisfy the reachability gate for a party they cannot actually reach, and the finished
+   * agreement would have nowhere to go.
+   */
+  @Test
+  void orderCreationIgnoresContactDetailsSuppliedInItsOwnBody() {
+    UUID id =
+        createAgreement(
+            List.of(
+                new Party("Asha", "OWNER", "asha@example.com", null),
+                new Party("Tara", "TENANT", null, null)));
+
+    // Exactly the shape a caller would try in order to talk their way past the gate.
+    ResponseEntity<String> response =
+        rest.postForEntity(
+            "/api/agreements/" + id + "/payment/order",
+            Map.of(
+                "contacts",
+                List.of(Map.of("role", "TENANT", "email", "smuggled@example.com")),
+                "signers",
+                List.of(Map.of("role", "TENANT", "email", "smuggled@example.com"))),
+            String.class);
+
+    // Still refused, and refused for the same party as before.
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(response.getBody()).contains("tenant 1");
+
+    // ...and nothing was written: the smuggled address is nowhere on the agreement.
+    assertThat(signersOf(id))
+        .noneSatisfy(signer -> assertThat(signer.get("email")).isEqualTo("smuggled@example.com"));
+  }
+
+  /**
+   * 9.16. The reachability rule has to hold at <b>both</b> gates or it holds at neither: payment is
+   * skippable when the gate is OPTIONAL, and a party admitted at checkout must not then be admitted
+   * into signing. Both call the same {@link in.agreementmitra.signing.contact.PartyReachability},
+   * and this asserts the second caller actually enforces it.
+   */
+  @Test
+  void esignInitiationRefusesAPartyTheOldEmailOrMobileRuleWouldHaveAdmitted() {
+    // Mobile-only: reachable under the retired email-OR-mobile rule, unreachable while SMS is off.
+    UUID id =
+        createAgreement(
+            List.of(
+                new Party("Asha", "OWNER", "asha@example.com", null),
+                new Party("Tara", "TENANT", null, "9876543210")));
+    Payments.waive(jdbc, id);
+
+    ResponseEntity<String> requested =
+        rest.postForEntity("/api/signing/" + id + "/request", null, String.class);
+
+    // Exactly 409, not "some refusal": POST /api/signing/*/request is permitAll, so the request
+    // reaches the handler and the only thing that can refuse it here is the reachability gate. A
+    // looser assertion would pass on an auth rejection and prove nothing about reachability.
+    assertThat(requested.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    // It is the reachability refusal specifically, not some other 409.
+    assertThat(requested.getBody()).contains("urn:agreementmitra:problem:contact-required");
+    // Still leaks no party identity or contact.
+    assertThat(requested.getBody()).doesNotContain("Tara").doesNotContain("9876543210");
+    // NOTE (observed 2026-09-05, not a defect this test asserts against): unlike the checkout gate,
+    // this one does NOT name the offending party -- the body is the generic "Every party needs a
+    // contact we can reach them on before payment." So a customer refused here is told less than
+    // one
+    // refused at checkout, and the wording says "before payment" on a signing path. Worth tidying;
+    // deliberately not asserted, so tidying it will not fail this test.
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM signing_request WHERE agreement_id = ?", Integer.class, id))
+        .isZero();
   }
 
   @Test

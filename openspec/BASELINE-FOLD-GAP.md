@@ -189,3 +189,42 @@ above: **decide where these belong (or that they are obsolete) before folding th
 | `agreement-attributes` | **must not be folded** -- never implemented |
 | "Anonymous agreement drafting" (from `template-catalog`) | **orphan, undecided** |
 | 2 requirements from `document-capture-shell-wiring` | **orphan, undecided** |
+
+
+---
+
+# Fourth orphan -- likely a RENAME, blocking `agreement-capture-persistence`'s archive (2026-09-05)
+
+`agreement-capture-persistence` is 22/22 and valid, but its delta MODIFIES
+**"Generate the signable draft from the agreement"** in `agreement-management`, and no requirement by
+that name exists in any baseline capability.
+
+**Unlike the three orphans above, this one has a strong candidate.** The baseline holds
+**"Generate-as-draft pins the effective-template identity for reproducibility"**, and the delta's text
+describes the same endpoint (`POST /api/agreements/{id}/document`), the same storage behaviour, the
+same `409` freeze, and explicitly keeps the pin ("then pins the effective template's identity"). It
+reads as that requirement **renamed and broadened** -- the pin clause plus the new capture-state feed
+that gives preview/draft parity.
+
+**Not applied, because a rename in the spec of record is the owner's call**, and guessing wrong would
+silently drop the pin requirement's identity. Three ways forward:
+
+1. **Treat it as a rename** -- replace "Generate-as-draft pins the effective-template identity for
+   reproducibility" with the delta's text under the new name. Most likely correct; the pin clause
+   survives inside the new wording.
+2. **Treat it as a new requirement** -- fold it as ADDED and keep the pin requirement alongside. Safe
+   but leaves two overlapping requirements describing one endpoint.
+3. **Archive without this fold** -- consistent with how the earlier orphans were handled, but the
+   baseline then misses the preview/draft parity behaviour, which is the whole point of the change.
+
+Recommendation: **option 1**, after the owner reads both texts side by side.
+
+**RESOLVED 2026-09-05: the owner chose option 1 (rename).** Applied by replacing the old requirement
+**in place at its original position** (index 8 in `agreement-management`) under the new name, so the
+surrounding order is unchanged. The pin clause survives inside the new wording -- verified: the file
+still carries 35 occurrences of "pin". The change's two ADDED requirements
+(capture-state persistence, capture-state round-trip on read) were appended in the same fold, and
+`agreement-capture-persistence` is archived at `2026-09-05-181511Z-`.
+
+**Consequence to know about:** a future delta that says `MODIFIED: Generate-as-draft pins the
+effective-template identity for reproducibility` will no longer find a target. That name is retired.
