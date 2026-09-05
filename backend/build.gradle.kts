@@ -52,6 +52,35 @@ extra["springModulithVersion"] = "1.4.12"
 // version property. Test-only in effect — does not touch the shipped graph.
 extra["commons-lang3.version"] = "3.18.0"
 
+// --- Security overrides of Boot-BOM-managed versions ------------------------
+// The Spring Boot 3.5.15 BOM manages these four to versions carrying open advisories.
+// Bumping Boot does NOT help: 3.5.16 (the newest 3.5.x, checked 2026-09-05) manages the
+// IDENTICAL versions — tomcat 10.1.55, postgresql 42.7.11, jackson-bom 2.21.4,
+// log4j2 2.24.3 — and there is no 3.6/4.x line. So the only remediation lever is a
+// per-property override, the same pattern as `commons-lang3.version` above.
+//
+// KEEP THESE ON THE NEXT BOOT UPGRADE: drop an entry only after verifying the new BOM
+// manages that artifact at or above the version pinned here, or the fix silently regresses.
+//
+//   tomcat        10.1.55 → GHSA-9xv2-5v5q-p794 (9.8), GHSA-gcx9-497g-6cp6 (9.1),
+//                           GHSA-h3x4-894j-xpx5 (9.1). OSV names 10.1.58 as the fix, but
+//                           Apache never published 10.1.58 (Maven Central jumps 10.1.57 →
+//                           10.1.59); 10.1.59 is the first available release carrying it.
+//   postgresql    42.7.11 → GHSA-j92g-9f8w-j867 (8.2), fixed in 42.7.12.
+//   jackson-bom    2.21.4 → GHSA-5gvw-p9qm-jgwh (6.5), GHSA-5jmj-h7xm-6q6v (5.3),
+//                           GHSA-mhm7-754m-9p8w (6.5), fixed in 2.21.5. Overriding the BOM
+//                           property moves the whole jackson family together (core,
+//                           databind, dataformat-*, datatype-*, module-*), not just the
+//                           flagged artifact — a split family is a runtime hazard OSV
+//                           would not flag.
+//   log4j2         2.24.3 → GHSA-qv9r-c865-cp47 (6.3), fixed in 2.25.5. Moves both
+//                           log4j-api and log4j-to-slf4j (only these two are on the graph;
+//                           log4j-core is not a dependency here).
+extra["tomcat.version"] = "10.1.59"
+extra["postgresql.version"] = "42.7.12"
+extra["jackson-bom.version"] = "2.21.5"
+extra["log4j2.version"] = "2.25.5"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")

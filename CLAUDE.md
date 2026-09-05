@@ -118,8 +118,9 @@ recorded with a one-line note atop `tasks.md`).
   **fail-closed** — a missing `osv-scanner` binary fails with an install hint, it
   does not skip. **Scan scope:** the **whole lockfile — dev + production deps,
   including transitives** (npm devDependencies are the dominant surface here; only
-  `vue` ships to the browser, and dev-tool install scripts/typosquatting are a real
-  supply-chain risk). This **deliberately differs** from the backend's
+  `vue`'s **runtime** ships to the browser, and dev-tool install
+  scripts/typosquatting are a real supply-chain risk). This **deliberately differs**
+  from the backend's
   exclude-build-tooling scope. To accept a finding, add an `[[IgnoredVulns]]` entry
   to `frontend/osv-scanner.toml` with a `reason` AND an `ignoreUntil` expiry —
   justified and time-boxed, never permanent or wildcard. The baseline is currently
@@ -127,11 +128,30 @@ recorded with a one-line note atop `tasks.md`).
   coupled to `npm run build` — a clean local run is not proof the build was gated);
   CR-7 promotes it. The same `osv-scanner` binary as the backend gate
   (`brew install osv-scanner`).
+  - **`dev: false` is not "ships to the browser".** npm's `dev` flag tracks
+    reachability from `dependencies`, not bundle membership. `vue` declares
+    `@vue/compiler-sfc` (a *build-time* compiler), which pulls `postcss` → `nanoid`,
+    so npm marks both non-dev — but Vite precompiles SFCs and tree-shakes the
+    compiler out, so neither reaches `dist/`. Verified 2026-09-05 by grepping the
+    production bundle for nanoid's `urlAlphabet` (absent) with the vue runtime
+    present. So a high-CVSS `dev: false` finding in that subtree is **build-tooling
+    risk, not shipped-surface risk** — still fixed (the gate is fail-on-any), but
+    don't triage it as browser-reachable. Re-check only if `@vue/compiler-sfc` ever
+    becomes browser-reachable; note that a `vue/dist/vue.esm-bundler` alias is *not*
+    that trigger — it ships `@vue/compiler-dom`, whose deps are `@vue/compiler-core`,
+    not postcss.
 - **Not yet covered (follow-up CRs):** CI that runs these gates automatically
   (today they run only on local `./gradlew` / `npm run security:scan`). The backend
   `osv-scanner.toml` suppression baseline is currently **empty** — CR-8 remediated
   the Spring Boot 3.4.2 CVEs by bumping to 3.5.15, and CR-9 cleared the residual
   tool-classpath findings via the scan-scope policy above.
+- **Boot 3.5.15 is NOT clean on its own.** As of 2026-09-05 four of its BOM-managed
+  versions carry open advisories and are **overridden** in `build.gradle.kts`:
+  `tomcat` 10.1.59, `postgresql` 42.7.12, `jackson-bom` 2.21.5, `log4j2` 2.25.5
+  (a Boot bump could not fix these — 3.5.16 manages the identical versions). Those
+  `extra[...]` overrides are load-bearing: **on the next Boot upgrade, drop one only
+  after confirming the new BOM manages that artifact at or above the pinned version**,
+  or the fixes silently regress. Full detail in `backend/config/osv-scanner.toml`.
 
 The local PII/secret edit guard (`.claude/hooks/pii-secret-guard.sh`) is
 **defense-in-depth — a reminder, not the authoritative control**: it can be
