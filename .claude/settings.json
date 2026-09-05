@@ -50,7 +50,26 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Bash(cd:*)",
+      "Bash(jq:*)",
+      "Bash(./gradlew check*)",
+      "Bash(./gradlew securityScan*)",
+      "Bash(./run-tests.sh)",
+      "Bash(./run-tests.sh *)",
+      "Bash(./scripts/sweep-test-containers.sh)",
+      "Bash(osv-scanner scan *)",
+      "Bash(osv-scanner --version)",
+      "Bash(docker compose ps*)",
+      "Bash(docker compose logs*)",
+      "Bash(docker compose config*)",
+      "Bash(docker context *)",
+      "Bash(docker info)",
+      "Bash(openspec diff:*)",
+      "Bash(openspec ls:*)",
+      "Bash(openspec view:*)",
+      "Bash(openspec change:*)",
+      "Bash(openspec spec:*)"
     ]
   },
   "hooks": {
