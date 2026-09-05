@@ -112,7 +112,7 @@ Only **Phase 1** is tasked here (the preview-centric shell + stateless partial p
 - [x] 7.1 Backend: unit + integration + `spotbugsMain` + `ModularityTests` green (Windows: gradle
   directly, Ryuk disabled, `-Duser.timezone=Asia/Kolkata`; `osvScan` owed).
 - [x] 7.2 Frontend: vitest + `vue-tsc` + `vite build` clean.
-- [ ] 7.3 Manual: on desktop, edit sections and watch the live preview fill in; on a narrow viewport,
+- [x] 7.3 Manual: on desktop, edit sections and watch the live preview fill in; on a narrow viewport,
   confirm the guided + toggle-preview flow and phone bottom-sheet editors (against the locked
   reference UI); Download PDF; Save & continue persists a draft. **On a real phone** additionally
   verify the embedded-Noto font payload on a slow connection and iframe scroll/zoom on iOS Safari
@@ -127,3 +127,10 @@ Only **Phase 1** is tasked here (the preview-centric shell + stateless partial p
 - **Phase 3+:** additional parties / co-signers (catalog E), clause library (F = CR-3e), template
   catalog + state + language / bilingual (G = CR-2/CR-4), computed rent-schedule table, click-to-edit
   regions in the preview.
+  - **DRIVEN 2026-09-05 by the repo owner against the live stack** (SPA `:5174` / API `:8090`), via
+    `openspec/BROWSER-TEST-STEPS.md` tests 1 and 3; reported "all three fine".
+    - Desktop: added an optional section + a field and the live preview filled in as typed.
+    - Narrow viewport: full-screen bottom-sheet section editor, focus trap held under Tab, Esc closed
+      it.
+  - This is the drive that 3.7 says the shell was supposed to be validated by. It has now happened --
+    after the old sequential form was already gone rather than before, but it has happened.

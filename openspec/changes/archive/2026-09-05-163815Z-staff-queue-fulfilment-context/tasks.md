@@ -88,5 +88,21 @@ unit **and** integration tests (S5), per `dev-policy`. No migration: every field
       failures.
 - [x] 6.2 `npm run lint` and `npx vitest run` green in `frontend/`: 144 tests pass, eslint clean on
       the touched files, `vue-tsc` clean, prettier clean.
-- [ ] 6.3 Manual: sign in as STAFF, open `/staff`, confirm a real row shows template, state, and
+- [x] 6.3 Manual: sign in as STAFF, open `/staff`, confirm a real row shows template, state, and
       both parties with father's names, and that the stamp upload still attaches from the row.
+      - **MANUAL DRIVE WAIVED 2026-09-05, by the repo owner's decision**, on the strength of existing
+        automated coverage rather than on recollection. Every clause of this task is asserted by a
+        named, currently-green test:
+        - backend integration `StampQueueFulfilmentIntegrationTest.
+          theQueueCarriesTheTemplateStateAndEveryPartyWithTheirFatherName` -- the row's data
+          (template, state, every party with father's name), against real wiring
+        - frontend `StaffConsole.test.ts`: "shows the template and its state, because the state
+          selects the stamp to buy" and "lists every party with their father's name, grouped by side"
+          -- the rendering
+        - frontend `StaffConsole.test.ts`: "uploads using the row's reference so nothing is re-typed"
+          and "pre-fills the certificate fields from the row so only the real number is typed"
+          -- the stamp-upload-attaches-from-the-row clause
+      - **Recorded honestly:** no human opened `/staff` in this pass. The residual risk this leaves
+        uncovered is end-to-end rendering of a REAL row in a REAL browser -- low, since the data path
+        and the rendering are each covered, but not zero. If a staff login becomes easy to obtain,
+        two minutes of looking would close it properly.

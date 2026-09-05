@@ -82,6 +82,15 @@ plain JDK types cross into the aggregate; no `documents` type leaks).
     stack. Steps in `openspec/MANUAL-DRIVE-CHECKLIST.md`, drive C -- which also closes
     `preview-centric-capture 7.3` in the same run. Note its step 2 needs sign-in; steps 1, 3 and 4 do
     not, so most of this can be driven before the Google-login question is settled.
+  - **PARTIALLY DRIVEN 2026-09-05 by the repo owner** via `openspec/BROWSER-TEST-STEPS.md` test 2,
+    reported "all three fine". **Parity is confirmed**: with an optional section and a dynamic field
+    added, the on-screen preview and the downloaded PDF showed the same content -- the clause this
+    task exists for, since customers decide on the preview and sign the PDF.
+  - **STILL OUTSTANDING:** the persistence half -- Save (signed in) -> appears in My Agreements ->
+    reopen -> optional section and value restored. It was deliberately skipped in that pass because it
+    needs Google sign-in, which is pointed at a placeholder credential (see `google-oauth-login 6.1`).
+    This box stays open until that half is driven; automated cover in the meantime is 6.6 (parity
+    integration test) + 6.9 (frontend edit-reload test).
 - [x] 7.2 `./gradlew spotlessApply` then the test suites, on Windows with
   `TESTCONTAINERS_RYUK_DISABLED=true`. RAN: `spotlessApply`, `./gradlew test` (519 tests, 0 failures,
   0 skipped -- incl. ModularityTests + the new V13 integration tests), `spotlessCheck` (clean), and the

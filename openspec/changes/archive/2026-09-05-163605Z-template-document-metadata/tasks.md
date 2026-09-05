@@ -141,7 +141,7 @@
 - [x] 9.1 `./gradlew spotlessApply` green; run the documents suite (`--tests
   "in.agreementmitra.documents.*"`) plus `ModularityTests` (`TESTCONTAINERS_RYUK_DISABLED=true`,
   `-Duser.timezone=Asia/Kolkata`). Confirm **no new dependency and no `gradle.lockfile` change**.
-- [ ] 9.2 Freeze/record the section-4 contracts consumed by M1/M2/M3/M5 (`Meta.document`,
+- [x] 9.2 Freeze/record the section-4 contracts consumed by M1/M2/M3/M5 (`Meta.document`,
   `Section { optional, render }`); mark this CR `applied` in the umbrella flow-journal section 5
   tracking table, then `archived` on `/opsx:archive`.
   - The `applied` half IS done: the umbrella's section 5 tracking table records this CR applied (see
