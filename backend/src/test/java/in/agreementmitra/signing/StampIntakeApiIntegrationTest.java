@@ -237,11 +237,16 @@ class StampIntakeApiIntegrationTest {
 
     // The scan is retained as the evidence artifact...
     assertThat(blobStore.get("estamp-scans/" + agreementId)).isNotEmpty();
-    // ...and the composite has the scan as page 1 with the certificate number on the document page.
+    // ...and the composite has the scan as page 1, with NOTHING stamped onto the agreement page.
+    // The number printed there was whatever staff transcribed at intake, so the document could
+    // assert a stamp it could not vouch for; it is persisted (asserted above) but never printed.
+    // See PdfStampComposer#compose and PdfStampComposerTest.
     byte[] stamped = blobStore.get("stamped/" + agreementId + ".pdf");
     try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(stamped)) {
       assertThat(doc.getNumberOfPages()).isEqualTo(2);
-      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(certificate);
+      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc))
+          .doesNotContain(certificate)
+          .doesNotContain("e-Stamp Certificate No.");
     }
 
     assertThat(statusOfAgreement(agreementId)).isEqualTo("STAMPED");
@@ -603,11 +608,16 @@ class StampIntakeApiIntegrationTest {
         .contains("Bengaluru")
         .contains("waitingSeconds")
         .contains("awaitingSince");
-    // Non-PII: no party names, no contact details, no full street address.
-    assertThat(resp.getBody())
-        .doesNotContain("Asha")
-        .doesNotContain("asha@example.com")
-        .doesNotContain("12 MG Road");
+    // STAFF-only, and it deliberately DOES carry party names: buying the certificate means naming
+    // both parties on the vendor's form, so the row lists every party with their name and father's
+    // name (staff-queue-fulfilment-context reversed the row's original non-PII shape). The PII rule
+    // this must still respect is that party names never reach a LOG line -- not that they are
+    // absent from a role-gated response. See StampQueueEntry.
+    assertThat(resp.getBody()).contains("Asha Owner").contains("Tara Tenant");
+    // Still excluded, deliberately: contact details, rent/deposit, and the full street address --
+    // only the property city. A fulfilment queue carries the least data that lets someone do the
+    // job.
+    assertThat(resp.getBody()).doesNotContain("asha@example.com").doesNotContain("12 MG Road");
   }
 
   @Test

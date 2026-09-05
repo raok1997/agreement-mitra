@@ -260,7 +260,10 @@ class DocumentProjectionApiIntegrationTest {
     assertThat(text)
         .contains("PREVIEW - NOT FOR EXECUTION")
         .contains("agreementmitra.com")
-        .contains("Page 1 of");
+        // "Agreement page X of Y", not a bare "Page X of Y": the count describes the agreement,
+        // which the e-stamp certificate is later bound in front of as page 1. See
+        // GotenbergClient#footerHtml.
+        .contains("Agreement page 1 of");
   }
 
   @Test
@@ -294,7 +297,7 @@ class DocumentProjectionApiIntegrationTest {
     assertThat(text)
         .contains(reference)
         .contains("agreementmitra.com")
-        .contains("Page 1 of " + pages) // the "of Y" total renders
+        .contains("Agreement page 1 of " + pages) // the "of Y" total renders
         .doesNotContain("PREVIEW - NOT FOR EXECUTION");
   }
 
