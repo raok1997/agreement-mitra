@@ -1,10 +1,10 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Execution / signature block with eSign anchors
 
 The renderer SHALL render an execution / signature block for the agreement's signer set, filling the
 previously-empty "In Witness Whereof" section. For each signer it SHALL render a signature zone
-(signature area, name as per Aadhaar, date, place) and SHALL emit a stable, non-PII eSign **anchor**
+(signature area, the signer's name, and the field's role label) and SHALL emit a stable, non-PII eSign **anchor**
 identified by role (`esign:<role>`). The block, its clauses, and its anchors are part of the effective
 template (system-owned markup); all signer-supplied values are escaped. Witness lines SHALL render
 only when the optional Witnesses section is added (opt-in via activeSections -- the engine's standard
@@ -12,13 +12,19 @@ optional-section gating; the section and its witness fields default off), as pri
 without an eSign anchor. The renderer SHALL remain eSign-agnostic (it emits an anchor token, not a
 provider signature field).
 
+The zone SHALL NOT render a date or place line: an eSigned instrument takes its date from the eSign
+appearance, so those blanks could never be completed. The label SHALL state the signer's role only
+and SHALL NOT claim the name matches an Aadhaar record, because nothing in this flow verifies the
+captured name against one.
+
 #### Scenario: Signature zone + anchor per signer
 
 - **GIVEN** an agreement with an Owner and a Tenant
 - **WHEN** the document is rendered (preview or generate-as-draft)
 - **THEN** the "In Witness Whereof" section renders an execution block with one signature zone for the
   Owner and one for the Tenant
-- **AND** each zone shows the signer's name, and a date and place area
+- **AND** each zone shows a signature area, the signer's name, and the role label -- and no date or
+  place line
 - **AND** the output contains a stable anchor `esign:owner` and `esign:tenant`, one per zone
 
 #### Scenario: Signer data is escaped in the execution block

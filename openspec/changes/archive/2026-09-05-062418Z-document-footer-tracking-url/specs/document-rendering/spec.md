@@ -5,7 +5,7 @@
 The system SHALL stamp a **per-page footer** onto the rendered agreement PDF as Chromium print
 **furniture** in the **reserved bottom margin** (not as body flow content), so it appears on **every**
 page without orphaning onto its own page or overlapping the document content. The footer SHALL carry the
-escaped **reference** (the tracking number `AM-<LAST6>-<DDMMYY>` for a saved agreement, or the
+escaped **reference** (the agreement's persisted tracking reference for a saved agreement, or the
 `PREVIEW - NOT FOR EXECUTION` marker before save) with the escaped **platform URL** on the left, and
 **`Page <pageNumber> of <totalPages>`** on the right. The page total (`totalPages`) SHALL render (not be
 blank); the footer SHALL use a layout in which Chromium reliably fills the page-count placeholders (a

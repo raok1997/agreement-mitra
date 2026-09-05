@@ -64,8 +64,14 @@ Every value is HTML-escaped; nothing new is persisted; there is no migration and
 - **document-rendering (render seam / furniture).** MODIFIED -- the Chromium footer furniture is reduced
   to **page numbers only** (`Page X of Y`), stamped on every PDF render; the reference and platform URL
   are no longer furniture (they are body content now).
-- **agreement-management (API).** ADDED -- `AgreementResponse` exposes a display-only `trackingNumber`
-  derived from the agreement id + start date; the raw id remains the canonical identifier.
+- **agreement-management (API).** ~~ADDED -- `AgreementResponse` exposes a display-only `trackingNumber`
+  derived from the agreement id + start date; the raw id remains the canonical identifier.~~
+  **SUPERSEDED before archive (2026-09-05).** `manual-estamp-upload` replaced the derived
+  `AM-<LAST6>-<DDMMYY>` veneer with a persisted, checksummed, uniquely-constrained tracking reference
+  (`V15__single_tracking_reference.sql`), and `TrackingReference.isLegacyDerivedFormat` now explicitly
+  refuses the derived form as a lookup key. The delta file was removed rather than folded, because its
+  every SHALL asserted derivation; the true requirement lives in `manual-estamp-upload`'s
+  "Agreement carries a single, unique tracking reference". This CR's other two deltas are unaffected.
 - **Frontend (capture / preview).** The capture flow displays the tracking number after save and feeds
   it into the preview so preview and PDF agree.
 

@@ -392,53 +392,6 @@ new columns SHALL be nullable so existing rows validate.
 - **WHEN** the signing-completion schema change is introduced
 - **THEN** it ships as a new `V4__signing_completion.sql` and V1–V3 are left unchanged
 
-### Requirement: Auto-stamp before the provider call
-
-`createSignRequest` SHALL stamp the agreement's instrument automatically as part of the
-signing-request flow, with **no separate endpoint** and no client involvement. After the
-pre-request persist and before the provider call, the system SHALL ensure a stamp is
-attached: if the agreement has **no stamp yet** (its stamp info is empty), the system
-SHALL procure one through the `StampProvider`, store the stamped PDF, populate the
-agreement's stamp info, and transition the request to `STAMPED`; if the agreement
-**already has a stamp** (its stamp info is populated), the system SHALL **reuse** the
-existing stamped PDF and serial without re-procuring or re-compositing (idempotent), and
-still transition to `STAMPED`. The document submitted to the provider SHALL always be the
-stamped PDF.
-
-Populating the agreement's stamp info and persisting the `STAMPED` transition SHALL run
-as short database transactions **before** the outbound provider HTTP round-trip; no
-transaction SHALL span the provider call (D9 discipline).
-
-> Note (v1, documented): under the current lock-forever model (exactly one signing
-> request per agreement) the reuse branch is **dormant** — stamp info is always empty on
-> the first and only request, so a fresh stamp is always procured. The reuse-vs-rebuy
-> legal decision for a future revision/supersede flow is deferred to that change plus
-> legal input; v1 defaults the dormant branch to safe reuse.
-
-#### Scenario: First signing request procures and attaches a fresh stamp
-
-- **WHEN** `createSignRequest` runs for an agreement whose stamp info is empty
-- **THEN** the system procures a stamp via `StampProvider`, stores the stamped PDF,
-  populates the agreement's stamp info, transitions the request to `STAMPED`, and submits
-  the stamped PDF to the provider
-
-#### Scenario: Already-stamped agreement is not re-stamped (forward-looking; unit-level)
-
-- **WHEN** `createSignRequest` runs for an agreement whose stamp info is already populated
-- **THEN** the system reuses the existing stamped PDF and serial (no new procurement or
-  composition) and still transitions to `STAMPED`
-- **NOTE** under v1's CR-5 lock-forever model (one signing request per agreement) this
-  state is unreachable via the live flow — stamp info is always empty on the only request.
-  This scenario is therefore verified at the **unit level** by constructing the
-  populated-stamp-info state directly; it documents the dormant reuse default that the
-  future supersede flow will exercise.
-
-#### Scenario: No transaction spans the provider call
-
-- **WHEN** the stamp info is populated and the `STAMPED` transition persisted
-- **THEN** those writes commit in short transactions before the provider HTTP call, and
-  no open transaction is held across the provider round-trip
-
 ### Requirement: A signing request requires a reachable contact for every party
 
 Because a party's email and mobile are optional when an agreement is drafted (per
@@ -465,3 +418,137 @@ addressed to both channels. (Added by archiving change `rich-agreement-capture`.
   (`PDF_GENERATED` and onward) unchanged, addressing each invite to every channel the party
   provided
 
+### Requirement: Map rendered eSign anchors to provider signature fields
+
+When creating a signing request, the signing module SHALL derive each signer's `esign:<role>` anchor
+from its role -- the same deterministic token the renderer emits at each signature zone -- and map it
+to the eSign provider's signature field for that signer. The mapping SHALL keep the `documents` module
+eSign-agnostic (the anchor is a plain role key, not a provider type; `signing` holds no
+`documents.template` type) and SHALL NOT introduce a new signing-status FSM state -- anchors are
+produced at `PDF_GENERATED` (generate-as-draft) and consumed at `SIGN_REQUESTED`
+(create-signing-request).
+
+#### Scenario: Anchors mapped to signature fields
+
+- **GIVEN** a drafted two-party agreement with an Owner and a Tenant (whose rendered PDF carries the
+  `esign:owner` and `esign:tenant` zones)
+- **WHEN** a signing request is created
+- **THEN** the provider request contains one signature field for the Owner and one for the Tenant,
+  each bound to its `esign:<role>` anchor
+- **AND** the signing-status transition is the existing `SIGN_REQUESTED` (no new state)
+
+#### Scenario: Exercised against the stub provider, no live credentials
+
+- **GIVEN** the sandbox stub / WireMock eSign provider
+- **WHEN** a signing request is created for a two-party agreement
+- **THEN** the anchor -> field mapping succeeds without any live vendor credential
+- **AND** no Aadhaar / OTP / VID is logged
+
+#### Scenario: No anchors -> clear failure, nothing submitted
+
+- **GIVEN** an agreement whose signer set yields no eSign anchors (no signers -- nothing signable)
+- **WHEN** a signing request is attempted
+- **THEN** it fails clearly before any provider call and no partial request is submitted to the
+  provider
+
+### Requirement: An attached stamp is a precondition of the provider call
+
+`createSignRequest` SHALL require that a stamp is **already attached** to the agreement before
+the eSign provider is called. The system SHALL NOT procure, generate, or composite a stamp as
+part of the signing-request flow.
+
+If the agreement has **no stamp attached** (its stamp info is empty), the request SHALL be
+rejected with `409` before any signing-request row is persisted and before any provider call.
+The rejection SHALL be distinguishable from other `409` conditions (such as a missing draft or
+an uncontactable party) so an operator can tell why signing could not start.
+
+If the agreement **has a stamp attached**, the system SHALL submit the **stamped PDF** to the
+provider - never the bare draft - and persist the `SIGN_REQUESTED` transition after the
+provider call. The stamp itself is not re-composited at signing time.
+
+#### Scenario: Signing without a stamp is refused
+
+- **WHEN** `createSignRequest` runs for an agreement whose stamp info is empty
+- **THEN** the request is rejected with `409`, no signing-request row is persisted, and the
+  provider is not called
+
+#### Scenario: The stamped PDF is what reaches the provider
+
+- **WHEN** `createSignRequest` runs for an agreement with an attached stamp
+- **THEN** the document submitted to the provider is the stored stamped PDF, not the draft
+
+#### Scenario: Missing-stamp rejection is distinguishable
+
+- **WHEN** signing is refused because no stamp is attached
+- **THEN** the error identifies the missing stamp as the cause, distinctly from a missing
+  draft or an uncontactable party
+
+### Requirement: The order is placed when the customer finalises, and the draft freezes then
+
+The customer's involvement SHALL end when they **finalise** the agreement. At that point the
+system SHALL place the order: it SHALL create the signing request in `PDF_GENERATED`, freeze the
+agreement's terms against further editing, and surface the agreement's tracking reference to the
+customer.
+
+Freezing SHALL happen at **finalisation**, not at stamp upload. The document that staff stamp and
+that the parties sign SHALL be the document the customer finalised; it SHALL NOT be editable in
+the window between finalisation and stamp intake.
+
+After finalising, the customer SHALL have nothing further to do until they are invited to sign.
+Stamp procurement and intake are staff work and SHALL NOT require customer action.
+
+Where the payment gate is enforced (per `payment-gate`), order placement SHALL follow payment
+confirmation. While the gate is permissive, finalisation alone SHALL place the order.
+
+#### Scenario: Finalising places the order and freezes the draft
+
+- **WHEN** a customer finalises their agreement
+- **THEN** a signing request is created in `PDF_GENERATED`, the agreement is no longer editable,
+  and the tracking reference is available to the customer
+
+#### Scenario: The draft cannot change between finalisation and stamping
+
+- **WHEN** an edit is attempted after finalisation but before a stamp is uploaded
+- **THEN** the edit is refused and the finalised document is unchanged
+
+#### Scenario: The customer has nothing to do while staff stamp
+
+- **WHEN** an agreement is awaiting stamp intake
+- **THEN** no customer action is required or requested until signing begins
+
+### Requirement: PDF_GENERATED is the durable awaiting-stamp state
+
+`PDF_GENERATED` SHALL be a **durable, long-lived** state, not a momentary pre-request step. A
+signing request SHALL rest in `PDF_GENERATED` for as long as it takes staff to purchase the
+e-stamp out-of-band and upload it - potentially hours or days.
+
+The transition `PDF_GENERATED -> STAMPED` SHALL be driven by a **staff stamp upload** (per
+`estamp-intake`), not by the signing-request flow. The transition `PDF_GENERATED ->
+STAMP_FAILED` SHALL be driven by an upload that is accepted for processing but whose
+composition fails. A rejected upload that never reaches composition (bad role, bad file,
+duplicate certificate) SHALL leave the request in `PDF_GENERATED` so staff can retry.
+
+Because `PDF_GENERATED` is now durable, an agreement resting in it SHALL NOT be treated as an
+orphan or reaped by any reconciliation or cleanup process.
+
+#### Scenario: A request rests in PDF_GENERATED awaiting the stamp
+
+- **WHEN** an agreement's instrument has been generated but no stamp has been uploaded
+- **THEN** the signing request remains in `PDF_GENERATED` indefinitely and is not failed,
+  expired, or reaped
+
+#### Scenario: Staff upload drives the STAMPED transition
+
+- **WHEN** a staff user successfully uploads a stamp for a request in `PDF_GENERATED`
+- **THEN** the request transitions to `STAMPED`
+
+#### Scenario: A rejected upload leaves the state unchanged
+
+- **WHEN** a stamp upload is rejected before composition (unauthorized caller, invalid image,
+  or duplicate certificate number)
+- **THEN** the request remains in `PDF_GENERATED` and staff can retry
+
+#### Scenario: A failed composition drives STAMP_FAILED
+
+- **WHEN** an accepted upload fails during composition
+- **THEN** the request transitions to `STAMP_FAILED` and the provider is not called
