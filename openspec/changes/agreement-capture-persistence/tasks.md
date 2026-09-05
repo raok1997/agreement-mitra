@@ -77,6 +77,11 @@ plain JDK types cross into the aggregate; no `documents` type leaks).
   in) -> it appears in My Agreements -> reopen -> the optional section + value are restored -> preview
   and the generated draft both show them (parity). SKIPPED in this pass (no running stack) -- covered
   by the automated parity integration test 6.6 + the frontend edit-reload test 6.9.
+  - Rationale above is now STALE (2026-09-05): a stack IS running (SPA `:5174`, API `:8090`, both
+    answering `200`). The drive is outstanding for want of a human at a browser, not for want of a
+    stack. Steps in `openspec/MANUAL-DRIVE-CHECKLIST.md`, drive C -- which also closes
+    `preview-centric-capture 7.3` in the same run. Note its step 2 needs sign-in; steps 1, 3 and 4 do
+    not, so most of this can be driven before the Google-login question is settled.
 - [x] 7.2 `./gradlew spotlessApply` then the test suites, on Windows with
   `TESTCONTAINERS_RYUK_DISABLED=true`. RAN: `spotlessApply`, `./gradlew test` (519 tests, 0 failures,
   0 skipped -- incl. ModularityTests + the new V13 integration tests), `spotlessCheck` (clean), and the

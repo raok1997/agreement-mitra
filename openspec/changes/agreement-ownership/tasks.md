@@ -81,13 +81,28 @@ green -- only a UUID + a status enum cross the `signing <-> identity` boundary (
 - [ ] 6.1 Live-drive against the running backend (`:8090`) + SPA (with CR-A applied): anonymous draft -> Sign
   in with Google -> Save -> see it in My Agreements -> Edit an in-progress one -> confirm a signed one is
   read-only. Confirm claim/read/edit return `404` (not `403`) for a non-owner.
-- [ ] 6.2 `./gradlew spotlessApply` then `./run-tests.sh` (or gradle directly with
+  - Partially driven 2026-09-05 against the live stack (API half only; the SPA + Google-consent half
+    needs a human at a browser -- no browser automation on this host). Anonymous surface confirmed:
+    `POST /api/agreements` -> `201`; `GET` own unowned draft -> `200`; `GET` unknown id -> `404`;
+    `GET` non-UUID -> `400`; `PUT` terms edit and `GET` list-mine (authenticated routes) -> refused
+    anonymously; `PATCH /contacts` on an unowned draft -> `200`.
+  - NOT yet driven: the clause this task actually turns on -- an **authenticated non-owner** getting
+    `404` on claim/read/edit. That needs two distinct Google identities and cannot be curl'd.
+  - Note (not a defect, but worth a decision): an **anonymous** caller on an authenticated route gets
+    `403`, not `401`. That is the Spring Security default with no auth entry point. It does not leak
+    ownership -- the `404`-not-`403` rule in this task is about the handler-level owner check for an
+    authenticated non-owner, which is a different code path. Flagged so a later reader does not read
+    the `403` above as a regression.
+- [x] 6.2 `./gradlew spotlessApply` then `./run-tests.sh` (or gradle directly with
   `TESTCONTAINERS_RYUK_DISABLED=true` on Windows); `./gradlew check` incl. `securityScan`;
   `npm run security:scan` in `frontend/`.
-  - Done: `spotlessApply`; full backend `./gradlew test` GREEN (`TESTCONTAINERS_RYUK_DISABLED=true`,
-    incl. `ModularityTests`); full frontend `npm run test` GREEN (69/69); `vue-tsc` clean.
-  - Blocked (environment, not code): the `osv-scanner` binary is not installed on this host, so the
-    fail-closed `securityScan` / `npm run security:scan` gates cannot run here. No dependency changed
-    in this CR -> lockfiles + OSV baselines are untouched; run the scans once the binary is present.
+  - Done (2026-09-05, re-run on a host with `osv-scanner` present): `spotlessApply` clean (no drift);
+    `./run-tests.sh` -> `check` BUILD SUCCESSFUL in 3m22s -- 911 tests, 0 skipped, 0 failures,
+    0 errors, incl. `ModularityTests`. JaCoCo coverage gate passed.
+  - Done: the previously blocked scans now run. Backend `securityScan` green -- `osvScan` over
+    `gradle.lockfile` (191 packages) "No issues found"; SpotBugs/FindSecBugs clean. Frontend
+    `npm run security:scan` green -- `package-lock.json` (367 packages) "No issues found".
+  - Done: frontend `npm run test` GREEN (21 files / 156 tests, up from the 69 recorded when this CR
+    was written); `vue-tsc --noEmit` clean.
 - [x] 6.3 Update `docs/ROADMAP.md` (optional Google login now complete: login in CR-A, save/resume/edit here)
   and note the deferred follow-ups (signing ownership-authZ, unclaimed-draft purge, cookie session).

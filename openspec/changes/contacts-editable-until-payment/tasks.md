@@ -61,3 +61,10 @@
       into recovery-link rotation or an old-address notice.
 - [ ] 6.2 Manual check against the live stack: finalise, fail payment, reopen the contact step,
       correct an address, and reach checkout.
+      - Partially driven 2026-09-05 (API half): `PATCH /api/agreements/{id}/contacts` on an unowned
+        pre-payment draft answers `200` and accepts a corrected address anonymously; an empty
+        contact set is refused with the RFC 9457 ProblemDetail body ("Provide contact details for at
+        least one party"), so the route validates rather than silently no-oping.
+      - NOT driven: the sequence this task is actually about -- finalise, **fail a payment**, and
+        reopen the contact step in the SPA. Failing a Razorpay payment needs the checkout widget in a
+        browser; it cannot be curl'd. Human drive required.

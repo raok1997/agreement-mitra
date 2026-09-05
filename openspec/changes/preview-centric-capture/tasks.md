@@ -68,9 +68,17 @@ Only **Phase 1** is tasked here (the preview-centric shell + stateless partial p
 - [x] 3.6 **Download PDF** (request the PDF variant) and **Save & continue** -> existing
   `createAgreement` then `generateAgreementDocument`. Keep API calls in `src/api/client.ts`
   (`fetchWorkingPreview` for HTML/PDF).
-- [ ] 3.7 Keep the current sequential form reachable until the new shell is validated (swap the route
+- [x] 3.7 Keep the current sequential form reachable until the new shell is validated (swap the route
   when ready); **file a retirement task to remove the old form** once the shell is validated, so two
   capture paths don't drift indefinitely.
+  - Resolved 2026-09-05 by inspection: **the transitional two-path state never existed and cannot
+    now be created.** `CaptureForm.vue` was converted in place into the preview-centric shell (two-pane
+    `lg:grid-cols-[minmax(320px,420px)_1fr]`, sticky sandboxed-iframe preview) rather than being added
+    alongside the sequential form, and `App.vue` imports exactly one capture view. There is no second
+    route to keep reachable and no old form left to retire, so both halves of this task are moot.
+  - Consequence to be honest about: the intended safety net -- validate the shell *before* dropping
+    the old path -- was skipped. 7.3's validation drive is therefore not a gate before a swap; it is a
+    check on the only capture path the app has. That raises its importance rather than lowering it.
 
 ## 4. Tests -- unit
 

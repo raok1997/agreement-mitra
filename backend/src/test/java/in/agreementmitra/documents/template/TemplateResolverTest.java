@@ -281,6 +281,75 @@ class TemplateResolverTest {
 
   // --- helpers ---------------------------------------------------------------
 
+  // --- M0 8.3: the document-metadata fields reach the effective hash ------------
+
+  /**
+   * The resolver re-canonicalizes through the shared {@link CanonicalJson}, so the M0 additions
+   * ({@code Section.render} / {@code Section.optional}) are expected to move the effective-template
+   * hash for free. "Expected to" is not "asserted": the existing determinism tests above vary
+   * clause TEXT, so a canonicalizer change that dropped these components would leave them all green
+   * while two materially different templates silently shared a hash -- and the hash is what pins a
+   * signed agreement to its template. This test closes that gap at the resolver level.
+   */
+  @Test
+  void aSectionRenderKindOrOptionalFlagChangesTheEffectiveHash() {
+    String asKeyvalue =
+        """
+        meta: { kind: state, dimensions: { state: TG }, version: 1 }
+        ops:
+          - { op: replaceSection, title: S2, section: { title: S2, entries: [ flag, c2 ], render: keyvalue } }
+        """;
+    String asClauses =
+        """
+        meta: { kind: state, dimensions: { state: TG }, version: 1 }
+        ops:
+          - { op: replaceSection, title: S2, section: { title: S2, entries: [ flag, c2 ], render: clauses } }
+        """;
+    String asOptional =
+        """
+        meta: { kind: state, dimensions: { state: TG }, version: 1 }
+        ops:
+          - { op: replaceSection, title: S2, section: { title: S2, entries: [ flag, c2 ], render: keyvalue, optional: true } }
+        """;
+
+    EffectiveTemplate keyvalue = resolve(def(BASE), layer(asKeyvalue));
+    EffectiveTemplate clauses = resolve(def(BASE), layer(asClauses));
+    EffectiveTemplate optional = resolve(def(BASE), layer(asOptional));
+
+    // The fields survive composition at all.
+    assertThat(section(keyvalue, "S2").render()).isEqualTo(RenderKind.KEYVALUE);
+    assertThat(section(clauses, "S2").render()).isEqualTo(RenderKind.CLAUSES);
+    assertThat(section(optional, "S2").optional()).isTrue();
+
+    // ...and each one is load-bearing for the hash.
+    assertThat(clauses.contentHash()).isNotEqualTo(keyvalue.contentHash());
+    assertThat(optional.contentHash()).isNotEqualTo(keyvalue.contentHash());
+
+    // Deterministic: the same layer set resolves to the same hash across runs.
+    assertThat(resolve(def(BASE), layer(asClauses)).contentHash()).isEqualTo(clauses.contentHash());
+  }
+
+  /**
+   * {@code meta.document} has no patch op (there is no meta-editing operation), so it can only vary
+   * on the base definition -- which is exactly how M1 consumes it. Asserted here for the same
+   * reason as above: it must reach the effective hash.
+   */
+  @Test
+  void aDocumentHeaderOnTheBaseChangesTheEffectiveHash() {
+    String withDocument =
+        BASE.replace(
+            "version: 1, status: draft }",
+            "version: 1, status: draft, document: { title: Rental Agreement } }");
+
+    EffectiveTemplate plain = resolve(def(BASE));
+    EffectiveTemplate documented = resolve(def(withDocument));
+
+    assertThat(documented.template().meta().document()).isNotNull();
+    assertThat(documented.template().meta().document().title()).isEqualTo("Rental Agreement");
+    assertThat(plain.template().meta().document()).isNull();
+    assertThat(documented.contentHash()).isNotEqualTo(plain.contentHash());
+  }
+
   private static TemplateDefinition def(String yaml) {
     return new TemplateDefinitionLoader().load(yaml);
   }

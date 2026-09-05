@@ -119,8 +119,13 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
   implementation time (V18 was the last applied when this was written). Reference, outcome,
   timestamp, redacted recipient, requester fingerprint.
 - [x] 6.6 Audit record written for every request, including refusals and throttled attempts.
-- [ ] 6.7 App boots under `ddl-auto: validate` with the new table.
-- [ ] 6.8 Confirm `ModularityTests` stays green -- no reach into `identity` internals.
+- [x] 6.7 App boots under `ddl-auto: validate` with the new table.
+  - Verified 2026-09-05: `V19__recovery_audit.sql` is the head migration, `application.yml` pins
+    `ddl-auto: validate`, and the live local stack answers `200` on `:8090/actuator/health` -- the
+    real app booting, not only the test profile (which is also `validate`, 911 tests green).
+- [x] 6.8 Confirm `ModularityTests` stays green -- no reach into `identity` internals.
+  - Verified 2026-09-05: `TEST-in.agreementmitra.ModularityTests.xml` present and green in the
+    `./run-tests.sh` run (0 failures / 0 errors across 911 tests, 0 skipped).
 
 ## 7. Payment confirmation view (frontend)
 
@@ -158,7 +163,11 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
   does, whatever contact is stored.
 - [x] 9.2 Reachability rule across the party matrix -- some parties reachable, none, all -- and
   that it is the same rule the eSign gate now calls.
-- [ ] 9.3 Reference normalisation, checksum acceptance and rejection, legacy-form refusal.
+- [x] 9.3 Reference normalisation, checksum acceptance and rejection, legacy-form refusal.
+  - Verified 2026-09-05 by existing coverage, no new test in the diff: `TrackingReferenceTest`
+    (`normalizeMakesLowercaseAndPaddedInputTheSameReference`, `normalizeIsNullSafeAnd...`,
+    `aSingleMistypedCharacterIsRejected...`, `transposingTwoAdjacentCharactersIsRejected`,
+    `theRetiredDerivedFormatIsRecognisedAndIsNeverValid`) covers all three clauses.
 - [ ] 9.4 Eligibility matrix: PAID/WAIVED/UNPAID x owned/unowned -- only paid-and-unowned is
   eligible.
 - [x] 9.5 Recipient resolution returns **every** party contactable on an enabled channel, not
@@ -208,7 +217,8 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
 - [ ] 9.25 With no enabled channel configured, nothing is dispatched and responses are
   unchanged.
 - [ ] 9.26 A dispatch failure at payment confirmation does not fail the confirmation.
-- [ ] 9.27 `ModularityTests` green.
+- [x] 9.27 `ModularityTests` green.
+  - Verified 2026-09-05 -- same run as 6.8.
 
 ## 10. Documentation
 

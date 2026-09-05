@@ -78,7 +78,7 @@ unit **and** integration tests (S5), per `dev-policy`. No migration: every field
 - [x] 5.9 **Unit** -- template resolution runs once per distinct template across a multi-row queue,
       not once per row (asserted on the port interaction count, which is mockable only at the unit
       level; written as "integration" when planned).
-- [ ] 5.10 Keep `ModularityTests` green -- `signing` still names no `documents.template` type.
+- [x] 5.10 Keep `ModularityTests` green -- `signing` still names no `documents.template` type.
 
 ## 6. Verification
 

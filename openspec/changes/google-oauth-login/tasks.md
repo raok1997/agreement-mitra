@@ -93,6 +93,18 @@ green (this CR adds no cross-module dependency; CR-B is where a UUID crosses the
 - [ ] 6.1 Live-drive against the running backend (`:8090`) + SPA: anonymous draft still works with no login;
   Sign in with Google (sandbox client / stubbed) -> `/auth/callback` -> `GET /api/auth/me` returns the
   identity -> logout. Confirm no token/PII/session value appears in logs.
+  - Partially driven 2026-09-05 (API half): the anonymous-draft clause is confirmed --
+    `POST /api/agreements` -> `201` with no session; `GET /api/auth/me` anonymously -> `403`.
+  - Config note for whoever runs the browser half: `GOOGLE_OAUTH_CLIENT_ID` is currently unset, so
+    `application-local.yml` falls back to `local-dummy` and `GET /api/auth/google/start` returns a
+    `302` to `accounts.google.com/o/oauth2/v2/auth?...client_id=local-dummy` (verified live). A
+    **real-Google** consent flow will therefore fail as the stack is configured right now. This task
+    also admits a "sandbox client / stubbed" path -- whether one is wired for the SPA was not
+    established here. Either configure a real OAuth client (redirect URI
+    `http://localhost:8090/api/auth/google/callback`) or use the stub route. PKCE
+    (`code_challenge_method=S256`) and `state` are both present, so the request is well-formed.
+  - NOT driven: callback -> `me` -> logout, and the log-redaction check, which is the security clause
+    of this task. Steps in `openspec/MANUAL-DRIVE-CHECKLIST.md`, drive A.
   NOTE: the full handshake (start -> callback -> exchange -> Bearer `me` -> logout) is covered
   end-to-end by `GoogleLoginHandshakeIntegrationTest` (stubbed Google via WireMock + a Nimbus-signed
   ID token, real Postgres). A manual browser live-drive against a real sandbox Google client is still
