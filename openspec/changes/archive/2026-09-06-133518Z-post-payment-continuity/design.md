@@ -387,14 +387,52 @@ if abandoned.
   order creation.)*
 - **Q1a:** *(Resolved by D15 -- every party receives the link and any party may complete
   fulfilment.)*
-- **Q1b:** Should one party claiming the agreement notify the others that their link has been
-  retired? D15 accepts the lockout because delivery is independent, but a silent loss of access
+> **DISPOSITION (2026-09-05, decided by the repo owner): all four DEFERRED, not resolved.**
+> Task 10.5 requires "resolve or explicitly defer"; this is the explicit deferral, with the
+> reasoning recorded so the next person does not re-derive it. None of the four blocks the
+> change: each is an improvement on a shipped behaviour, not a gap in one.
+
+- **Q1b — DEFERRED.** Should one party claiming the agreement notify the others that their link has
+  been retired? D15 accepts the lockout because delivery is independent, but a silent loss of access
   is a poor experience for a party who tries the link later. A notice on the claimed-agreement
   landing message (task 8.4) may be sufficient.
-- **Q2:** Should the confirmation view also offer a direct PDF download, or does that encourage
-  treating the unstamped draft as the finished document?
-- **Q3:** Should recovery be rate limited per email address as well as per source and reference,
-  to bound how much mail one signer can be made to receive?
-- **Q4:** Should a customer be able to invalidate a leaked link without creating an account? Any
-  answer reintroduces per-link state, which is precisely what D2 removed -- so the question is
-  whether the leak scenario justifies that cost.
+  - *Why deferred:* task 8.4 already ships a clear, non-leaking message on that landing route
+    ("this agreement is saved to an account -- sign in to open it"), so a party who tries the link
+    is told what happened at the moment they care. A push notification to the others would be
+    strictly better, but it is an enhancement on top of an adequate answer, not a missing one.
+    Revisit if support traffic shows people confused by a dead link.
+
+- **Q2 — DEFERRED.** Should the confirmation view also offer a direct PDF download, or does that
+  encourage treating the unstamped draft as the finished document?
+  - *Why deferred:* this is a genuine product tension with no technically-correct answer, and it is
+    reversible either way. On identity/legal infra the conservative default -- do not hand the
+    customer a document that looks final but carries no stamp -- is the right one to ship first.
+    Revisit alongside the stamped-document delivery work, where the distinction becomes visible to
+    the customer anyway.
+
+- **Q3 — DEFERRED, and the cheap option is recorded below.** Should recovery be rate limited per
+  email address as well as per source and reference, to bound how much mail one signer can be made
+  to receive?
+  - *The exposure, measured:* `RecoveryRateLimiter` caps 30/15min per source (IP) and 5/15min per
+    reference, with a 30-minute lockout. Every accepted request mails **every** party on that
+    agreement. So a holder of one reference can sustain roughly **10 mails/hour, ~240/day** to every
+    party; and because the tight cap is per **reference**, someone who is a party on N agreements
+    can be hit N times over. The per-reference cap protects an agreement, not a person.
+  - *Why deferred:* bounded rather than unlimited, no observed abuse (this path is pre-launch), and
+    the obvious fix is not free -- keying the limiter on recipient email puts signer PII in memory,
+    against the never-log-PII posture. Doing it properly means a salted-hash design: a small design
+    task, not a one-line change.
+  - *START HERE IF YOU PICK THIS UP -- the cheaper 80%:* the sustained drip works only because the
+    single window is 15 minutes. Adding a **daily cap on the existing per-reference key** (e.g. 10
+    sends/day) cuts the worst case from ~240/day to ~10/day using the **same mechanism and the same
+    key** -- no email address anywhere, no PII, no new design. Do that before reaching for
+    per-email limiting.
+
+- **Q4 — DEFERRED.** Should a customer be able to invalidate a leaked link without creating an
+  account? Any answer reintroduces per-link state, which is precisely what D2 removed -- so the
+  question is whether the leak scenario justifies that cost.
+  - *Why deferred:* the question names its own answer. D2 removed per-link state deliberately, and
+    an escape hatch would reintroduce exactly that, for a scenario with a working (if heavier)
+    remedy already: claiming the agreement revokes every outstanding link, which is asserted by
+    test 9.21. Deferred as a design reversal that needs evidence of the leak scenario actually
+    occurring, not as an oversight.

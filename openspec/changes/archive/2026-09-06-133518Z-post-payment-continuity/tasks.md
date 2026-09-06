@@ -236,8 +236,25 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
     per-link state, therefore no expiry" against someone later adding an implicit window.
 - [x] 9.21 Claiming the agreement makes a previously working link refuse access -- including a
   link held by a party other than the one who claimed.
-- [ ] 9.21a A party who did not pay can open their link and complete the remaining fulfilment
+- [x] 9.21a A party who did not pay can open their link and complete the remaining fulfilment
   steps.
+  - **First half: covered.** `RazorpayPaymentIntegrationTest.payingSendsEveryPartyALinkTheyCanOpen`
+    -- checkout is driven anonymously, both owner and tenant receive a message, the agreement
+    identifier is lifted from the **tenant's** message, and that link opens the agreement `200`. The
+    tenant paid nothing and reaches it anyway. Nothing in that request carries identity or evidence
+    of payment, so the server has no basis for a payer-only rule even if someone wanted one -- which
+    is the D15 guarantee this task protects.
+  - **Second half: scoped elsewhere, deliberately.** "Complete the remaining fulfilment steps"
+    describes a phase this flow does not have. Confirmed against the product flow with the repo
+    owner (2026-09-06): after payment the customer waits for **staff** to upload the stamp, and then
+    signs through a **separate, per-party** `sign_url` (`SigningRequestInvitee`) issued by the eSign
+    provider. Between payment and that invitation there is no customer-driven fulfilment step.
+  - That gap is the entire premise of the **`agreement-status-link-page`** change, which states it
+    plainly: the post-payment link "drops the recipient straight into the capture/edit form ... a
+    dead-end screen" they cannot submit, because the agreement froze at finalise. A test written
+    here would either assert a dead-end or duplicate `SigningRequestApiIntegrationTest`.
+  - **Do not re-open this box when that change lands** -- write the fulfilment-from-the-link
+    assertion there, against the status view that gives the link something to do.
 - [x] 9.21b Every party on a paid agreement receives a link at payment confirmation.
   - Closed 2026-09-05: same test -- both owner and tenant receive exactly one message each.
 - [x] 9.22 A recovered agreement remains unowned and can still be claimed afterwards.
@@ -274,4 +291,12 @@ integration tests (S9), per `dev-policy`. S10 is documentation.
   incidental.
 - [x] 10.4 Document the channel model and that SMS/WhatsApp are declared but disabled, so the
   next person knows where an adapter goes.
-- [ ] 10.5 Resolve or explicitly defer Q1a-Q4 from `design.md` before archiving.
+- [x] 10.5 Resolve or explicitly defer Q1a-Q4 from `design.md` before archiving.
+  - Done 2026-09-05. Q1 and Q1a were already resolved (by D13 and D15). **Q1b, Q2, Q3 and Q4 are
+    explicitly DEFERRED by the repo owner**, each with its reasoning recorded in `design.md` under
+    Open Questions -- deferral, not silence, which is what this task asks for.
+  - Q3 carries a measured exposure (~240 mails/day per reference worst case, and the tight cap is
+    per-reference so it protects an agreement rather than a person) **and the cheap mitigation to
+    reach for first**: a daily cap on the existing per-reference key, which needs no email address
+    and therefore no PII in the limiter. Recorded so whoever picks it up does not start with the
+    expensive per-email design.

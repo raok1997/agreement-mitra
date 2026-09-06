@@ -1,3 +1,37 @@
+# RESOLVED -- read this first (2026-09-06)
+
+**Everything below is the triage snapshot from 2026-09-05, kept for its reasoning. Its conclusion is
+now OUT OF DATE.** Every gap it identified has been closed and this change archived at **88/88**. Do
+not read the "Not covered" list as outstanding work.
+
+What closed them, all green in a 924-test suite:
+
+| Gap | Closed by |
+|---|---|
+| 9.3 | existing `TrackingReferenceTest` (bookkeeping, no new test) |
+| 9.4 | `RecoveryIntegrationTest.onlyASettledUnownedAgreementIsRecoverable` |
+| 9.9 | `RazorpayPaymentIntegrationTest.aRedeliveredWebhookDoesNotMailTheCustomerTwice` |
+| 9.15 | `ContactGateIntegrationTest.orderCreationIgnoresContactDetailsSuppliedInItsOwnBody` |
+| 9.16 | `ContactGateIntegrationTest.esignInitiationRefusesAPartyTheOldEmailOrMobileRuleWouldHaveAdmitted` |
+| 9.18, 9.21b | `RazorpayPaymentIntegrationTest.payingSendsEveryPartyALinkTheyCanOpen` |
+| 9.20, 9.22, 9.23 | `RecoveryIntegrationTest` (link durability, ownership, edit refusal) |
+| 9.25 | new `RecoveryWithNoEnabledChannelIntegrationTest` |
+| 9.26 | `RazorpayPaymentIntegrationTest.aDispatchFailureDoesNotUnsettleTheConfirmedPayment` |
+| 9.21a | first half by `payingSendsEveryPartyALinkTheyCanOpen`; second half scoped to `agreement-status-link-page` |
+| 10.5 | Q1b/Q2/Q3/Q4 explicitly deferred, with reasoning in `design.md` |
+
+**Two corrections this file got right and one it got wrong.** It correctly called out that
+`aTotalMailFailureStillAnswersTheSameWay` does NOT cover 9.26 -- that stood, and 9.26 got its own
+test. It was also right that 9.9 was unasserted. It was **wrong to imply the WAIVED row of 9.4 was a
+code gap**: the code accepts PAID *or* WAIVED and is correct; the task's "only paid" wording is the
+loose part.
+
+**One open item this file did not know about:** a STAFF *manual* payment confirmation
+(`PaymentService.confirm`/`waive`) does not publish `PaymentConfirmedEvent`, so it sends no recovery
+link. Only the gateway paths do. Undecided at archive time -- hook it, or document the exclusion.
+
+---
+
 # Verification notes -- 2026-09-05
 
 Written while triaging why this change sat at 71/88 with unchecked items in section 9
