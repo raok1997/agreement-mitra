@@ -73,12 +73,16 @@ class ProductionRentalLayerSetTest {
           "Witnesses");
 
   // The declared mandatory (always-render) sections for the NATIONAL (IN) set; every other section
-  // is optional (opt-in). In the Telangana set "Statutory (Telangana)" is additionally optional
-  // (opt-in, per the 2026-07-13 decision), but the "In Witness Whereof" execution block is
-  // MANDATORY
-  // in both sets (agreement-execution-block CR -- a generated draft must carry the signature zones
-  // +
-  // eSign anchors to be signable). The optional "Witnesses" add-on is off by default in both.
+  // is optional (opt-in). This set is asserted against the IN resolution only.
+  //
+  // In the Telangana set "Statutory (Telangana)" is ALSO mandatory as of 2026-09-07 (reversing the
+  // 2026-07-13 opt-in decision): the TG residential layer re-authors the witnesseth list without the
+  // national `stampRegistrationClause`, so while the statutory section was opt-in a Telangana deed
+  // rendered with no stamp/registration clause at all -- strictly worse than the national template.
+  //
+  // The "In Witness Whereof" execution block is MANDATORY in both sets (agreement-execution-block
+  // CR -- a generated draft must carry the signature zones + eSign anchors to be signable). The
+  // optional "Witnesses" add-on is off by default in both.
   private static final Set<String> MANDATORY_SECTIONS =
       Set.of(
           "Owner",
@@ -239,15 +243,24 @@ class ProductionRentalLayerSetTest {
     TemplateCompiler compiler = new TemplateCompiler();
 
     // Empty active set: mandatory sections render, optional add-ons do not. For Telangana the
-    // statutory overlay is opt-in (absent by default), but the signature block is MANDATORY, so it
-    // renders by default with the per-signer eSign anchors -- the draft is signable.
+    // statutory overlay is MANDATORY (2026-09-07), so it renders with no add-ons selected -- that is
+    // what guarantees a TG deed always carries a stamp/registration clause, since the TG layer
+    // removes the national one. The signature block is MANDATORY too, so it renders by default with
+    // the per-signer eSign anchors -- the draft is signable.
     String withoutAddOns = compiler.compile(eff, coerced);
     assertThat(withoutAddOns)
         .contains("made between Asha Owner") // mandatory recital (witnesseth)
         .contains("In Witness Whereof") // mandatory signature block renders by default
         .contains("esign:owner")
         .contains("esign:tenant") // ...with both eSign anchors
-        .doesNotContain("Statutory (Telangana)") // optional TG statutory overlay gated out
+        .contains("Statutory (Telangana)") // mandatory TG statutory overlay renders by default
+        // The clause the whole flag exists for: TG drops the national stampRegistrationClause, so
+        // this is the only stamp/registration wording a Telangana deed can carry.
+        .contains("compulsorily registered before the jurisdictional Sub-Registrar")
+        // tgEssentialServices: the owner may not cut water/electricity during the tenancy.
+        .contains("withhold or disconnect essential supplies")
+        // tgGoverningLaw: the TG-specific statute, not just "laws of India".
+        .contains("Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960")
         .doesNotContain("shall not keep any pets") // optional Occupancy & Use add-on gated out
         .doesNotContain(
             "Society and building maintenance"); // optional Charges & Utilities gated out

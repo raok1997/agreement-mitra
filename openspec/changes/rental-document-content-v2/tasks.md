@@ -25,10 +25,28 @@
 >   (available to IN **and** TG) as `optional: true` sections + `showWhen` clauses; the TG layers add
 >   **only** the genuinely state-specific statutory overlay + Hyderabad jurisdiction. This guarantees
 >   **no double-listing** (each field/clause in exactly one section) with far less patch machinery.
-> - **`Statutory (Telangana)` authored MANDATORY** (`optional: false`, resolving Open Question #1
->   conservatively): a Telangana Leave-and-Licence deed must always carry the statutory overlay, and
->   under M2's deferred generate active-set an optional statutory section could be silently omitted
->   from a signed draft. Flip the one flag if legal decides it is opt-in.
+> - **`Statutory (Telangana)` is MANDATORY** (`optional: false`). **This note was stale until
+>   2026-09-07 and said the opposite of the code**: the section shipped `optional: true` (a
+>   2026-07-13 requester decision), while this note claimed mandatory. Anyone reading the note --
+>   including a lawyer asked to sign off 9.4 -- would have approved behaviour the product did not
+>   have.
+>
+>   **The real reason it is now mandatory is NOT the rationale this note used to give** (the
+>   deferred-active-set risk). It is a concrete hole found 2026-09-07:
+>   `state_type-TG-residential.patch.yaml` re-authors the witnesseth list **without** the national
+>   `stampRegistrationClause` (its own comment says so), and the TG replacement `tgStampRegistration`
+>   lived only inside the opt-in statutory section. **So a default Telangana deed rendered with no
+>   stamp/registration clause at all, while every national deed carries one** -- the one state with a
+>   bespoke layer shipped strictly worse than the shared template.
+>
+>   Flipping the single flag restores three things at once, all already entries in that section: the
+>   stamp/registration clause, the TG tenancy-law reference (`tgGoverningLaw`, the 1960 Act), and the
+>   essential-services protection (`tgEssentialServices`). It costs the user no input -- both fields
+>   are `required: false` and `tgStampAmount` is gated `showWhen: stampDutyAmount > 0`.
+>
+>   **If legal decides it really is opt-in, restoring `optional: true` is not enough** --
+>   `stampRegistrationClause` must go back into the TG witnesseth list in the same edit, or the hole
+>   returns.
 > - **Recital + dispute/jurisdiction covenant live in the always-on witnesseth section** (resolving
 >   the recital-placement Open Question): the party recital and the "courts at Hyderabad" covenant must
 >   always render, so they sit in the mandatory `Now This Agreement Witnesseth` clause list. The
@@ -158,3 +176,36 @@
   **augmented in the shared base** (not replaced in TG); recital placed in the **witnesseth** section;
   **no** TG header override (national wording). Each is a one-flag / one-line change if legal decides
   otherwise. This box stays open until legal confirms.
+  - **2026-09-07: the statutory flag was flipped `optional: true -> false`** on the repo owner's
+    decision, after the missing-stamp-clause hole was found (full reasoning in the decisions note
+    above and in `state-TG.patch.yaml`). Until this date the code and the note disagreed, so **any
+    legal sign-off obtained before 2026-09-07 was against a misdescribed product.**
+  - Tests updated with it: `AgreementDocumentFormatE2EIntegrationTest`
+    (`statutoryAndSignatureBlockAreBothMandatoryForTelangana`, rewritten from the opt-in version and
+    now asserting the stamp/registration, 1960-Act and essential-services clauses all render with no
+    add-ons selected, and that the `showWhen`-gated stamp-amount sentence still does not) and
+    `ProductionRentalLayerSetTest`. **Full suite re-run 2026-09-07: 924 tests, 0 skipped, 0
+    failures.**
+  - **A fifth question for counsel, larger than the four above and not yet asked:** the deed is
+    titled "Residential Tenancy (**Leave & Licence**)" nationally. Licence vs lease changes the legal
+    effect and the stamp-duty basis, and it is baked into the shared base -- so if it is wrong for a
+    Telangana residential tenancy it is wrong everywhere, not only in the TG layer.
+  - **Remediation: LOW STAKES for now.** Were any Telangana deeds signed while the statutory section
+    was opt-in, and therefore without a stamp/registration clause? Answerable because every agreement
+    pins `templateContentHash` + `layerVersions` (`Agreement.pinEffectiveTemplate`); needs a
+    production query, not checkable locally. **Repo owner confirmed 2026-09-07 that prod is beta with
+    founding-team users only -- no real customers -- so any affected deed is internal.** Worth
+    running once for completeness; not urgent.
+  - **`state:TG` layer version bumped 1 -> 2.** The owner was content either way during
+    founding-team beta; bumped because it is the historically accurate choice, not merely the tidy
+    one. Agreements generated before this change pin `state:TG: 1` and were rendered from the
+    **opt-in** content. Had the version stayed at 1, new agreements would pin the same number
+    against **mandatory** content -- two materially different Telangana deeds reporting one authored
+    version, which is exactly what `Agreement.pinEffectiveTemplate` exists to prevent. Bumping makes
+    the existing pins truthful in retrospect as well as labelling the new content.
+    Test updated with it: `ReferenceLayerSetResolutionIntegrationTest` now asserts `state:TG -> 2`.
+    (`TemplateResolverTest`'s `state:TG` version assertions are fixture-driven, not the production
+    layer set, and are unaffected.)
+  - **Still owed before the first real customer:** wire counsel sign-off to the
+    `templateContentHash`, so an unreviewed authored template cannot ship silently. The pin makes
+    this possible; nothing enforces it yet.
