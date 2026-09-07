@@ -90,7 +90,7 @@ green (this CR adds no cross-module dependency; CR-B is where a UUID crosses the
 
 ## 6. Verify + wrap-up
 
-- [ ] 6.1 Live-drive against the running backend (`:8090`) + SPA: anonymous draft still works with no login;
+- [x] 6.1 Live-drive against the running backend (`:8090`) + SPA: anonymous draft still works with no login;
   Sign in with Google (sandbox client / stubbed) -> `/auth/callback` -> `GET /api/auth/me` returns the
   identity -> logout. Confirm no token/PII/session value appears in logs.
   - Partially driven 2026-09-05 (API half): the anonymous-draft clause is confirmed --
@@ -115,9 +115,38 @@ green (this CR adds no cross-module dependency; CR-B is where a UUID crosses the
   - **Answers the open question:** there is no known stub/sandbox path; **prod has a real OAuth client,
     local does not.** For local drives, create a SEPARATE dev OAuth client with redirect URI
     `http://localhost:8090/api/auth/google/callback` rather than reusing prod's credentials.
-  - **Still not driven:** explicit logout, and the **log-redaction check** (no token, session value or
-    PII in logs). That clause is worth more against prod logs than local ones -- it is where real
-    identity data actually flows.
+  - **DRIVEN AND PASSED 2026-09-06, locally, browser half included.** Two config traps had to be
+    cleared first, both recorded in `openspec/MANUAL-DRIVE-CHECKLIST.md`:
+    (a) `backend/start_local.sh` sources `.env.local` **relative to `backend/`**, while the
+    credentials live in the **repo root** `.env.local` -- so the vars were present all along and
+    never read, and the backend fell back to `client_id=local-dummy`. Fixed by symlinking
+    `backend/.env.local -> ../.env.local`.
+    (b) Vite had auto-incremented to **:5174** after a past port collision, but
+    `spa-callback-uri` and `public-base-url` both default to **:5173**, so the post-consent handoff
+    redirected to a dead port (`ERR_CONNECTION_REFUSED` on `/auth/callback#handoff=...`). Fixed by
+    restarting Vite on 5173. No config change; moving the SPA is correct because `public-base-url`
+    also builds the outbound recovery link.
+  - **Log-redaction check: PASS.** Backend stdout captured to a file (there is **no file appender** --
+    `application.yml` sets only `in.agreementmitra: DEBUG`, so an ungrepped terminal would have made
+    this clause unverifiable). Zero matches for `id_token`, `access_token`, `refresh_token`,
+    `Bearer `, `code=`, `code_verifier`, JWT shape (`eyJ...`), any full email address,
+    `client_secret`, `GOCSPX`. The four identity lines emitted are:
+    `Login started; redirecting to Google authorization endpoint` /
+    `Login reused identity for GOOGLE credential d***@gmail.com` /
+    `Login callback completed; handoff minted for identity <uuid>` /
+    `Session minted for identity <uuid>`. The address is masked by `RecipientRedaction.redact`
+    (first local-part character + domain, never the raw address) -- a deliberate, documented
+    redaction, which is why the email pattern found nothing. The identity UUID is an internal
+    identifier, not PII, and is what makes the trail auditable.
+  - **Logout is NOT log-evidenced, deliberately recorded as such.** `SessionService` logs only on
+    mint (line 72); there is no logout log line, so its absence proves nothing. Logout was confirmed
+    by the operator in the browser, not by the log.
+  - Incidental, not a defect: one `MethodArgumentNotValidException` WARN three seconds before login
+    started -- a request body failing bean validation on the anonymous-draft step. Noted so a later
+    reader does not misread it as an auth failure.
+  - **Prod log-redaction remains unchecked.** The clause is verified locally against a real Google
+    identity; prod is where real identity data flows at volume, and the same grep there is still
+    worth running.
 - [x] 6.2 `./gradlew spotlessApply` (done) then the test suite via gradle directly with
   `TESTCONTAINERS_RYUK_DISABLED=true` on Windows (full `test` task GREEN, incl. `ModularityTests`) plus
   `spotbugsMain` SAST (GREEN). NOTE: the OSV dependency-scan gates (backend `securityScan` OSV over the

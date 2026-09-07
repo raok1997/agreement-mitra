@@ -78,7 +78,7 @@ green -- only a UUID + a status enum cross the `signing <-> identity` boundary (
 
 ## 6. Verify + wrap-up
 
-- [ ] 6.1 Live-drive against the running backend (`:8090`) + SPA (with CR-A applied): anonymous draft -> Sign
+- [x] 6.1 Live-drive against the running backend (`:8090`) + SPA (with CR-A applied): anonymous draft -> Sign
   in with Google -> Save -> see it in My Agreements -> Edit an in-progress one -> confirm a signed one is
   read-only. Confirm claim/read/edit return `404` (not `403`) for a non-owner.
   - Partially driven 2026-09-05 against the live stack (API half only; the SPA + Google-consent half
@@ -97,9 +97,29 @@ green -- only a UUID + a status enum cross the `signing <-> identity` boundary (
     confirmed anonymous draft -> Sign in with Google -> the draft's values survive the transition. That
     is the first half of this task's happy path, on code functionally identical to this branch (only
     `PdfStampComposer.java` differs from `main`).
-  - **Still not observed:** the agreement listed in **My Agreements**, editing an in-progress one, a
-    signed one rendering read-only, and -- the security clause -- an authenticated **non-owner** getting
-    `404` rather than `403`. The last needs a second Google identity and is what actually gates this box.
+  - **DRIVEN 2026-09-06. The security clause is confirmed with two real Google identities.**
+    Local stack, real Google OAuth client (see `google-oauth-login` 6.1 for the two config traps that
+    had to be cleared first: `backend/.env.local` path, and Vite on 5173 not 5174).
+    - Steps 1-2 driven locally: anonymous draft -> sign in -> Save -> listed in **My Agreements** ->
+      reopened an in-progress one and edited it.
+    - Step 3 (a **signed** agreement renders read-only) confirmed **in production**, not locally.
+    - **Step 4, the security clause -- PASS on read.** Three distinct Google identities were created
+      locally. Agreement `9432111a-2d0a-4ed4-b862-34678e909eac` is owned by identity
+      `a5207fe0-b667-43c9-bbd4-51e0e665947c`; signed in as a **different** identity
+      (`a99f6332-ee39-45ef-b1a5-cea04a5b7b58`), `GET /api/agreements/{id}` answered **404, not 403**,
+      observed in the browser Network tab. Baseline holds: the owner reads the same agreement fine
+      (that is what steps 1-2 exercised), so the 404 means "ownership enforced", not "id not found".
+    - **`claim` and `edit` were NOT manually driven** -- recorded honestly rather than assumed. Both
+      are covered by `AgreementOwnershipIntegrationTest` against real Postgres: non-owner claim ->
+      404 (`claimMakesReadsOwnerScopedWithNoOracle`, the double-claim assertion), non-owner `PUT` ->
+      404 (`editReplacesTermsWhenOwnerAndUnfrozenThenFreezes`), and somebody-else's contacts -> 404
+      (`contactsOnSomebodyElsesAgreementAre404ForOwnerAndAnonymousAlike`). Re-run 2026-09-06:
+      **7 tests, 0 skipped, 0 failures.** The manual drive corroborates that suite in a real stack
+      with real Google identities; it does not substitute for it.
+    - Method note for a future driver: do **not** test the edit verb with an empty `PUT` body.
+      `@Valid` binds and rejects before the handler runs, so `-d '{}'` returns **400** without ever
+      reaching the ownership check -- a false pass. Replay a real payload captured from the owner's
+      own edit instead.
 - [x] 6.2 `./gradlew spotlessApply` then `./run-tests.sh` (or gradle directly with
   `TESTCONTAINERS_RYUK_DISABLED=true` on Windows); `./gradlew check` incl. `securityScan`;
   `npm run security:scan` in `frontend/`.

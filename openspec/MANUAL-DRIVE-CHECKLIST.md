@@ -9,33 +9,56 @@ can make.
 `signed-delivery-and-closure` are bucket 2 (vendor-blocked -- sandbox creds) and are deliberately
 absent; they do not become archivable by driving the UI.
 
-**Stack:** SPA `http://localhost:5174`, API `http://localhost:8090` (both confirmed up).
+**Stack:** SPA `http://localhost:5173`, API `http://localhost:8090`.
+
+> **The SPA must be on 5173, not 5174.** `vite.config.ts` pins no port, so Vite silently
+> auto-increments when 5173 is busy -- and both `spa-callback-uri` and `public-base-url`
+> (`application.yml` 270 and 137) default to **5173**. On 5174 the post-consent handoff redirects to
+> a dead port and dies as `ERR_CONNECTION_REFUSED` on `/auth/callback#handoff=...`, and outbound
+> recovery links point nowhere. An earlier revision of this file recorded 5174 as the confirmed
+> stack; that was the stale state written down as fact. Check the Vite banner before driving.
+> Worth pinning `server.port: 5173` + `strictPort: true` so a collision fails loudly (not yet done).
 
 ---
 
-## BLOCKER first -- read before starting
+## CREDENTIALS -- resolved 2026-09-06, read this before concluding "no credential"
 
-**A real-Google sign-in will fail as the stack is configured right now.**
-`GET /api/auth/google/start` returns a `302` to Google carrying `client_id=local-dummy`:
-`application-local.yml` has `client-id: ${GOOGLE_OAUTH_CLIENT_ID:local-dummy}` and the variable is
-unset (verified live). PKCE + `state` are correctly present, so the request itself is well-formed --
-this is a missing credential, not a broken flow.
+**The Google and Razorpay credentials exist** in the repo-root `.env` and `.env.local`
+(as `export NAME=...` lines -- a grep anchored to `^[A-Z_]` misses them).
 
-**Caveat, because I did not establish this:** `google-oauth-login 6.1` is written as *"Sign in with
-Google (sandbox client / **stubbed**)"*, and the handshake is already covered e2e by
-`GoogleLoginHandshakeIntegrationTest` against WireMock-stubbed Google. So a stub path may already
-exist for the SPA -- I only checked the config, not whether you have one wired. **Your call.**
+**They were not being read.** `backend/start_local.sh` sources `.env.local` **relative to
+`backend/`**, and no such file existed, so the backend fell back to `client_id=local-dummy`. This
+is what the previous revision of this file misdiagnosed as a missing credential.
 
-If you need a real client: create one in Google Cloud Console with redirect URI
-`http://localhost:8090/api/auth/google/callback`, then restart with `GOOGLE_OAUTH_CLIENT_ID` and
-`GOOGLE_OAUTH_CLIENT_SECRET` set.
+Fix, once:
 
-Either way, **drives C and D need none of this -- do those first.**
+    ln -s ../.env.local backend/.env.local     # .gitignore's `.env.*` already covers it
+
+Verify before driving -- anything but `local-dummy` is good:
+
+    curl -s -D - -o /dev/null http://localhost:8090/api/auth/google/start | grep -io 'client_id=[^&]*'
+
+Restart with `cd backend && ./start_local.sh`; look for `Loading local env from backend/.env.local`.
+
+**There is no stub sign-in route** (the open question in the previous revision -- now closed).
+`AuthController` exposes exactly `google/start`, `google/callback`, `session/exchange`, `me`,
+`logout`. The WireMock stub lives only inside `GoogleLoginHandshakeIntegrationTest`. A real Google
+OAuth client is mandatory; use a **separate dev client** (redirect URI
+`http://localhost:8090/api/auth/google/callback`, JS origin `http://localhost:5173`), never prod's.
+
+**There is no file appender.** `application.yml` sets only `in.agreementmitra: DEBUG`; logs go to
+the `bootRun` terminal and nowhere else. Any drive with a log-redaction clause must capture stdout,
+or that clause is unverifiable:
+
+    ./start_local.sh 2>&1 | tee /tmp/backend.log
 
 ---
 
-## Drive A -- Google login handshake  [`google-oauth-login 6.1`]
-*Blocked on the credential above.*
+## Drive A -- Google login handshake  [`google-oauth-login 6.1`]  -- DONE 2026-09-06, PASSED
+*Kept for reference. `google-oauth-login` is 28/28 and archive-ready; redaction scan was clean
+(zero token/PII matches; the logged address is masked by `RecipientRedaction`). Logout is NOT
+log-evidenced -- `SessionService` logs only on mint -- and was confirmed in the browser instead.
+Prod-log redaction is still unrun. Full evidence in that change's `tasks.md` 6.1.*
 
 1. Open `:5174` and start a draft **without** signing in -- it must work anonymously.
    (Already confirmed at the API: anonymous `POST /api/agreements` -> `201`.)
@@ -47,7 +70,9 @@ Either way, **drives C and D need none of this -- do those first.**
    the half a passing UI flow will not tell you about.
 
 ## Drive B -- ownership and resume  [`agreement-ownership 6.1`]
-*Blocked on the credential above. Do in the same browser session as A.*
+*Unblocked as of 2026-09-06 -- the credential problem above is resolved. Do in the same browser
+session as A. Still needs **two distinct Google accounts**; if the consent screen is in Testing
+mode, both must be added as test users or the second identity bounces and step 4 is unreachable.*
 
 1. Anonymous draft -> Sign in with Google -> Save -> confirm it appears in **My Agreements**.
 2. Reopen an in-progress one and edit it.
@@ -86,6 +111,23 @@ old form to fall back to.
 1. Sign in as STAFF, open `/staff`.
 2. Confirm a **real** row shows: template, state, and **both parties with father's names**.
 3. Confirm the **stamp upload still attaches from the row**.
+
+## Drive E -- contacts reopen after a failed payment  [`contacts-editable-until-payment 6.2`]
+*Added 2026-09-06; postdates this checklist's first revision. Independent of Google -- can be driven
+without drives A/B.*
+
+1. Finalise an agreement and reach checkout.
+2. **Fail the payment** -- a Razorpay test-mode failure card, or simply dismiss the checkout modal.
+   Either produces the non-success the task needs.
+3. Reopen the contact step, correct an address, and reach checkout again.
+
+Needs `RAZORPAY_KEY_ID` / `RZP_KEY_SECRET` (present in the root env; see the credentials section).
+It does **not** need `RZP_WEBHOOK_SECRET` or a tunnel -- a failed payment never reaches a webhook,
+which is why the absence of that variable does not block this drive.
+
+Already driven at the API: `PATCH /api/agreements/{id}/contacts` on an unowned pre-payment draft
+answers `200` and accepts a corrected address anonymously; an empty contact set is refused with an
+RFC 9457 ProblemDetail. The untested part is the SPA sequence around a *failed* payment.
 
 ## Decision D2 -- legal sign-off, not a drive  [`rental-document-content-v2 9.4`]
 No browser involved. A lawyer must confirm four authoring choices, each a one-flag change if they
