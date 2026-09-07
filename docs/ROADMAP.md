@@ -3,7 +3,9 @@
 Team-shared, git-tracked source of truth for where the product is and what's
 next. Update this in a PR like any other doc. Per-feature intent lives in
 `openspec/` (specs + archived changes); deep architecture in
-`docs/ARCHITECTURE.md`; vendor specifics in `docs/integrations/`.
+`docs/ARCHITECTURE.md`; vendor specifics in `docs/integrations/`; legal exposure,
+template-approval governance and the open questions for counsel in
+`docs/LEGAL-POSTURE.md`.
 
 _Last updated: 2026-06-27_
 

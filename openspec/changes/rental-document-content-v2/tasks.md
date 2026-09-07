@@ -186,6 +186,12 @@
     add-ons selected, and that the `showWhen`-gated stamp-amount sentence still does not) and
     `ProductionRentalLayerSetTest`. **Full suite re-run 2026-09-07: 924 tests, 0 skipped, 0
     failures.**
+  - **2026-09-07: all five questions are now drafted for counsel** in `docs/COUNSEL-BRIEF.md`
+    (Part A), as a standalone sendable document. **It renumbers them** into legal rather than
+    task order, so when counsel replies, map the answers back as: brief Q1 = licence-vs-lease
+    (the fifth question below); Q2 = mandatory statutory overlay; Q3 = shared add-on clauses;
+    Q4 = recital + jurisdiction placement; Q5 = Telangana heading wording. **The brief is
+    drafted but NOT sent, and no counsel is engaged** -- this box stays open.
   - **A fifth question for counsel, larger than the four above and not yet asked:** the deed is
     titled "Residential Tenancy (**Leave & Licence**)" nationally. Licence vs lease changes the legal
     effect and the stamp-duty basis, and it is baked into the shared base -- so if it is wrong for a
