@@ -228,7 +228,7 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
 agreed to the terms. `/terms` is linked (landing footer, `LegalDisclaimer` on
 the capture/contact/payment screens) but a link is not assent: we store no
 timestamp, no terms version, and no per-agreement record of what the customer
-accepted. Clause 17 says "the version that applies to an agreement is the
+accepted. Clause 18 says "the version that applies to an agreement is the
 version published when you paid for it", which we currently cannot evidence.
 Needs deciding before the first external customer — a checkbox or
 click-through at save/pay, persisting the accepted version (the template

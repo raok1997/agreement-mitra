@@ -506,8 +506,8 @@ onMounted(load);
             <span>
               Send for signature after attaching
               <span class="block text-slate-500">
-                Starts the Aadhaar eSign workflow and invites the first party. Untick to attach the
-                stamp only.
+                Starts the Aadhaar eSign workflow and invites the first party.
+                Untick to attach the stamp only.
               </span>
             </span>
           </label>

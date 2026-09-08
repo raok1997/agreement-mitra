@@ -17,7 +17,10 @@
 
 import { computed, ref } from "vue";
 import { requestRecovery } from "../api/recovery";
-import { isWellFormedReference, normalizeReference } from "../api/trackingReference";
+import {
+  isWellFormedReference,
+  normalizeReference,
+} from "../api/trackingReference";
 
 const emit = defineEmits<{ (e: "back"): void }>();
 
@@ -57,12 +60,15 @@ async function submit(): Promise<void> {
 
     <template v-if="!submitted">
       <p class="mt-2 text-sm text-slate-600">
-        Enter the reference from your agreement and we will email the link to the parties on it.
+        Enter the reference from your agreement and we will email the link to
+        the parties on it.
       </p>
 
       <form class="mt-6" @submit.prevent="submit">
         <label class="block">
-          <span class="text-sm font-medium text-slate-700">Agreement reference</span>
+          <span class="text-sm font-medium text-slate-700"
+            >Agreement reference</span
+          >
           <input
             v-model="reference"
             type="text"
@@ -75,14 +81,22 @@ async function submit(): Promise<void> {
             data-testid="recovery-reference"
           />
         </label>
-        <p id="recover-format-hint" class="mt-1 text-xs" :class="showFormatHint ? 'text-amber-800' : 'text-slate-500'">
+        <p
+          id="recover-format-hint"
+          class="mt-1 text-xs"
+          :class="showFormatHint ? 'text-amber-800' : 'text-slate-500'"
+        >
           <template v-if="showFormatHint">
             That reference does not look right. Check it against your agreement.
           </template>
-          <template v-else> It starts with AM and is eleven characters long. </template>
+          <template v-else>
+            It starts with AM and is eleven characters long.
+          </template>
         </p>
 
-        <p v-if="error" class="mt-3 text-sm text-red-700" role="alert">{{ error }}</p>
+        <p v-if="error" class="mt-3 text-sm text-red-700" role="alert">
+          {{ error }}
+        </p>
 
         <div class="mt-6 flex items-center gap-3">
           <button
@@ -93,7 +107,11 @@ async function submit(): Promise<void> {
           >
             {{ submitting ? "Sending..." : "Email me the link" }}
           </button>
-          <button type="button" class="text-sm text-slate-600 underline" @click="emit('back')">
+          <button
+            type="button"
+            class="text-sm text-slate-600 underline"
+            @click="emit('back')"
+          >
             Back
           </button>
         </div>
@@ -105,12 +123,12 @@ async function submit(): Promise<void> {
       <div class="mt-6 rounded-lg bg-slate-50 p-4" data-testid="recovery-sent">
         <p class="text-sm font-medium text-slate-900">Check your email</p>
         <p class="mt-1 text-sm text-slate-600">
-          If that reference matches a paid agreement, we have emailed a link to the parties on it.
-          The link opens the agreement and lets you carry on.
+          If that reference matches a paid agreement, we have emailed a link to
+          the parties on it. The link opens the agreement and lets you carry on.
         </p>
         <p class="mt-2 text-sm text-slate-600">
-          Nothing arrived? Check the reference is right, and that you are looking in the inbox of an
-          address on the agreement.
+          Nothing arrived? Check the reference is right, and that you are
+          looking in the inbox of an address on the agreement.
         </p>
       </div>
       <button

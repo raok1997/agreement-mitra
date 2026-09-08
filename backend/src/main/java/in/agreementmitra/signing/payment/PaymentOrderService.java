@@ -4,6 +4,7 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.CheckoutCallbackRequest;
@@ -60,6 +61,7 @@ public class PaymentOrderService {
   private final AgreementService agreementService;
   private final PaymentProperties properties;
   private final PartyReachability reachability;
+  private final JurisdictionEligibility jurisdiction;
 
   PaymentOrderService(
       PaymentOrderRepository orders,
@@ -68,8 +70,10 @@ public class PaymentOrderService {
       PaymentConfirmations confirmations,
       AgreementService agreementService,
       PaymentProperties properties,
-      PartyReachability reachability) {
+      PartyReachability reachability,
+      JurisdictionEligibility jurisdiction) {
     this.reachability = reachability;
+    this.jurisdiction = jurisdiction;
     this.orders = orders;
     this.pricing = pricing;
     this.razorpay = razorpay;
@@ -141,6 +145,21 @@ public class PaymentOrderService {
     // gate - nor redirect where anything is later sent.
 
     PaymentOrder reusable = reusableOrder(agreementId);
+    if (reusable != null && reusable.status().settled()) {
+      // ALREADY PAID: report it, never refuse it. This is the one place the reachability analogy
+      // above does NOT carry, and the placement is deliberate. Contacts freeze at settlement, so a
+      // settled order's reachability cannot go stale - but the jurisdiction allowlist CAN change
+      // under a settled order. Refusing here would 409 a customer who has already paid, which is
+      // the exact hazard the jurisdiction gate exists to prevent, inverted. Hence this returns
+      // BEFORE the jurisdiction check rather than after it.
+      return toSession(reusable);
+    }
+
+    // Only a jurisdiction we can actually stamp may take money. Checked ahead of resuming an
+    // outstanding order as well as creating one: an order placed earlier proves the jurisdiction
+    // was eligible then, not now.
+    jurisdiction.require(agreementId);
+
     if (reusable != null) {
       return toSession(reusable);
     }

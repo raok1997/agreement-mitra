@@ -79,7 +79,9 @@ function reachable(party: PartyContact): boolean {
 }
 
 const unreachable = computed(() => draft.value.filter((p) => !reachable(p)));
-const mobileProblems = computed(() => draft.value.filter((p) => !mobileUsable(p)));
+const mobileProblems = computed(() =>
+  draft.value.filter((p) => !mobileUsable(p)),
+);
 const ready = computed(
   () => unreachable.value.length === 0 && mobileProblems.value.length === 0,
 );
@@ -108,19 +110,30 @@ function confirm(): void {
 </script>
 
 <template>
-  <section class="mx-auto max-w-2xl p-6" aria-labelledby="contact-confirmation-heading">
-    <h2 id="contact-confirmation-heading" class="text-xl font-semibold text-slate-900">
-      {{ nothingMissing ? "Confirm where we send the agreement" : "How should we reach each party?" }}
+  <section
+    class="mx-auto max-w-2xl p-6"
+    aria-labelledby="contact-confirmation-heading"
+  >
+    <h2
+      id="contact-confirmation-heading"
+      class="text-xl font-semibold text-slate-900"
+    >
+      {{
+        nothingMissing
+          ? "Confirm where we send the agreement"
+          : "How should we reach each party?"
+      }}
     </h2>
 
     <p class="mt-2 text-sm text-slate-600">
       <template v-if="nothingMissing">
-        We will email the agreement to each party at the address below. Check they are right
-        before you pay.
+        We will email the agreement to each party at the address below. Check
+        they are right before you pay.
       </template>
       <template v-else>
-        Each party needs an email address before payment. That is how they receive the agreement,
-        and how you get back to it later if you close this page.
+        Each party needs an email address before payment. That is how they
+        receive the agreement, and how you get back to it later if you close
+        this page.
       </template>
     </p>
 
@@ -133,7 +146,9 @@ function confirm(): void {
       >
         <p class="text-sm font-medium text-slate-900">
           {{ party.name || roleLabel(party.role) }}
-          <span class="ml-2 text-xs font-normal uppercase tracking-wide text-slate-500">
+          <span
+            class="ml-2 text-xs font-normal uppercase tracking-wide text-slate-500"
+          >
             {{ roleLabel(party.role) }}
           </span>
         </p>
@@ -151,13 +166,18 @@ function confirm(): void {
               :aria-describedby="`contact-email-help-${index}`"
               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
-            <span :id="`contact-email-help-${index}`" class="mt-1 block text-xs text-slate-500">
+            <span
+              :id="`contact-email-help-${index}`"
+              class="mt-1 block text-xs text-slate-500"
+            >
               We email the agreement here.
             </span>
           </label>
 
           <label class="block">
-            <span class="text-xs font-medium text-slate-700">Mobile (optional)</span>
+            <span class="text-xs font-medium text-slate-700"
+              >Mobile (optional)</span
+            >
             <input
               v-model="party.mobile"
               type="tel"
@@ -167,8 +187,12 @@ function confirm(): void {
               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
             <!-- No SMS or WhatsApp provider exists. Do not imply a message will be sent. -->
-            <span :id="`contact-mobile-help-${index}`" class="mt-1 block text-xs text-slate-500">
-              Used for signing notifications, and for delivery once we support it.
+            <span
+              :id="`contact-mobile-help-${index}`"
+              class="mt-1 block text-xs text-slate-500"
+            >
+              Used for signing notifications, and for delivery once we support
+              it.
             </span>
           </label>
         </div>
@@ -177,7 +201,8 @@ function confirm(): void {
           Add a valid email address for this party to continue.
         </p>
         <p v-else-if="!mobileUsable(party)" class="mt-2 text-xs text-amber-800">
-          That mobile number does not look right. Leave it blank if you do not have it.
+          That mobile number does not look right. Leave it blank if you do not
+          have it.
         </p>
       </li>
     </ul>

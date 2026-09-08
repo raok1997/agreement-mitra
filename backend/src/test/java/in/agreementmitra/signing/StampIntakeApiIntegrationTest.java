@@ -58,6 +58,19 @@ class StampIntakeApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private BlobStore blobStore;
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
@@ -115,6 +128,8 @@ class StampIntakeApiIntegrationTest {
   private UUID bareAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -206,6 +221,60 @@ class StampIntakeApiIntegrationTest {
 
   private static String uniqueCertificate() {
     return "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
+  }
+
+  // --- the jurisdiction gate -------------------------------------------------
+
+  @Test
+  void aGrandfatheredIneligibleAgreementIsRefusedAndNoCertificateIsSpent() {
+    // The case gate 3 exists for. An agreement finalised BEFORE the jurisdiction gate shipped is
+    // already sitting in this queue, and PaymentGate is the only other control here -- which a
+    // staff WAIVER satisfies. Without its own check, staff could buy a real SHCIL certificate for
+    // an agreement in a state whose duty nobody can compute.
+    //
+    // Built by finalising while eligible and then moving the pin, because the customer path can no
+    // longer produce such a row at all -- which is the point.
+    UUID agreementId = agreementWithDraft();
+    in.agreementmitra.support.Payments.waive(jdbc, agreementId);
+    UUID nationalTemplate = in.agreementmitra.support.TemplateCatalogFixture.seedNational(jdbc);
+    jdbc.update("UPDATE agreement SET template_id = ? WHERE id = ?", nationalTemplate, agreementId);
+
+    String certificate = uniqueCertificate();
+    ResponseEntity<String> refused =
+        postIntake(staffToken, intakeForm(staffReferenceOf(agreementId), certificate));
+
+    assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(refused.getBody()).contains("jurisdiction-unsupported");
+    // Distinct from payment-required, so staff can tell the two refusals apart at the same step.
+    assertThat(refused.getBody()).doesNotContain("payment-required");
+    // Nothing was spent: no stamp attached, and the certificate number stays unused.
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("PDF_GENERATED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM agreement WHERE stamp_certificate_number = ?",
+                Integer.class,
+                certificate))
+        .isZero();
+  }
+
+  @Test
+  void theJurisdictionRefusalIsAuditedAsItsOwnOutcomeNotAGenericError() {
+    // outcomeFor() ends `default -> OUTCOME_ERROR`, so without an explicit branch this refusal
+    // would be recorded as an unspecified error -- silently, since that switch still compiles.
+    UUID agreementId = agreementWithDraft();
+    UUID nationalTemplate = in.agreementmitra.support.TemplateCatalogFixture.seedNational(jdbc);
+    jdbc.update("UPDATE agreement SET template_id = ? WHERE id = ?", nationalTemplate, agreementId);
+
+    postIntake(staffToken, intakeForm(staffReferenceOf(agreementId), uniqueCertificate()));
+
+    List<String> outcomes =
+        jdbc.queryForList(
+            "SELECT outcome FROM stamp_intake_audit WHERE agreement_id = ?"
+                + " ORDER BY occurred_at DESC",
+            String.class,
+            agreementId);
+    assertThat(outcomes).isNotEmpty();
+    assertThat(outcomes.get(0)).isEqualTo("REJECTED_JURISDICTION_UNSUPPORTED");
   }
 
   // --- happy path ------------------------------------------------------------

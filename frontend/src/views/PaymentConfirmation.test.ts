@@ -68,9 +68,17 @@ describe("PaymentConfirmation", () => {
       // jsdom applies no stylesheet, so what is asserted is the opt-out itself: the controls are
       // marked print:hidden, and nothing above the reference is.
       const printedAway = (el: Element | null): boolean =>
-        el != null && (el.classList.contains("print:hidden") || printedAway(el.parentElement));
-      expect(printedAway(wrapper.get('[data-testid="print-receipt"]').element)).toBe(true);
-      expect(printedAway(wrapper.get('[data-testid="confirmation-reference"]').element)).toBe(false);
+        el != null &&
+        (el.classList.contains("print:hidden") ||
+          printedAway(el.parentElement));
+      expect(
+        printedAway(wrapper.get('[data-testid="print-receipt"]').element),
+      ).toBe(true);
+      expect(
+        printedAway(
+          wrapper.get('[data-testid="confirmation-reference"]').element,
+        ),
+      ).toBe(false);
     });
   });
 

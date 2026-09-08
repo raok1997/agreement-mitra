@@ -39,13 +39,7 @@ const editError = ref<string | null>(null);
 //                       handoff for a session and then drops the caller into the app
 // Anything else falls through to the app so deep links do not dead-end on the marketing page.
 type Route =
-  | "landing"
-  | "app"
-  | "callback"
-  | "staff"
-  | "recover"
-  | "openLink"
-  | "terms";
+  "landing" | "app" | "callback" | "staff" | "recover" | "openLink" | "terms";
 
 /** `/agreement/<uuid>` - the link emailed to the parties after payment. */
 const AGREEMENT_LINK =
@@ -216,7 +210,9 @@ function onSavedToAccount(): void {
   <!-- A recovery link is resolving, or could not be. -->
   <section v-else-if="route === 'openLink'" class="mx-auto max-w-lg p-6">
     <template v-if="linkError">
-      <h2 class="text-lg font-semibold text-slate-900">This link did not open</h2>
+      <h2 class="text-lg font-semibold text-slate-900">
+        This link did not open
+      </h2>
       <p class="mt-2 text-sm text-slate-600">{{ linkError }}</p>
       <button
         v-if="linkNeedsSignIn"
@@ -231,10 +227,7 @@ function onSavedToAccount(): void {
   </section>
   <!-- The terms of service. Like the landing page it is public and chrome-free: it is linked from
        the in-product disclaimer, and a reader following that link is not necessarily signed in. -->
-  <TermsOfService
-    v-else-if="route === 'terms'"
-    @back="leaveTerms"
-  />
+  <TermsOfService v-else-if="route === 'terms'" @back="leaveTerms" />
   <!-- "/" is the public marketing page: full-bleed, no app chrome, no API calls. -->
   <LandingPage v-else-if="route === 'landing'" @start="enterApp" />
 
@@ -330,10 +323,14 @@ function onSavedToAccount(): void {
 
       <!-- Edit an owned agreement -->
       <template v-else-if="mode === 'edit' && editTarget">
-        <h1 class="text-lg font-semibold text-ink-800 print:hidden">Edit agreement</h1>
+        <h1 class="text-lg font-semibold text-ink-800 print:hidden">
+          Edit agreement
+        </h1>
         <CaptureForm
           :agreement-id="editTarget.id"
           :initial-agreement="editTarget"
+          :state="editTarget.state ?? undefined"
+          :type="editTarget.type ?? undefined"
           @change-template="showMyAgreements"
           @saved-to-account="onSavedToAccount"
         />

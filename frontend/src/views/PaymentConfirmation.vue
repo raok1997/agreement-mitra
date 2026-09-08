@@ -52,11 +52,16 @@ function printReceipt(): void {
       AgreementMitra - payment receipt
     </p>
     <p class="text-sm font-medium text-emerald-700">Payment received</p>
-    <h2 id="payment-confirmation-heading" class="mt-1 text-xl font-semibold text-slate-900">
+    <h2
+      id="payment-confirmation-heading"
+      class="mt-1 text-xl font-semibold text-slate-900"
+    >
       Your agreement is paid for
     </h2>
 
-    <dl class="mt-6 divide-y divide-slate-200 rounded-lg border border-slate-200">
+    <dl
+      class="mt-6 divide-y divide-slate-200 rounded-lg border border-slate-200"
+    >
       <div class="flex items-baseline justify-between gap-4 px-4 py-3">
         <dt class="text-sm text-slate-600">Reference</dt>
         <dd
@@ -66,9 +71,14 @@ function printReceipt(): void {
           {{ props.reference }}
         </dd>
       </div>
-      <div v-if="props.amountLabel" class="flex items-baseline justify-between gap-4 px-4 py-3">
+      <div
+        v-if="props.amountLabel"
+        class="flex items-baseline justify-between gap-4 px-4 py-3"
+      >
         <dt class="text-sm text-slate-600">Amount paid</dt>
-        <dd class="text-sm font-medium text-slate-900">{{ props.amountLabel }}</dd>
+        <dd class="text-sm font-medium text-slate-900">
+          {{ props.amountLabel }}
+        </dd>
       </div>
     </dl>
 
@@ -81,22 +91,25 @@ function printReceipt(): void {
 
     <div class="mt-6 rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
       <template v-if="props.linkSent">
-        <p class="font-medium text-slate-900">We have emailed you a link to this agreement.</p>
-        <p class="mt-1">
-          Use it to come back to this agreement at any time. Keep the reference above as well - you
-          can ask for the link again with it.
+        <p class="font-medium text-slate-900">
+          We have emailed you a link to this agreement.
         </p>
         <p class="mt-1">
-          The link keeps working until you sign in and save the agreement to an account. After that,
-          open it by signing in instead.
+          Use it to come back to this agreement at any time. Keep the reference
+          above as well - you can ask for the link again with it.
+        </p>
+        <p class="mt-1">
+          The link keeps working until you sign in and save the agreement to an
+          account. After that, open it by signing in instead.
         </p>
       </template>
       <template v-else>
         <!-- No address was on file, so no link was sent. Say so rather than implying otherwise. -->
         <p class="font-medium text-slate-900">Write down your reference.</p>
         <p class="mt-1">
-          We do not have an email address for this agreement, so we could not send you a link. The
-          reference above is how you get back to it - keep it somewhere safe.
+          We do not have an email address for this agreement, so we could not
+          send you a link. The reference above is how you get back to it - keep
+          it somewhere safe.
         </p>
       </template>
     </div>

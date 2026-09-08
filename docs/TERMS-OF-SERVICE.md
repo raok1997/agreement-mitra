@@ -47,13 +47,21 @@ It follows that the template must fit your situation for the document to be righ
 
 We update templates as the law changes and as we correct them. An agreement you have already executed is unaffected: it keeps the wording it was generated with.
 
-## 5. What you tell us
+## 5. Where we can stamp and eSign
+
+Stamp duty is levied by each state under its own law, and there is no single national rate. So we can only buy a stamp certificate for a state whose duty we can calculate and whose certificates we can obtain. Today that is Telangana.
+
+Templates for other jurisdictions, including our national template, are available to draft, preview and download free of charge. They cannot be paid for, stamped or eSigned here, and we mark them accordingly before you start filling one in. A document you draft this way is yours to use however you wish -- including having it stamped yourself -- but it has not been stamped by us and carries no signature from this service.
+
+We add jurisdictions as we are able to. This clause is updated when we do, so it is the current list rather than a promise about the future.
+
+## 6. What you tell us
 
 You are responsible for the accuracy of what you enter. We do not verify the identity of the parties beyond the electronic-signature check described below, we do not verify ownership of the premises, and we do not check that the commercial terms you have chosen are lawful, fair or what you agreed with the other party.
 
 You must be entitled to enter into the agreement you are creating, and to provide the details of any other party you enter.
 
-## 6. Our fee
+## 7. Our fee
 
 You pay one total, and stamp duty is inside it. There is no second bill later.
 
@@ -63,7 +71,7 @@ You are shown the total, and the duty inside it, before you pay. Drafting, previ
 
 We are still building the part that works the duty out automatically -- the status board on our home page says where it has got to. Until it is live, the price you first see is the flat INR 499, which assumes duty of INR 100. Where the duty on your agreement is more than that, we correct the total to the right amount and show you the corrected figure, and the duty inside it, before you pay. What we will not do is take payment and then come back to you for more.
 
-## 7. Stamp duty
+## 8. Stamp duty
 
 > **GAP - FOR COUNSEL.** Our legal position when we buy a stamp certificate for you -- whether we do so as your agent, and what follows from that -- is with counsel. Until that is settled, treat this clause as descriptive rather than as a statement of who bears what -- in particular, whether duty we have paid on your behalf is recoverable, and from whom. What we do when we get it wrong is settled and stated below.
 
@@ -77,7 +85,7 @@ If a certificate we obtain for you is rejected or wrongly denominated because we
 
 On top of that we refund you INR 400 for the trouble -- in effect our whole charge for arranging the stamping, so the work costs you only the duty the state was always going to take. Where the certificate was rejected because of something you told us that was wrong, we will still help you put it right, but the duty on the replacement is yours.
 
-## 8. Electronic signature and identity
+## 9. Electronic signature and identity
 
 Signing is performed using Aadhaar-based electronic signature under section 3A of the Information Technology Act, 2000, through a licensed eSign Service Provider. We are not that provider and we do not perform the authentication.
 
@@ -89,7 +97,7 @@ We may ask the provider to check a signer's name against Aadhaar as part of sign
 
 A signature is complete only when the provider reports it as complete. A signing request can expire or fail at the provider's end, and if it does, the agreement is not signed.
 
-## 9. Drafts, and drafts you abandon
+## 10. Drafts, and drafts you abandon
 
 An unpaid draft is yours to abandon. You can leave at any point before payment and owe us nothing.
 
@@ -99,7 +107,7 @@ That link is a key: anyone holding it can open the agreement. It stops working o
 
 We may delete unpaid drafts that have been untouched for a long time. See the retention clause below.
 
-## 10. Refunds and cancellation
+## 11. Refunds and cancellation
 
 > **GAP - AWAITING PRODUCT INPUT.** One case is still open: what you get back once we have already bought your stamp certificate. Duty paid to the state is not ours to return, whether any of it can be recovered is limited by law, and whether the certificate is yours rather than ours in the first place is a question we have put to counsel. We would rather leave this blank than state a rule we may have no right to apply. No external customer has yet paid us, so no refund has been asked for or refused.
 
@@ -109,7 +117,7 @@ If a signing attempt fails or expires, we re-send the signing request at no char
 
 One rule covers every fixed sum these terms promise you -- the INR 400 in the stamp-duty clause, and the delay credit further down. If you paid less than the full price because a discount or promotion was applied, we reduce that sum by the discount, to a minimum of nothing. We never pay you back more than you actually paid us.
 
-## 11. How long we keep things, and deletion
+## 12. How long we keep things, and deletion
 
 > **GAP - FOR COUNSEL.** Three questions here are with counsel and their answers may change what this clause says. Whether one party may have a jointly executed instrument deleted when the other party's continued access to it depends on us. Whether three years is the right period, given that a tenancy dispute usually arises at or after the end of the term rather than when the agreement was made. And whether the eSign provider's audit trail carries a retention obligation of its own, separate from ours. See also the data-protection clause below.
 
@@ -119,7 +127,7 @@ Once everyone has signed, every party can download the signed agreement. Keep yo
 
 Deletion can be asked for by the person who created and paid for the agreement, signed in to the account it is saved to. We do not have a deletion control in the product yet -- until we do, write to us and we will do it by hand.
 
-## 12. Acceptable use
+## 13. Acceptable use
 
 Use the service to create genuine rental agreements for real arrangements you are party to or authorised to arrange.
 
@@ -129,7 +137,7 @@ Do not attempt to interfere with the service, to access agreements that are not 
 
 We may suspend or refuse service where we reasonably believe this clause is being broken.
 
-## 13. Availability and support
+## 14. Availability and support
 
 We answer messages during business hours, 9am to 5pm IST on working days.
 
@@ -141,7 +149,7 @@ If we are more than two working days late through something that was ours, we re
 
 The service is currently in a restricted beta and is not offered with any wider availability guarantee.
 
-## 14. Your personal data
+## 15. Your personal data
 
 > **GAP - FOR COUNSEL.** A privacy notice under the Digital Personal Data Protection Act, 2023 -- the purposes, the basis, the retention period, your rights and how to exercise them -- is with counsel, including whether it must be a separate notice rather than a clause in these terms. What appears here now is a description of what we hold, not the notice.
 
@@ -149,20 +157,20 @@ We collect the details you enter about the parties (name, parentage and address)
 
 We do not hold Aadhaar numbers, virtual IDs or one-time passwords. See the electronic-signature clause above for what the eSign provider handles rather than us.
 
-## 15. Our liability
+## 16. Our liability
 
 > **GAP - FOR COUNSEL.** The limitation of liability is with counsel and is deliberately not drafted by us. Nothing in these terms should be read as limiting our liability until this clause exists.
 
-## 16. Disputes and governing law
+## 17. Disputes and governing law
 
 > **GAP - FOR COUNSEL.** Governing law, jurisdiction and the dispute-resolution route are with counsel, as is whether the Consumer Protection Act, 2019 and its e-commerce rules constrain what these terms may say or require us to publish anything further.
 
-## 17. Changes to these terms
+## 18. Changes to these terms
 
 We will change these terms as the service changes and as counsel completes the sections marked above. The version that applies to an agreement is the version published when you paid for it.
 
 The date this draft last changed is shown at the top of this page.
 
-## 18. Contact
+## 19. Contact
 
 Write to support@agreementmitra.com. If your message is about a specific agreement, quote its reference.

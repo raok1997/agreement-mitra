@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { listTemplates, type TemplateSummary } from "../api/templateCatalog";
+import { fetchEligibleOrNone } from "../api/jurisdictions";
 
 // The State x Type picker: the entry step of the capture flow. Lists PUBLISHED catalog entries
 // (template-catalog M4) and carries the chosen (state, type) into capture. It is a browse/select
@@ -16,6 +17,10 @@ const emit = defineEmits<{
 }>();
 
 const rows = ref<TemplateSummary[]>([]);
+// null = "we could not find out", which marks NOTHING rather than marking everything draft-only.
+// Enforcement is server-side either way; falsely telling an eligible customer they cannot be
+// stamped would turn a transient network error into a lost sale.
+const eligibleStates = ref<string[] | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
@@ -41,6 +46,19 @@ const filtered = computed(() => {
   });
 });
 
+/**
+ * Whether this template can be stamped and eSigned, or only drafted and downloaded. Joined on the
+ * state code with case normalised on both sides, so the join cannot fail on casing.
+ */
+function isDraftOnly(r: TemplateSummary): boolean {
+  if (eligibleStates.value === null) return false;
+  // Normalise BOTH sides here rather than trusting the api layer to have done it. The join is the
+  // thing that must not fail on casing, so the guarantee belongs where the join happens - a
+  // mismatch here would silently mislabel an eligible jurisdiction as draft-only.
+  const eligible = eligibleStates.value.map((c) => c.trim().toUpperCase());
+  return !eligible.includes(r.state.trim().toUpperCase());
+}
+
 function choose(r: TemplateSummary): void {
   emit("select", { state: r.state, type: r.type });
 }
@@ -49,7 +67,14 @@ async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    rows.value = await listTemplates();
+    // Templates and eligibility are fetched together, but only the template list is allowed to
+    // fail the screen: eligibility is disclosure, so it degrades to "mark nothing" on its own.
+    const [templates, eligible] = await Promise.all([
+      listTemplates(),
+      fetchEligibleOrNone(),
+    ]);
+    rows.value = templates;
+    eligibleStates.value = eligible;
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Could not load templates.";
   } finally {
@@ -150,14 +175,30 @@ onMounted(load);
           <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.state }}</span>
           <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.type }}</span>
           <span class="rounded bg-slate-100 px-2 py-0.5">v{{ r.version }}</span>
+          <span
+            v-if="isDraftOnly(r)"
+            class="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
+            :data-testid="`draft-only-${r.id}`"
+          >
+            Draft &amp; download only
+          </span>
         </div>
+        <p
+          v-if="isDraftOnly(r)"
+          class="text-xs text-amber-700"
+          :data-testid="`draft-only-note-${r.id}`"
+        >
+          You can fill this in, preview it and download it. Stamping and eSign
+          are not yet available for this jurisdiction, so it cannot be paid for
+          or signed here.
+        </p>
         <button
           type="button"
           class="mt-1 rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white"
           :data-testid="`select-${r.id}`"
           @click="choose(r)"
         >
-          Use this template
+          {{ isDraftOnly(r) ? "Draft this template" : "Use this template" }}
         </button>
       </div>
     </div>

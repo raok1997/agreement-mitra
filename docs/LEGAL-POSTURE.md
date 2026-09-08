@@ -109,10 +109,34 @@ Four steps, smallest first. The seam already exists and is documented as such:
 `PaymentPricing.priceFor(agreementId)` takes the agreement id today purely so a duty calculation
 can read the state, rent and term from it later.
 
-0. **Gate the jurisdiction (own CR, do first).** Stop an `IN` agreement reaching pay-and-stamp.
-   It is the smallest change here and the only one that closes a hazard rather than adding a
-   capability, and every step below is undefined until it lands. Whether `IN` stays as a
-   draft-and-download template or leaves the catalog entirely is the CR's question.
+0. **Gate the jurisdiction — DONE (2026-09-08), `jurisdiction-checkout-gating`.** An `IN`
+   agreement can no longer reach pay-and-stamp. The CR's open question was answered: **`IN` stays
+   as a draft-and-download template** and does not leave the catalog. Two facts decided it — the
+   unpaid `GET /api/agreements/{id}/preview` path already existed, so draft-only cost no new
+   build; and `IN` is each layer set's own `base.yaml` state dimension with `TG` as an overlay on
+   top of it, so removing it would have fought the architecture.
+
+   Three things about the shipped shape are worth carrying forward:
+
+   - **Four gates, not one.** Refusal happens at finalise, checkout, e-stamp intake and eSign
+     initiation — every step that commits us to something real in a jurisdiction. Finalise matters
+     because it is what places the order into the staff stamp queue; the two staff-facing steps
+     matter because `PaymentGate` is otherwise their only control and **a staff `waive` satisfies
+     it**, so "paid" never implied "fulfillable".
+   - **An allowlist (`jurisdiction.eligible`, default `TG`), not an `IN` denylist**, and `IN`
+     cannot be admitted by editing config. A denylist would have passed every test written that
+     day and been silently wrong the moment Karnataka appeared — it would have defaulted to
+     eligible with nothing computing its duty.
+   - **It fails closed on an unknown jurisdiction**, which was a deliberate **breaking change**:
+     `state`/`type` are documented optional at create, so a dimension-less agreement had a working
+     path to paid fulfilment and no longer does. Drafting and preview are untouched.
+
+   **This allowlist is temporary by design.** `state-stamp-duty-quoting` supersedes it with real
+   per-state duty rules, and that change must explicitly modify or remove the
+   `jurisdiction-eligibility` requirements when it lands, or the living specs will carry two
+   sources of eligibility truth. The requirement text is written against the **duty jurisdiction**
+   rather than the template's state dimension precisely so that change can still let a customer on
+   a national template choose their property's state.
 1. **Put the rule in the code (hours).** Replace the single `amount.minor-units` with
    `platform-fee` (39900) and `duty-allowance` (10000), and have `priceFor` return
    `max(fee + allowance, fee + duty)`. With duty unknown that is INR 499 — behaviour identical to
@@ -120,7 +144,7 @@ can read the state, rent and term from it later.
 2. **Compute duty before payment (own CR).** The `rules` module resolves a mandatory, computed
    `stampDutyPayable` from the fields the agreement already carries (state, rent, deposit, term);
    `priceFor` reads it; and a pre-payment confirmation screen shows the customer the total and
-   the duty inside it. That screen is what makes clause 6's "you are shown the total, and the
+   the duty inside it. That screen is what makes clause 7's "you are shown the total, and the
    duty inside it, before you pay" true, so it closes the ToS gap rather than merely enabling
    pricing. The existing free-text `stampDutyAmount` field is retired as a step inside this CR,
    not as a proposal of its own.
@@ -129,7 +153,7 @@ can read the state, rent and term from it later.
    This is what lets step 2 be an estimate at all — the terms guarantee no second bill, so an
    under-estimate has to be absorbed and an over-estimate has to come back.
 
-Step 0 is urgent and small. Step 1 is worth doing regardless, being the difference between a
+Step 0 has landed. Step 1 is worth doing regardless, being the difference between a
 constant and a stated rule. Steps 2 and 3 must land before the first external customer, since
 until they do we absorb every rupee of duty above INR 100 on every order.
 
@@ -191,7 +215,7 @@ the service" is the most defensible sentence available. Put the real per-order c
 this file when it exists; revisit only if the gap turns out to be large.
 
 **Decided 2026-09-07: the INR 399 add-on stays flat.** Revisit when the real per-order cost
-stack is known; if it ever changes, clause 6 and both INR 400 figures change with it.
+stack is known; if it ever changes, clause 7 and both INR 400 figures change with it.
 
 **Refunds never exceed what was actually paid.** Every fixed sum the terms promise (the INR 400
 and the delay credit) is reduced by any discount the customer received, floored at nothing.

@@ -5,6 +5,7 @@ import static org.testcontainers.containers.PostgreSQLContainer.POSTGRESQL_PORT;
 import io.minio.MinioClient;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.rnorth.ducttape.unreliables.Unreliables;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -36,6 +37,17 @@ public class HarnessTestConfig {
     return new PostgreSQLContainer<>("postgres:16-alpine")
         .waitingFor(
             new WaitAllStrategy()
+                // MUST come before withStrategy: WaitAllStrategy's default budget is 30s, HALF the
+                // 60s a bare Postgres wait gets, and in the default WITH_OUTER_TIMEOUT mode
+                // withStrategy() stamps the CURRENT outer timeout onto each child as it is added.
+                // So wrapping the stock wait silently halved it, and setting this afterwards would
+                // leave the children on 30s. That shortfall is why a loaded run fails on
+                // postgresContainer and never on MinIO, whose stock HTTP wait keeps its own 60s:
+                // a full suite starts a Postgres + MinIO pair per distinct Spring context (~19
+                // here), and under that contention 30s is not enough for the container to come up
+                // AND the host port forwarder to publish. The symptom is a startup TimeoutException
+                // that reshuffles between runs and always passes on an isolated re-run.
+                .withStartupTimeout(Duration.ofMinutes(3))
                 // Postgres' own default: the service is up INSIDE the container. Kept, because the
                 // host-port check below is necessary but not sufficient (see hostPortAccepts).
                 .withStrategy(

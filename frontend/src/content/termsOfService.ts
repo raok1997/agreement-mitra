@@ -75,7 +75,16 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "5. What you tell us",
+    heading: "5. Where we can stamp and eSign",
+    status: "drafted",
+    body: [
+      "Stamp duty is levied by each state under its own law, and there is no single national rate. So we can only buy a stamp certificate for a state whose duty we can calculate and whose certificates we can obtain. Today that is Telangana.",
+      "Templates for other jurisdictions, including our national template, are available to draft, preview and download free of charge. They cannot be paid for, stamped or eSigned here, and we mark them accordingly before you start filling one in. A document you draft this way is yours to use however you wish -- including having it stamped yourself -- but it has not been stamped by us and carries no signature from this service.",
+      "We add jurisdictions as we are able to. This clause is updated when we do, so it is the current list rather than a promise about the future.",
+    ],
+  },
+  {
+    heading: "6. What you tell us",
     status: "drafted",
     body: [
       "You are responsible for the accuracy of what you enter. We do not verify the identity of the parties beyond the electronic-signature check described below, we do not verify ownership of the premises, and we do not check that the commercial terms you have chosen are lawful, fair or what you agreed with the other party.",
@@ -83,7 +92,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "6. Our fee",
+    heading: "7. Our fee",
     status: "drafted",
     body: [
       "You pay one total, and stamp duty is inside it. There is no second bill later.",
@@ -93,7 +102,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "7. Stamp duty",
+    heading: "8. Stamp duty",
     status: "counsel",
     gap: "Our legal position when we buy a stamp certificate for you -- whether we do so as your agent, and what follows from that -- is with counsel. Until that is settled, treat this clause as descriptive rather than as a statement of who bears what -- in particular, whether duty we have paid on your behalf is recoverable, and from whom. What we do when we get it wrong is settled and stated below.",
     body: [
@@ -105,7 +114,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "8. Electronic signature and identity",
+    heading: "9. Electronic signature and identity",
     status: "drafted",
     body: [
       "Signing is performed using Aadhaar-based electronic signature under section 3A of the Information Technology Act, 2000, through a licensed eSign Service Provider. We are not that provider and we do not perform the authentication.",
@@ -116,7 +125,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "9. Drafts, and drafts you abandon",
+    heading: "10. Drafts, and drafts you abandon",
     status: "drafted",
     body: [
       "An unpaid draft is yours to abandon. You can leave at any point before payment and owe us nothing.",
@@ -126,7 +135,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "10. Refunds and cancellation",
+    heading: "11. Refunds and cancellation",
     status: "product",
     gap: "One case is still open: what you get back once we have already bought your stamp certificate. Duty paid to the state is not ours to return, whether any of it can be recovered is limited by law, and whether the certificate is yours rather than ours in the first place is a question we have put to counsel. We would rather leave this blank than state a rule we may have no right to apply. No external customer has yet paid us, so no refund has been asked for or refused.",
     body: [
@@ -136,7 +145,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "11. How long we keep things, and deletion",
+    heading: "12. How long we keep things, and deletion",
     status: "counsel",
     gap: "Three questions here are with counsel and their answers may change what this clause says. Whether one party may have a jointly executed instrument deleted when the other party's continued access to it depends on us. Whether three years is the right period, given that a tenancy dispute usually arises at or after the end of the term rather than when the agreement was made. And whether the eSign provider's audit trail carries a retention obligation of its own, separate from ours. See also the data-protection clause below.",
     body: [
@@ -146,7 +155,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "12. Acceptable use",
+    heading: "13. Acceptable use",
     status: "drafted",
     body: [
       "Use the service to create genuine rental agreements for real arrangements you are party to or authorised to arrange.",
@@ -156,7 +165,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "13. Availability and support",
+    heading: "14. Availability and support",
     status: "drafted",
     body: [
       "We answer messages during business hours, 9am to 5pm IST on working days.",
@@ -167,7 +176,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "14. Your personal data",
+    heading: "15. Your personal data",
     status: "counsel",
     gap: "A privacy notice under the Digital Personal Data Protection Act, 2023 -- the purposes, the basis, the retention period, your rights and how to exercise them -- is with counsel, including whether it must be a separate notice rather than a clause in these terms. What appears here now is a description of what we hold, not the notice.",
     body: [
@@ -176,19 +185,19 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "15. Our liability",
+    heading: "16. Our liability",
     status: "counsel",
     gap: "The limitation of liability is with counsel and is deliberately not drafted by us. Nothing in these terms should be read as limiting our liability until this clause exists.",
     body: [],
   },
   {
-    heading: "16. Disputes and governing law",
+    heading: "17. Disputes and governing law",
     status: "counsel",
     gap: "Governing law, jurisdiction and the dispute-resolution route are with counsel, as is whether the Consumer Protection Act, 2019 and its e-commerce rules constrain what these terms may say or require us to publish anything further.",
     body: [],
   },
   {
-    heading: "17. Changes to these terms",
+    heading: "18. Changes to these terms",
     status: "drafted",
     body: [
       "We will change these terms as the service changes and as counsel completes the sections marked above. The version that applies to an agreement is the version published when you paid for it.",
@@ -196,7 +205,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
-    heading: "18. Contact",
+    heading: "19. Contact",
     status: "drafted",
     body: [
       "Write to support@agreementmitra.com. If your message is about a specific agreement, quote its reference.",

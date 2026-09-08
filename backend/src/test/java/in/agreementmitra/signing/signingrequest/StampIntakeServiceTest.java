@@ -19,6 +19,7 @@ import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
 import in.agreementmitra.signing.agreement.StaffPartyView;
@@ -71,6 +72,11 @@ class StampIntakeServiceTest {
    */
   @Mock private PaymentGate paymentGate;
 
+  // Permissive by default (a Mockito mock does nothing), which is what these tests want: they
+  // exercise the OTHER preconditions. The jurisdiction gate's own behaviour is covered by
+  // JurisdictionEligibilityTest and by the integration tests.
+  @Mock private JurisdictionEligibility jurisdiction;
+
   @Mock private SigningRequestService signingRequestService;
 
   private final CertificateScanValidator scanValidator = new CertificateScanValidator();
@@ -84,6 +90,7 @@ class StampIntakeServiceTest {
         blobStore,
         auditor,
         paymentGate,
+        jurisdiction,
         signingRequestService);
   }
 

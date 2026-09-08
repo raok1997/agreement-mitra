@@ -58,6 +58,8 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       "urn:agreementmitra:problem:certificate-already-used";
   private static final String TYPE_ORDER_NOT_PLACED = "urn:agreementmitra:problem:order-not-placed";
   private static final String TYPE_PAYMENT_REQUIRED = "urn:agreementmitra:problem:payment-required";
+  private static final String TYPE_JURISDICTION_UNSUPPORTED =
+      "urn:agreementmitra:problem:jurisdiction-unsupported";
   private static final String TYPE_PAYMENT_REFERENCE_ALREADY_USED =
       "urn:agreementmitra:problem:payment-reference-already-used";
   private static final String TYPE_AGREEMENT_CLOSED = "urn:agreementmitra:problem:agreement-closed";
@@ -151,6 +153,7 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               "Draft required",
               "A draft must be uploaded before signing can be requested.");
       case CONTACT_REQUIRED -> contactRequiredProblem(ex);
+      case JURISDICTION_UNSUPPORTED -> jurisdictionUnsupportedProblem(ex);
       case NOT_SIGNABLE ->
           problem(
               HttpStatus.CONFLICT,
@@ -308,6 +311,37 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             "Every party needs a contact we can reach them on before payment.");
     if (!ex.partyLabels().isEmpty()) {
       body.setProperty("unreachableParties", ex.partyLabels());
+    }
+    return body;
+  }
+
+  /**
+   * The agreement's duty jurisdiction is not one we can fulfil. A <b>distinct</b> type from
+   * payment-required on purpose: a different person resolves each, so an operator reading a 409
+   * must be able to tell which precondition stopped the pipeline.
+   *
+   * <p>Both extra properties are safe under the never-echo invariant because both are
+   * <b>server-derived</b>, not request-derived: the rejected code comes from the agreement's pinned
+   * template and the eligible list from configuration. The eligible list is public by construction
+   * - the template picker and the published terms both disclose it - and it names only what IS
+   * eligible, never what is under consideration.
+   *
+   * <p>The wording avoids "we do not serve your state": the template remains fully usable to draft
+   * and download, and only stamping and eSign are unavailable.
+   */
+  private static ProblemDetail jurisdictionUnsupportedProblem(ConflictException ex) {
+    ProblemDetail body =
+        problem(
+            HttpStatus.CONFLICT,
+            TYPE_JURISDICTION_UNSUPPORTED,
+            "Jurisdiction not available for stamping",
+            "This agreement can be drafted and downloaded, but stamping and eSign are not yet"
+                + " available for its jurisdiction.");
+    if (ex.rejectedJurisdiction() != null) {
+      body.setProperty("jurisdiction", ex.rejectedJurisdiction());
+    }
+    if (!ex.eligibleJurisdictions().isEmpty()) {
+      body.setProperty("eligibleJurisdictions", ex.eligibleJurisdictions());
     }
     return body;
   }

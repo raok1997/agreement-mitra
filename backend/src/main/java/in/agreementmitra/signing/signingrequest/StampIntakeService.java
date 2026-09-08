@@ -10,6 +10,7 @@ import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
 import in.agreementmitra.signing.agreement.StampInfo;
 import in.agreementmitra.signing.api.StampIntakeResponse;
@@ -75,6 +76,8 @@ public class StampIntakeService {
   private static final String OUTCOME_DRAFT_MISSING = "REJECTED_DRAFT_MISSING";
   private static final String OUTCOME_DUPLICATE_CERTIFICATE = "REJECTED_DUPLICATE_CERTIFICATE";
   private static final String OUTCOME_PAYMENT_REQUIRED = "REJECTED_PAYMENT_REQUIRED";
+  private static final String OUTCOME_JURISDICTION_UNSUPPORTED =
+      "REJECTED_JURISDICTION_UNSUPPORTED";
   private static final String OUTCOME_COMPOSITION_FAILED = "REJECTED_COMPOSITION_FAILED";
   private static final String OUTCOME_ERROR = "REJECTED_ERROR";
 
@@ -85,6 +88,7 @@ public class StampIntakeService {
   private final BlobStore blobStore;
   private final StampIntakeAuditor auditor;
   private final PaymentGate paymentGate;
+  private final JurisdictionEligibility jurisdiction;
 
   /**
    * The signing flow, used ONLY for the optional kick-off after a stamp is attached. Intake still
@@ -101,6 +105,7 @@ public class StampIntakeService {
       BlobStore blobStore,
       StampIntakeAuditor auditor,
       PaymentGate paymentGate,
+      JurisdictionEligibility jurisdiction,
       SigningRequestService signingRequestService) {
     this.agreementService = agreementService;
     this.stampProvider = stampProvider;
@@ -109,6 +114,7 @@ public class StampIntakeService {
     this.blobStore = blobStore;
     this.auditor = auditor;
     this.paymentGate = paymentGate;
+    this.jurisdiction = jurisdiction;
     this.signingRequestService = signingRequestService;
   }
 
@@ -184,6 +190,13 @@ public class StampIntakeService {
     // wondering where an order went. The console shows its payment state; a STAFF waiver is the
     // out-of-band escape hatch when money arrives some other way.
     paymentGate.require(agreementId);
+
+    // (1b) JURISDICTION GATE. Independent of the payment gate above, NOT implied by it: a staff
+    // waiver sets WAIVED, which satisfies that gate, so "paid" does not imply "fulfillable". Stamp
+    // duty is state law, so an agreement without an eligible duty jurisdiction has no state whose
+    // duty could have been paid and no defined place this certificate could have been bought.
+    // Checked before the scan is stored and before any state changes, so a refusal writes nothing.
+    jurisdiction.require(agreementId);
 
     // (2) The scan is untrusted input: magic bytes, byte ceiling, and DECODED pixel bounds. Rejects
     // with 400 having written nothing and changed no state -- the request stays in PDF_GENERATED
@@ -421,6 +434,10 @@ public class StampIntakeService {
       // Payment is a distinct audit outcome, not "some error": an operator reading the trail must
       // be able to see that the gate stopped this upload, not a bad scan or a spent certificate.
       case PAYMENT_REQUIRED -> OUTCOME_PAYMENT_REQUIRED;
+      // Same argument as payment above, and it needs stating because this switch HAS a default and
+      // would therefore have swallowed this case silently: an operator reading the trail must see
+      // that the jurisdiction gate stopped this upload, not "some error".
+      case JURISDICTION_UNSUPPORTED -> OUTCOME_JURISDICTION_UNSUPPORTED;
       default -> OUTCOME_ERROR;
     };
   }
