@@ -224,6 +224,17 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
 
 ## Other queued non-goals (not scheduled)
 
+**Terms-of-service acceptance checkpoint** — nothing today records that a user
+agreed to the terms. `/terms` is linked (landing footer, `LegalDisclaimer` on
+the capture/contact/payment screens) but a link is not assent: we store no
+timestamp, no terms version, and no per-agreement record of what the customer
+accepted. Clause 17 says "the version that applies to an agreement is the
+version published when you paid for it", which we currently cannot evidence.
+Needs deciding before the first external customer — a checkbox or
+click-through at save/pay, persisting the accepted version (the template
+fingerprint pattern already in `signing` is the model). Added 2026-09-08.
+
+
 STAMP_FAILED orphan recovery (**re-scoped**: `PDF_GENERATED` is now a
 **durable** state — a request rests there for however long staff take to buy
 the e-stamp, potentially days — so it must NEVER be reaped as an orphan; only

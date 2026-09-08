@@ -12,7 +12,7 @@ import wordmark from "../assets/logo-wordmark.svg";
 
 const emit = defineEmits<{ (e: "start"): void }>();
 
-const CONTACT_EMAIL = "hello@agreementmitra.com";
+const CONTACT_EMAIL = "support@agreementmitra.com";
 
 const steps = [
   {

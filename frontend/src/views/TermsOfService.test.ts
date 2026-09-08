@@ -98,7 +98,12 @@ describe("TermsOfService", () => {
     expect(text).toContain(
       "still building the part that works the duty out automatically",
     );
-    expect(text).toContain("we have been absorbing the difference");
+    // No practice history is claimed -- no external customer has yet paid us, so the clause states
+    // what we will do about a duty above INR 100, not what we have been doing.
+    expect(text).not.toContain("we have been absorbing the difference");
+    expect(text).toContain(
+      "we correct the total to the right amount and show you the corrected figure",
+    );
     // The promise that must survive whatever the pricing does: never a second bill.
     expect(text).toContain("take payment and then come back to you for more");
   });

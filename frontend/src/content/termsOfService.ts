@@ -35,7 +35,7 @@ export const TERMS_STATUS_BANNER =
   "you can read beats terms that do not exist -- not because it is finished.";
 
 /** The date the draft last changed. Bumped by hand when a clause changes. */
-export const TERMS_LAST_UPDATED = "7 September 2026";
+export const TERMS_LAST_UPDATED = "8 September 2026";
 
 export const TERMS_CLAUSES: Clause[] = [
   {
@@ -89,7 +89,7 @@ export const TERMS_CLAUSES: Clause[] = [
       "You pay one total, and stamp duty is inside it. There is no second bill later.",
       "That total is INR 499 where the stamp duty on your agreement is INR 100 or less. Where the duty is more than INR 100, the total is INR 499 plus the amount by which the duty exceeds INR 100. So a higher duty raises what you pay by exactly what the state charges, and by nothing else.",
       "You are shown the total, and the duty inside it, before you pay. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due.",
-      "We are still building the part that works the duty out automatically -- the status board on our home page says where it has got to. Until it is live you pay the flat INR 499, and where the duty turns out to be more than INR 100 we have been absorbing the difference. If that ever stops being something we can do, we will tell you the total before taking your money. What we will not do is take payment and then come back to you for more.",
+      "We are still building the part that works the duty out automatically -- the status board on our home page says where it has got to. Until it is live, the price you first see is the flat INR 499, which assumes duty of INR 100. Where the duty on your agreement is more than that, we correct the total to the right amount and show you the corrected figure, and the duty inside it, before you pay. What we will not do is take payment and then come back to you for more.",
     ],
   },
   {
@@ -199,7 +199,7 @@ export const TERMS_CLAUSES: Clause[] = [
     heading: "18. Contact",
     status: "drafted",
     body: [
-      "Write to hello@agreementmitra.com. If your message is about a specific agreement, quote its reference.",
+      "Write to support@agreementmitra.com. If your message is about a specific agreement, quote its reference.",
     ],
   },
 ];

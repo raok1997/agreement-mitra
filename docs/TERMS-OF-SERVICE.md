@@ -4,7 +4,7 @@
 
 # AgreementMitra — Terms of Service (DRAFT)
 
-**Last updated:** 7 September 2026
+**Last updated:** 8 September 2026
 
 > This is a draft, published during a restricted beta and pending review by Indian counsel. Sections marked below are deliberately incomplete. We publish it in this state because a draft you can read beats terms that do not exist -- not because it is finished.
 
@@ -61,7 +61,7 @@ That total is INR 499 where the stamp duty on your agreement is INR 100 or less.
 
 You are shown the total, and the duty inside it, before you pay. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due.
 
-We are still building the part that works the duty out automatically -- the status board on our home page says where it has got to. Until it is live you pay the flat INR 499, and where the duty turns out to be more than INR 100 we have been absorbing the difference. If that ever stops being something we can do, we will tell you the total before taking your money. What we will not do is take payment and then come back to you for more.
+We are still building the part that works the duty out automatically -- the status board on our home page says where it has got to. Until it is live, the price you first see is the flat INR 499, which assumes duty of INR 100. Where the duty on your agreement is more than that, we correct the total to the right amount and show you the corrected figure, and the duty inside it, before you pay. What we will not do is take payment and then come back to you for more.
 
 ## 7. Stamp duty
 
