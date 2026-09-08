@@ -279,6 +279,11 @@ auth:
 documents:
   footer:
     platform-url: ${DOCUMENT_FOOTER_PLATFORM_URL:agreementmitra.com}
+    # Screen-only advisory rendered under the document body, beside the provenance line. It is
+    # hidden in print media, so it never reaches the executed instrument (a deliberate decision --
+    # counsel brief Q6(d)). Lives here, not in the documents module, for the same reason
+    # platform-url does: the module holds no brand literal and no legal copy. Blank omits it.
+    screen-notice: ${DOCUMENT_FOOTER_SCREEN_NOTICE:AgreementMitra is not a law firm and this is not legal advice. This document is generated from a template and is not reviewed by a lawyer for your circumstances. See the terms of service at agreementmitra.com/terms.}
 
 logging:
   level:

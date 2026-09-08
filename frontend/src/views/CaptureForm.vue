@@ -27,6 +27,7 @@ import ContactConfirmation, {
   type PartyContact,
 } from "./ContactConfirmation.vue";
 import PaymentConfirmation from "./PaymentConfirmation.vue";
+import LegalDisclaimer from "../components/LegalDisclaimer.vue";
 import {
   formatMinorUnits,
   getPaymentProgress,
@@ -1314,6 +1315,9 @@ onBeforeUnmount(() => {
     >
       {{ claimError }}
     </p>
+    <!-- The review screen. This is where the customer is looking at the document they are about to
+         commit to, so it is where the notice has to be -- not on the marketing page. -->
+    <LegalDisclaimer variant="bar" />
   </div>
 
   <!-- Section modal (focus-trapped; full-screen bottom sheet on phone) -->

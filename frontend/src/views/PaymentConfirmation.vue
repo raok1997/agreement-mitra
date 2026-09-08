@@ -20,6 +20,8 @@
 // email; with no contact on file it says so plainly rather than implying a message that will never
 // arrive.
 
+import LegalDisclaimer from "../components/LegalDisclaimer.vue";
+
 const props = defineProps<{
   /** The agreement's tracking reference. */
   reference: string;
@@ -120,5 +122,9 @@ function printReceipt(): void {
     <p class="mt-2 text-xs text-slate-500 print:hidden">
       Pick "Save as PDF" in the print dialog to keep a copy on your device.
     </p>
+
+    <!-- print:hidden inside the component: this is guidance about the service, and the thing being
+         printed here is a payment receipt. -->
+    <LegalDisclaimer />
   </section>
 </template>

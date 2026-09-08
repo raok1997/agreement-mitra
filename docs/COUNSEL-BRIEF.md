@@ -46,8 +46,10 @@ us a clause is wrong, we can identify exactly which agreements carry it.
 1. **Answer Questions 1 to 5** on the instrument itself (Part A). Each is a discrete
    drafting decision we have already taken provisionally; each is a small, contained change
    if you disagree.
-2. **Draft our terms of service** (Question 6, Part B). We would rather you drafted these
-   than that we adapted someone else's.
+2. **Review and complete our draft terms of service, and fill the gaps we have marked**
+   (Question 6, Part B). We have drafted the half we are competent to draft and left the rest
+   as labelled, deliberate gaps rather than adapting someone else's terms. The draft is at
+   **Annexure C**.
 3. **Advise on professional indemnity cover** (Question 7, Part C) — specifically on what an
    insurer will require of us, not on whether we should buy it.
 4. **Advise on the legal-advice boundary** (Question 8, Part D). This concerns a feature we
@@ -266,18 +268,42 @@ of the same addendum described at Question 2. It is a one-line change.
 
 # Part B — Terms of service
 
-## Question 6 — Please draft our terms of service, and advise on their scope
+## Question 6 — Please review and complete our draft terms of service, and advise on their scope
 
-**What we do now.** We have none. The only disclaimer anywhere on the service is a line at
-the foot of the FAQ on our marketing page, which reads:
+**What we do now.** We have a **draft**, reproduced in full at **Annexure C** and published on
+the service at `agreementmitra.com/terms`. It is marked on its face as a draft pending your
+review. We ask you to review it as a whole and to complete the sections it leaves open.
 
-> "The answers above are general information about how rental agreements and stamping work
-> in India. They are not legal advice, and they are not a substitute for a lawyer on your
-> specific tenancy."
+Two kinds of gap are marked in it, and the distinction matters to what we are asking of you:
 
-That disclaimer is attached to our **marketing copy**. The generated agreement itself
-carries no notice, and nothing in the product flow disclaims anything. We are conscious that
-this is exactly the wrong way round.
+- **FOR COUNSEL** — a section we have deliberately not written, because it is not ours to
+  write. These are the ones we are asking you to draft: limitation of liability; our position
+  on the stamp payment; the data-protection notice; and governing law, jurisdiction and
+  disputes.
+- **AWAITING PRODUCT INPUT** — a commercial term the company has not itself decided yet. **One
+  remains:** what a customer gets back once we have already bought their stamp certificate. We
+  have left it empty rather than filling it with a plausible figure, precisely so that you are
+  not asked to review a number we never intended — and it waits on your answer to Question 6(a)
+  as much as on us, since we do not yet know whether that certificate is ours to withhold.
+
+Two features of the drafted terms we would particularly like you to look at. First, **every
+compensation we promise is a fixed sum** (INR 400 where we obtain a wrong certificate; INR 100
+per working day to a maximum of INR 400 for a late stamping), and each is set at approximately
+our own charge for the service. We deliberately did not express either as a share of the stamp
+duty, because duty rises with the customer's rent while our charge does not. Please tell us
+whether a limit of that kind is enforceable here, and whether the Consumer Protection Act, 2019
+constrains it. Second, **these are promises we have imposed on
+ourselves** rather than liabilities the general law would impose, and we are conscious from
+Question 7 that an indemnity insurer may treat the two differently — we would welcome your view
+on the interaction before we publish a final version.
+
+**We have also moved the disclaimer.** When we first drafted this brief, the only "not legal
+advice" notice anywhere on the service was a line at the foot of the FAQ on our marketing
+page — our **marketing copy** was disclaimed and the product was not, which we were conscious
+was exactly the wrong way round. The notice now appears on the screens where the customer
+reviews the document, confirms contact details, and completes payment, and on the on-screen
+document preview; each instance links to the terms. See (d) below for the one placement
+question we have left open for you.
 
 **Why.** The service has been in restricted use by the founding team only, so nothing has
 depended on it. That protection expires the moment we admit an external customer.
@@ -321,8 +347,14 @@ registration step is itself a problem.
 "this is not legal advice" notice belongs in the terms and on the screens the user sees
 before executing, and that printing such a notice **inside the executed instrument itself**
 would be odd and might weaken the document. We would rather have your view than act on our
-instinct. We have already decided to place the notice on the on-screen preview and on the
-confirmation screens; we have not decided about the document.
+instinct.
+
+We have now acted on the first half of that instinct: the notice is live on the on-screen
+preview of the document and on the review, contact and payment screens. It is built so that
+it renders **on screen only** and is suppressed whenever the document is printed or turned
+into a PDF, so it appears in neither the executed instrument nor a draft PDF the customer
+downloads. **The question we have left open is whether it should appear in the executed
+document after all**, and it is a one-line change for us either way.
 
 ---
 
@@ -571,3 +603,16 @@ then contains:
 
 In addition, in a Telangana agreement the jurisdiction city at Annexure A, clauses 21 and 22
 defaults to **Hyderabad**.
+
+---
+
+# Annexure C — Draft terms of service
+
+The draft accompanies this brief as the separate document `TERMS-OF-SERVICE.md`. The same
+text is published to customers at `agreementmitra.com/terms`, marked on its face as a draft
+pending your review.
+
+It is a separate document rather than being set out inline so that what you review is
+word-for-word what the customer reads, with no intermediate transcription that could fall out
+of step. Annexures A and B are reproduced inline because the template wording they carry has
+no equivalent published face.

@@ -47,6 +47,19 @@ describe("ContactConfirmation", () => {
     expect(text).toContain("signing notifications");
   });
 
+  it("carries the not-legal-advice notice, linking to the terms", () => {
+    // The last screen before money changes hands (docs/LEGAL-POSTURE.md item 2).
+    const wrapper = mount(ContactConfirmation, { props: { parties: complete } });
+    expect(wrapper.get('[data-testid="legal-disclaimer"]').text()).toContain(
+      "not a law firm",
+    );
+    expect(
+      wrapper
+        .get('[data-testid="legal-disclaimer-terms-link"]')
+        .attributes("href"),
+    ).toBe("/terms");
+  });
+
   it("rejects a malformed mobile without demanding one", () => {
     const wrapper = mount(ContactConfirmation, {
       props: {

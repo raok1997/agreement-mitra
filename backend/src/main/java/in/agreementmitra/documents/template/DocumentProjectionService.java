@@ -63,6 +63,15 @@ class DocumentProjectionService implements DocumentProjectionApi {
   private final String platformUrl;
 
   /**
+   * The screen-only advisory ("not a law firm / not legal advice", pointing at the terms) shown
+   * beneath the compiled document body, resolved once from configuration and passed into the pure
+   * compiler. Blank means "omit the notice". Like {@link #platformUrl} it is app configuration, not
+   * a literal the {@code documents} module owns -- and because the compiler renders it screen-only,
+   * it never reaches the executed instrument.
+   */
+  private final String screenNotice;
+
+  /**
    * Injected clock used only to resolve the SYSDATE fallback for the execution date (design D3):
    * the app supplies {@code Clock.systemDefaultZone()}; tests inject {@code Clock.fixed(...)} to
    * pin the header deterministically. Reading it happens here at the projection layer, never in the
@@ -80,6 +89,7 @@ class DocumentProjectionService implements DocumentProjectionApi {
     this.compiler = compiler;
     this.htmlPdfRenderer = htmlPdfRenderer;
     this.platformUrl = footerProperties.platformUrl();
+    this.screenNotice = footerProperties.screenNotice();
     this.clock = clock;
   }
 
@@ -159,7 +169,8 @@ class DocumentProjectionService implements DocumentProjectionApi {
     Set<String> active = activeSections == null ? Set.of() : new HashSet<>(activeSections);
     // The provenance line (reference + platform URL) is compiled body content shared by both faces,
     // so preview and PDF stay byte-for-byte in parity.
-    return compiler.compile(effective, coerced, executionDate, active, reference, platformUrl);
+    return compiler.compile(
+        effective, coerced, executionDate, active, reference, platformUrl, screenNotice);
   }
 
   /**

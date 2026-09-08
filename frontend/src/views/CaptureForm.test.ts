@@ -873,4 +873,23 @@ describe("CaptureForm: capture-state persistence (M5)", () => {
       ).value,
     ).toBe("One indoor cat");
   });
+
+  it("carries the not-legal-advice notice on the review screen, linking to the terms", async () => {
+    // Before this, the only disclaimer on the service was at the foot of the marketing FAQ: the
+    // copy was disclaimed and the product was not (docs/LEGAL-POSTURE.md item 2). This is the
+    // screen where the customer is looking at the document they are about to commit to.
+    const wrapper = mount(CaptureForm, {
+      props: { state: "IN", type: "residential" },
+    });
+    await flushPromises();
+
+    const notice = wrapper.get('[data-testid="legal-disclaimer"]');
+    expect(notice.text()).toContain("not a law firm");
+    expect(notice.text()).toContain("not legal advice");
+    expect(
+      wrapper
+        .get('[data-testid="legal-disclaimer-terms-link"]')
+        .attributes("href"),
+    ).toBe("/terms");
+  });
 });

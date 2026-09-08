@@ -76,7 +76,8 @@ class ProductionRentalLayerSetTest {
   // is optional (opt-in). This set is asserted against the IN resolution only.
   //
   // In the Telangana set "Statutory (Telangana)" is ALSO mandatory as of 2026-09-07 (reversing the
-  // 2026-07-13 opt-in decision): the TG residential layer re-authors the witnesseth list without the
+  // 2026-07-13 opt-in decision): the TG residential layer re-authors the witnesseth list without
+  // the
   // national `stampRegistrationClause`, so while the statutory section was opt-in a Telangana deed
   // rendered with no stamp/registration clause at all -- strictly worse than the national template.
   //
@@ -243,7 +244,8 @@ class ProductionRentalLayerSetTest {
     TemplateCompiler compiler = new TemplateCompiler();
 
     // Empty active set: mandatory sections render, optional add-ons do not. For Telangana the
-    // statutory overlay is MANDATORY (2026-09-07), so it renders with no add-ons selected -- that is
+    // statutory overlay is MANDATORY (2026-09-07), so it renders with no add-ons selected -- that
+    // is
     // what guarantees a TG deed always carries a stamp/registration clause, since the TG layer
     // removes the national one. The signature block is MANDATORY too, so it renders by default with
     // the per-signer eSign anchors -- the draft is signable.

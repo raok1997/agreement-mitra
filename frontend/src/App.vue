@@ -6,6 +6,7 @@ import MyAgreements from "./views/MyAgreements.vue";
 import TemplatePicker from "./components/TemplatePicker.vue";
 import AuthCallback from "./views/AuthCallback.vue";
 import LandingPage from "./views/LandingPage.vue";
+import TermsOfService from "./views/TermsOfService.vue";
 import StaffConsole from "./views/StaffConsole.vue";
 import wordmark from "./assets/logo-wordmark.svg";
 import { auth, logout } from "./api/authStore";
@@ -31,10 +32,20 @@ const editError = ref<string | null>(null);
 //   "/"              -> the public marketing page (LandingPage.vue), no app chrome
 //   "/start"         -> the agreement app (picker -> capture, "My agreements")
 //   "/staff"         -> the STAFF fulfilment console (orders awaiting an e-stamp)
+//   "/terms"         -> the published terms of service, reachable without app chrome or a session
+//                       (the in-product disclaimer links here, and it must open for a reader who
+//                       has no account and is halfway through paying)
 //   "/auth/callback" -> the OAuth landing the backend 302s to, which exchanges the
 //                       handoff for a session and then drops the caller into the app
 // Anything else falls through to the app so deep links do not dead-end on the marketing page.
-type Route = "landing" | "app" | "callback" | "staff" | "recover" | "openLink";
+type Route =
+  | "landing"
+  | "app"
+  | "callback"
+  | "staff"
+  | "recover"
+  | "openLink"
+  | "terms";
 
 /** `/agreement/<uuid>` - the link emailed to the parties after payment. */
 const AGREEMENT_LINK =
@@ -43,6 +54,7 @@ const AGREEMENT_LINK =
 function routeFor(pathname: string): Route {
   if (pathname === "/auth/callback") return "callback";
   if (pathname === "/staff") return "staff";
+  if (pathname === "/terms") return "terms";
   if (pathname === "/recover") return "recover";
   if (AGREEMENT_LINK.test(pathname)) return "openLink";
   if (pathname === "/" || pathname === "") return "landing";
@@ -99,6 +111,13 @@ function leaveCallback(): void {
   // history. Land in the app rather than on the marketing page -- login is only ever
   // started from inside the app.
   navigate("/start", "replace");
+}
+// The terms are reached from a link on whatever screen the reader was on, so "Back" means back --
+// the browser's own history, which is the only thing that knows where they came from. A directly
+// opened /terms has nowhere to return to, so it falls through to the marketing page.
+function leaveTerms(): void {
+  if (window.history.length > 1) window.history.back();
+  else navigate("/", "replace");
 }
 function signIn(): void {
   // Full navigation: the backend redirects to Google, then back to /auth/callback.
@@ -210,6 +229,12 @@ function onSavedToAccount(): void {
     </template>
     <p v-else class="text-sm text-slate-600">Opening your agreement...</p>
   </section>
+  <!-- The terms of service. Like the landing page it is public and chrome-free: it is linked from
+       the in-product disclaimer, and a reader following that link is not necessarily signed in. -->
+  <TermsOfService
+    v-else-if="route === 'terms'"
+    @back="leaveTerms"
+  />
   <!-- "/" is the public marketing page: full-bleed, no app chrome, no API calls. -->
   <LandingPage v-else-if="route === 'landing'" @start="enterApp" />
 

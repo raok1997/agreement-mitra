@@ -31,6 +31,7 @@ export interface PartyContact {
 // not enabled - so mobile is described as being for signing notifications and future delivery, and
 // email is the only route described as how the agreement arrives.
 
+import LegalDisclaimer from "../components/LegalDisclaimer.vue";
 import { computed, ref, watch } from "vue";
 
 const props = defineProps<{
@@ -203,5 +204,8 @@ function confirm(): void {
         Back
       </button>
     </div>
+
+    <!-- The last screen before money changes hands. -->
+    <LegalDisclaimer />
   </section>
 </template>

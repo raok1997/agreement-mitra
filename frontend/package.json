@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,vue,css}\"",
-    "security:scan": "node scripts/security-scan.mjs"
+    "security:scan": "node scripts/security-scan.mjs",
+    "terms:doc": "vite-node scripts/render-terms.ts"
   },
   "dependencies": {
     "vue": "^3.5.13"

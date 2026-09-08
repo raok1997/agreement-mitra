@@ -321,6 +321,47 @@ describe("App route switch", () => {
     expect(wrapper.text()).toContain("complete sign-in");
   });
 
+  it("serves the terms of service at /terms, chrome-free and without touching the API", async () => {
+    // The in-product disclaimer links here. A reader following it is mid-flow and may have no
+    // session, so /terms must render on its own -- no app header, no picker, no backend call.
+    window.history.replaceState({}, "", "/terms");
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="terms-of-service"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="terms-draft-banner"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(false);
+    expect(mockedList).not.toHaveBeenCalled();
+  });
+
+  it("returns from /terms to wherever the reader came from", async () => {
+    window.history.replaceState({}, "", "/");
+    const wrapper = mount(App);
+    await flushPromises();
+
+    window.history.pushState({}, "", "/terms");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    expect(wrapper.find('[data-testid="terms-of-service"]').exists()).toBe(
+      true,
+    );
+
+    // "Back" is the browser's own back, so await the popstate rather than triggering a second one.
+    const popped = new Promise<void>((resolve) =>
+      window.addEventListener("popstate", () => resolve(), { once: true }),
+    );
+    await wrapper.find('[data-testid="terms-back"]').trigger("click");
+    await popped;
+    await flushPromises();
+    expect(window.location.pathname).toBe("/");
+    wrapper.unmount();
+  });
+
   it("falls through unknown deep links to the app, not the marketing page", async () => {
     window.history.replaceState({}, "", "/start/anything");
     const wrapper = mount(App);
