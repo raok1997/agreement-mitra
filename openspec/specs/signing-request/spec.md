@@ -394,9 +394,9 @@ new columns SHALL be nullable so existing rows validate.
 
 ### Requirement: A signing request requires a reachable contact for every party
 
-Because a party's email and mobile are optional when an agreement is drafted (per
-`agreement-management`), the system SHALL verify that **every** party on the agreement has
-**at least one** reachable contact (email or mobile) before a signing request is created.
+The system SHALL verify that **every** party on the agreement has **at least one** reachable
+contact (email or mobile) before a signing request is created, because a party's email and
+mobile are optional when an agreement is drafted (per `agreement-management`).
 When any party has neither, `POST /api/signing/{id}/request` SHALL respond `409 Conflict`
 and SHALL NOT create a signing request, procure a stamp, or call the eSign provider. This
 check SHALL occur before any state transition, alongside the existing "draft PDF present"

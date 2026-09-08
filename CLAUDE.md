@@ -206,6 +206,14 @@ is necessary but NOT sufficient on its own, since the forwarder accepts before t
 service behind it is ready, so the two strategies must stay paired). MinIO needs no such
 override: its default `Wait.forHttp` already dials the mapped port from the host.
 
+A third variant is a **startup `TimeoutException` on `postgresContainer` only** (never MinIO)
+that reshuffles between runs and passes on an isolated re-run. Cause: `WaitAllStrategy`'s
+default budget is 30s — half the 60s a bare Postgres wait gets — and in the default
+`WITH_OUTER_TIMEOUT` mode `withStrategy()` stamps the *current* outer timeout onto each child
+as it is added. So `withStartupTimeout()` must be called **before** `withStrategy()`, or the
+children keep 30s, which is not enough under a full suite's container contention. Full
+reasoning in `HarnessTestConfig`.
+
 Frontend (from `frontend/`):
 - `npm run dev` — Vite dev server
 - `npm run build` — production build
