@@ -19,7 +19,23 @@
       "Bash(rm -rf*)",
       "Bash(git branch:*)",
       "Bash(git checkout:*)",
-      "Bash(git switch:*)"
+      "Bash(git switch:*)",
+      "Edit(./.env)",
+      "Write(./.env)",
+      "Edit(./.env.*)",
+      "Write(./.env.*)",
+      "Edit(./**/.env)",
+      "Write(./**/.env)",
+      "Edit(./**/.env.*)",
+      "Write(./**/.env.*)",
+      "Edit(./**/*.pem)",
+      "Write(./**/*.pem)",
+      "Edit(./**/*.key)",
+      "Write(./**/*.key)",
+      "Edit(./**/secrets/**)",
+      "Write(./**/secrets/**)",
+      "Edit(./**/credentials*)",
+      "Write(./**/credentials*)"
     ],
     "ask": [
       "Bash(./gradlew bootRun*)",
@@ -69,8 +85,26 @@
       "Bash(openspec ls:*)",
       "Bash(openspec view:*)",
       "Bash(openspec change:*)",
-      "Bash(openspec spec:*)"
-    ]
+      "Bash(openspec spec:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git blame:*)",
+      "Bash(git for-each-ref:*)",
+      "Bash(git stash list:*)",
+      "Bash(git fetch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git config --get:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "Bash(openspec --version)",
+      "Bash(openspec explore:*)",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "PreToolUse": [
