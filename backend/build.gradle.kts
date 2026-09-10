@@ -205,8 +205,28 @@ spotless {
 val ryukDisabled = System.getenv("TESTCONTAINERS_RYUK_DISABLED")?.lowercase() == "true"
 val ryukOverride = providers.gradleProperty("allow.ryuk.disabled").orNull?.lowercase() == "true"
 
+// Each fork is its own JVM, so it starts its OWN Postgres + MinIO + Gotenberg (the
+// containers in HarnessTestConfig are JVM-wide singletons). Forks multiply CONTAINERS,
+// not just threads: N forks means ~3N service containers plus a Ryuk each.
+//
+// Measured 2026-09-11 (14-CPU host, but a 2-CPU / 5.8 GB Docker VM, which is the real
+// ceiling — the DB and object store live in there, only the JVMs are on the host):
+//
+//     forks   :test    service containers
+//       1     1m14s     3
+//       2     1m06s     6
+//       4     1m00s    12
+//       6     1m03s    18   <- past the knee, slower
+//
+// So parallelism buys 11% at 2 and 19% at 4, and then reverses. Default is 2, not 4:
+// the extra 6s is not worth doubling the container load on a VM this small, in a repo
+// whose CLAUDE.md records Docker wedging under container pressure. Raise it on a bigger
+// box (or lower it to 1 to debug an ordering-dependent failure): -Ptest.forks=N.
+val testForks = providers.gradleProperty("test.forks").orNull?.toIntOrNull() ?: 2
+
 tasks.withType<Test> {
     useJUnitPlatform()
+    maxParallelForks = testForks.coerceAtLeast(1)
     doFirst {
         if (ryukDisabled && !ryukOverride) {
             throw GradleException(
