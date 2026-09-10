@@ -8,11 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.PageFurniture;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,13 +29,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -65,28 +60,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, GotenbergTestConfig.class})
 @ActiveProfiles({"test", "sandbox"})
 @Testcontainers(disabledWithoutDocker = true)
 class AgreementDocumentFormatE2EIntegrationTest {
 
   private static final String FORM = "/api/templates/form";
   private static final String PREVIEW = "/api/templates/document/preview";
-
-  @Container
-  static final GenericContainer<?> gotenberg =
-      new GenericContainer<>(
-              new ImageFromDockerfile().withFileFromPath(".", Path.of("..", "docker", "gotenberg")))
-          .withExposedPorts(3000)
-          .withEnv("CHROMIUM_DENY_PUBLIC_IPS", "true")
-          .withEnv("CHROMIUM_DENY_PRIVATE_IPS", "true");
-
-  @DynamicPropertySource
-  static void gotenbergUrl(DynamicPropertyRegistry registry) {
-    registry.add(
-        "gotenberg.url",
-        () -> "http://" + gotenberg.getHost() + ":" + gotenberg.getMappedPort(3000));
-  }
 
   @Autowired private MockMvc mockMvc;
   private final ObjectMapper mapper = new ObjectMapper();
