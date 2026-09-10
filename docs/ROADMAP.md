@@ -7,7 +7,7 @@ next. Update this in a PR like any other doc. Per-feature intent lives in
 template-approval governance and the open questions for counsel in
 `docs/LEGAL-POSTURE.md`.
 
-_Last updated: 2026-06-27_
+_Last updated: 2026-09-10_
 
 ## Where we are
 
@@ -81,8 +81,9 @@ anonymous draft can be **claimed** into the caller's account, **listed** in "My 
 with a derived status, and **edited** while it is still pre-signing-request. Login stays
 **optional**: create + draft-upload + capability read remain fully anonymous. The parked
 `mobile-otp-auth` change mirrors CR-B's ownership decisions so a second credential is a
-drop-in. Deferred follow-ups (not in CR-B): ownership authZ on the signing/stamping routes
-(folded into `signing-auth` below), a retain-and-purge job for unclaimed anonymous drafts,
+drop-in. Deferred follow-ups (not in CR-B): ownership authZ on the signing create route
+(folded into `signing-auth` below; the stamping routes are `hasRole(STAFF)`, which is a
+different gate, not the same hole), a retain-and-purge job for unclaimed anonymous drafts,
 a cookie session (in-memory only today), and an owner-scoped signed-artifact download surface.
 
 Full-capture persistence — **now complete**: `agreement-capture-persistence` (M5) persists an
@@ -229,11 +230,19 @@ identifies but deliberately does not fold in belongs here **before that change i
 archived** — the `followUps` line in a change's `.flow-journal.md` moves into
 `openspec/changes/archive/` with it and is not a durable record.
 
+**Sorted by:** what unblocks work soonest — (1) blocking the repo *today*, (2) blocking the
+first real customer, (3) everything else. Two clocks, deliberately interleaved; re-sort by
+whichever one matters to you.
+
 | Slug | Scope | Raised by | Date | Priority |
 |---|---|---|---|---|
-| `agreement-error-problem-type-plumbing` | `AgreementHttpError` carries the RFC 9457 problem `type` at only 1 of 6 throw sites, so the client cannot tell which 409 it got. Customers see the raw `Agreement request failed: 409` for a frozen-terms save and for an ineligible jurisdiction, where written copy exists but is unreachable. Wire the remaining five sites; carry the type on `PaymentHttpError` too. | `contacts-editable-until-payment` | 2026-09-10 | High — customer-visible |
 | `frontend-dev-dep-refresh` | Bump `vitest`/`@vitest/mocker` 3.2.7 → 4.1.11 (GHSA-82fw-gwwq-j7x9) and give `scripts/security-scan.mjs` Node globals in the eslint config (2 `no-undef` errors). Until this lands `npm run build` fails for **every** change in the repo, because it chains `security:scan`. | `contacts-editable-until-payment` | 2026-09-10 | High — blocks the frontend build gate repo-wide |
+| `agreement-error-problem-type-plumbing` | `AgreementHttpError` carries the RFC 9457 problem `type` at only 1 of 6 throw sites, so the client cannot tell which 409 it got. Customers see the raw `Agreement request failed: 409` for a frozen-terms save and for an ineligible jurisdiction, where written copy exists but is unreachable. Wire the remaining five sites; carry the type on `PaymentHttpError` too. | `contacts-editable-until-payment` | 2026-09-10 | High — customer-visible today |
+| `signing-auth` | `POST /api/signing/*/request` is still `permitAll` with no ownership check, no rate limit, and no security-event logging — it egresses signer PII to the eSign vendor and can burn provider quota. Deferred in June because "no auth mechanism exists yet"; that blocker is gone (`google-oauth-login` + `agreement-ownership` shipped, and `GET /*/progress` already does service-level ownership authZ). `mobile-otp-auth` states in its proposal and D-note that it leaves this permit untouched — **nobody is holding it.** Scope: ownership authZ on create, rate limit on create + webhook, redacted security-event logging of webhook verify-failures / documentId enumeration. Fix the stale "unauthenticated today" javadoc on `SigningController` and `SecurityConfig` in the same CR. | `create-signing-request` | 2026-06-21 | High — must land before the first real user (CLAUDE.md: sandbox + dummy data only) |
+| `pii-lint-custom-rules` | Nothing automated enforces CLAUDE.md's two non-negotiables — never-log Aadhaar/OTP/VID/full signer PII, and verify-HMAC-before-acting. Stock FindSecBugs does not model them, and `.claude/hooks/pii-secret-guard.sh` is self-declared "defense-in-depth — a reminder, not the authoritative control" (local, evadable, does not run in any shared build). Needs custom SpotBugs detectors or an equivalent PII-lint wired into `securityScan`. | `backend-security-scanning` | 2026-06-20 | Medium — a non-negotiable rule with no gate behind it |
 | `agreement-status-detail` | "My agreements" collapses `PDF_GENERATED`/`STAMPED`/`SIGN_REQUESTED` into one "In progress" badge and omits `payment_state` entirely, so awaiting-payment, paid-awaiting-stamp and out-for-signature are indistinguishable. Separately, `@view` and `@edit` both call `openForEdit`, so "View/Download" opens an editable form on a frozen agreement whose only feedback is a raw 409. **Check overlap with the active `agreement-status-link-page` change before proposing — this may belong there.** | `contacts-editable-until-payment` | 2026-09-10 | Medium |
+| `frontend-coverage-gate` | The frontend has no coverage threshold. The backend fails `check` on a JaCoCo gate; `vitest` runs without `--coverage` and `vite.config.ts` declares no thresholds, so frontend coverage can regress to zero silently. Add a `vitest --coverage` threshold and chain it into `npm run build` alongside `security:scan`. | `frontend-test-harness` | 2026-06-20 | Low |
+| `frontend-contract-test-msw` | No cross-stack contract test. Frontend API tests mock `fetch` by hand, so a backend DTO rename (e.g. the `SignSession` / signing-progress shape) compiles clean on both sides and fails only in the browser. Introduce MSW handlers generated from — or asserted against — the real backend response shape. | `frontend-test-harness` | 2026-06-20 | Low |
 
 ## Other queued non-goals (not scheduled)
 
