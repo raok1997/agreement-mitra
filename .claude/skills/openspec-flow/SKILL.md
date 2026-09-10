@@ -122,7 +122,7 @@ node .claude/skills/openspec-flow/flow-journal.mjs append --change "<name>" <<'J
   "outcome": "<1-3 plain-English sentences>",
   "decisions": "<what was decided + why, or omit>",
   "halts": "<what halted, the options, how it resolved, or omit>",
-  "followUps": "<name — one-line scope, or omit>",
+  "followUps": "`<register-slug>` — one-line scope, or omit",
   "modifiedFiles": ["backend/src/main/java/.../Foo.java", "CLAUDE.md"] }
 JSON
 ```
@@ -136,6 +136,10 @@ JSON
   tool rejects "n/a" and "see above". It is what you reconcile against `tasks.md` when a stage
   ends — a path here that no task names is unplanned work, which validate's 3b independently
   re-checks against the working tree.
+- `followUps` must name the **slug as it appears in the `## Follow-up register` table in
+  `docs/ROADMAP.md`**, in backticks, not a prose description of it. Stage 7a's promotion gate
+  matches on that text, so "the jurisdiction message thing" reads as unpromoted even when a
+  row for it exists. If the follow-up is new, add the register row first, then cite its slug.
 
 **Check the journal at every stage boundary**, so a malformed prior entry surfaces one stage
 late rather than never. Run it *after* the append, so the entry you just wrote is included:
@@ -143,6 +147,7 @@ late rather than never. Run it *after* the append, so the entry you just wrote i
 ```bash
 node .claude/skills/openspec-flow/flow-journal.mjs check --change "<name>"
 node .claude/skills/openspec-flow/flow-journal.mjs audit          # every active change
+node .claude/skills/openspec-flow/flow-journal.mjs followups      # not yet in the register
 ```
 
 A non-zero exit from `check` means the journal's **integrity** is off — a heading it cannot
@@ -410,7 +415,36 @@ hand-rolled `mv` has none of those gates — that is how six capabilities were o
 archived without ever reaching the baseline (see `openspec/BASELINE-FOLD-GAP.md`)
 and how a requirement missing its `SHALL` sat in the spec of record for two months.
 
-**7a. Pre-archive: check delta ordering.** A `MODIFIED`/`REMOVED`/`RENAMED` delta
+**7a. Pre-archive checks.** Two, and both must pass before the CLI runs.
+
+**(i) Promote follow-ups into the register.** The journal's `Follow-up CRs:` line
+archives *with the change* — into `openspec/changes/archive/`, where nothing reads it
+again. So a follow-up that lives only in the journal is durable and invisible: 70
+follow-up mentions sit in the archived journals, and the only ones that survived say so
+explicitly ("pre-recorded in the roadmap memory"). Promotion is what makes the flow's
+`followUps` field mean anything.
+
+```bash
+node .claude/skills/openspec-flow/flow-journal.mjs followups --change "<name>"
+```
+
+Non-zero means this change records a follow-up the register does not hold. Add a row to
+the **`## Follow-up register`** table in `docs/ROADMAP.md` — slug, one-line scope, raised-by,
+date, priority — then re-run until clean. Do **not** archive over an unpromoted follow-up.
+
+- **Write the register slug verbatim in the journal**, in backticks. The check is textual, so
+  a paraphrase does not count: the first run of this command flagged a follow-up that *was*
+  in the register, because the journal said "jurisdiction problem-type plumbing" while the
+  register said `agreement-error-problem-type-plumbing`.
+- **Record follow-ups before you reach 7a.** This gate reads the journal as it stands, and
+  the archive-stage entry is written *after* the fold — so a follow-up first noticed during
+  Stage 7 is not visible here. If Stage 7 itself surfaces one, promote it by hand and re-run
+  `followups --change archive/<stamped-name>` after 7b, or it is lost the same way.
+- `flow-journal.mjs followups` with no `--change` sweeps everything. Active changes fail it;
+  archived ones are reported as historical only, since they can be mined but not fixed in
+  place — a permanently-red gate is one people learn to ignore.
+
+**(ii) Check delta ordering.** A `MODIFIED`/`REMOVED`/`RENAMED` delta
 needs its target requirement to already exist in the baseline. When a sibling
 change *adds* that requirement, the two must archive in dependency order — and a
 teammate archiving on the default branch can consume the same capability.

@@ -159,3 +159,55 @@ sibling-skill re-explanations.
 a change directory without appending an entry, but it would misfire on read-only sessions and
 on multi-session stages. `audit` gives the same signal on demand without the false positives.
 Revisit only if audit-on-demand proves insufficient.
+
+---
+
+## Round C — 2026-09-10 · the follow-up register (first end-to-end flow run)
+
+The flow's **first real end-to-end exercise**, driving `contacts-editable-until-payment` from
+its last open task to archive. Round B's tooling held: `last` fell back correctly on a
+journal-less change, `append`/`check` stayed canonical across five stages, Stage 7a's ordering
+check cleared the change against two siblings, and manifest-scoped subagents kept both the
+conformance and code-review passes out of the three sibling changes sharing the branch.
+
+Two structural pieces landed (user-authorised, lifting the `8c776d3` freeze for these only —
+**Round A stays parked**; its cuts to the facts block and war stories were not in scope).
+
+| # | Finding | Verdict | Note |
+|---|---|---|---|
+| C.1 | `followUps` was write-only. The journal records it, then archives **with the change** into `openspec/changes/archive/`, where nothing reads it again — 70 follow-up mentions are buried there, and the only survivors say so explicitly ("pre-recorded in the roadmap memory"). Three registers existed (ROADMAP prose blob, per-user agent memory, archived journals), which is the same as none | **fixed** | `## Follow-up register` table in `docs/ROADMAP.md` (single home — in git, reaches a teammate on `main`, already canonical in `CLAUDE.md`); `flow-journal.mjs followups`; Stage 7a gate. Blast radius landed same round: `CLAUDE.md`, the `best-practices-hardening-roadmap` memory demoted to history with a pointer header, new `follow-up-register` memory, `MEMORY.md` index |
+| C.2 | Stage 7 had no promotion step, so C.1's leak had no gate | **fixed** | Stage 7a is now two checks: (i) promote, (ii) delta ordering. **Deliberately not renumbered** — DECISIONS rows 2.1, 3.7 and 3.8 name "7b" as the archive step and rule 5 makes this file append-only, so 7b keeps its number |
+| C.3 | Deferred **3.3 confirmed by observation**: 4a's build result has no channel to the 4b subagent. This run only produced the right verdict because the instruction was hand-written into the prompt | **deferred** | still the handoff round. Evidence upgraded from predicted to observed — the subagent correctly emitted `exists; green-status not supplied`, but nothing in the skill makes that happen |
+| C.4 | No path for a gate that is red for reasons the CR did not cause. `npm run build` chains a repo-wide `security:scan`, so a `vitest` advisory fails 4a for **every** change until someone bumps it; Operating mode says hard error → halt, with no "not yours" branch | **deferred** | handoff round. Needs a "pre-existing failure, attributed and recorded" verdict alongside halt |
+| C.5 | Chained gates hide their own later links. Both `npm run build` and `./run-tests.sh check` abort at the first failure, so a red scan means `vue-tsc`/`vite build` never ran and a red test means JaCoCo + `securityScan` never ran — "the build failed" then says nothing about the rest. Recovered by hand here | **deferred** | handoff round. Stage 4a should name `build:only` and a separate `securityScan` re-run |
+| C.6 | Stage 5's re-run rule over-fires: "re-run 4c if the fix changed code" spawns a code-review agent over a test-only fix the spine wrote and verified itself | **deferred** | handoff round. Skipped deliberately on this run and disclosed |
+| C.7 | The `## Coverage` gate proves a test **exists**, not that it **asserts** anything. This change's row 9 read `COVERED` while its terms-freeze test called an `.authenticated()` route anonymously, took the 403, and asserted only "not 200" — it would have passed with the freeze deleted | **accepted** | Real, and not fixable in the matrix: a disposition table cannot evaluate assertions. Recorded as a known limit of the gate; the defence is 4b reading what a named test actually does, which is what caught it. Do not re-raise as a matrix defect |
+| C.8 | The post-edit formatter strips imports added ahead of their use, so a two-step "add import, then add the field" edit fails to compile in between | **accepted** | Environmental, not a skill defect. Add the usage first, or both in one edit |
+| C.9 | Deferred **3.9 unchanged**: the `DUPLICATED PROJECT FACTS` block is still in `SKILL.md` despite being measured redundant in round 3 | **deferred** | Round A, still parked |
+
+**Verified while building `followups` — do not re-derive.**
+
+- The check is **textual coverage, not slug extraction**, by design. The archived lines are free
+  prose (`frontend-security-scanning (CR-6) — frontend dep scan; ci-pipeline (CR-7) — …`) and
+  would defeat any tokenizer; a wrong extractor is worse than an honest "this line names nothing
+  in the register". Consequence: `followUps` must cite the slug **verbatim**, which is now stated
+  in the skill, the field's inline doc, and the tool's own failure message.
+- **First run proved the point on itself.** The change archived minutes earlier flagged as
+  unpromoted because its journal said "jurisdiction problem-type plumbing" while the register row
+  said `agreement-error-problem-type-plumbing`. True positive against the stated contract.
+- **A missing register is fatal, never an empty set** — an empty set would reclassify every
+  follow-up in the repo as unpromoted, reading as a catastrophic leak when the fault is a moved
+  path. Both `die()` paths tested against a synthetic repo.
+- **Exit codes split deliberately**: `--change` fails on any unpromoted follow-up (the Stage 7a
+  gate); the repo-wide sweep fails only on **active** changes and reports archived ones as
+  historical. Archived follow-ups can be mined but not fixed in place, and a permanently-red
+  sweep is a gate people learn to ignore.
+- **Ordering constraint, now written down in 7a:** the gate reads the journal as it stands, and
+  the archive-stage entry is written *after* the fold — so a follow-up first noticed during Stage
+  7 is invisible to it. 7a says to promote by hand and re-run against the stamped archive path.
+- Verified against the real fixture set (51 archived changes, 9 active): 15 historical unpromoted
+  follow-ups surfaced, including `bump-spring-boot-security-patches`, `ci-pipeline` and
+  `frontend-security-scanning`; `audit`, `check`, `last` and the usage line all still behave.
+
+**Baseline at landing:** register holds 6 slugs · 0 unpromoted on active changes · 15 unpromoted
+in the archive (historical, available to mine).

@@ -222,6 +222,19 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
   `docs/TECH_DEBT.md` TD-1) but is not blocking. Revisit before any
   production / real-PII deployment.
 
+## Follow-up register (raised by changes, not yet scheduled)
+
+The single list of follow-ups spun out of an OpenSpec change. Anything a change
+identifies but deliberately does not fold in belongs here **before that change is
+archived** — the `followUps` line in a change's `.flow-journal.md` moves into
+`openspec/changes/archive/` with it and is not a durable record.
+
+| Slug | Scope | Raised by | Date | Priority |
+|---|---|---|---|---|
+| `agreement-error-problem-type-plumbing` | `AgreementHttpError` carries the RFC 9457 problem `type` at only 1 of 6 throw sites, so the client cannot tell which 409 it got. Customers see the raw `Agreement request failed: 409` for a frozen-terms save and for an ineligible jurisdiction, where written copy exists but is unreachable. Wire the remaining five sites; carry the type on `PaymentHttpError` too. | `contacts-editable-until-payment` | 2026-09-10 | High — customer-visible |
+| `frontend-dev-dep-refresh` | Bump `vitest`/`@vitest/mocker` 3.2.7 → 4.1.11 (GHSA-82fw-gwwq-j7x9) and give `scripts/security-scan.mjs` Node globals in the eslint config (2 `no-undef` errors). Until this lands `npm run build` fails for **every** change in the repo, because it chains `security:scan`. | `contacts-editable-until-payment` | 2026-09-10 | High — blocks the frontend build gate repo-wide |
+| `agreement-status-detail` | "My agreements" collapses `PDF_GENERATED`/`STAMPED`/`SIGN_REQUESTED` into one "In progress" badge and omits `payment_state` entirely, so awaiting-payment, paid-awaiting-stamp and out-for-signature are indistinguishable. Separately, `@view` and `@edit` both call `openForEdit`, so "View/Download" opens an editable form on a frozen agreement whose only feedback is a raw 409. **Check overlap with the active `agreement-status-link-page` change before proposing — this may belong there.** | `contacts-editable-until-payment` | 2026-09-10 | Medium |
+
 ## Other queued non-goals (not scheduled)
 
 **Terms-of-service acceptance checkpoint** — nothing today records that a user

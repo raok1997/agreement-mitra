@@ -10,6 +10,15 @@ lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`. The
 team-shared roadmap (what's done / what's next) is `docs/ROADMAP.md`; vendor
 specifics live in `docs/integrations/` (e.g. Leegality sandbox/pricing).
 
+`docs/ROADMAP.md` also holds the **`## Follow-up register`** — the single list of
+follow-ups spun out of a change. A CR that identifies work it deliberately does not
+fold in records it there **before it archives**; a follow-up left only in the change's
+`.flow-journal.md` moves into `openspec/changes/archive/` with it and is never read
+again. Stage 7a of `openspec-flow` gates on this
+(`flow-journal.mjs followups --change <name>`). Do not start a second backlog file,
+and do not keep backlog content in agent memory — memory is per-user and does not
+reach a teammate working on `main`.
+
 ## Architecture (decided — do not relitigate without a proposal)
 
 - **Backend**: Java 21 + Spring Boot 3.x, structured as a **modular monolith**

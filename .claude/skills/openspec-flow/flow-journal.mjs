@@ -8,10 +8,17 @@
  * is generated here, never typed, and `audit` makes a missing journal visible without
  * anyone remembering anything.
  *
- *   append  --change <name>   < entry.json   append one stage entry (validated)
- *   last    --change <name>                  last entry + where resume should re-enter
- *   check   --change <name>                  validate one journal
- *   audit                                    sweep every active change  ← start here
+ *   append     --change <name>   < entry.json   append one stage entry (validated)
+ *   last       --change <name>                  last entry + where resume should re-enter
+ *   check      --change <name>                  validate one journal
+ *   audit                                       sweep every active change  ← start here
+ *   followups  [--change <name>]                follow-ups not yet in the ROADMAP register
+ *
+ * `followups` closes the other half of the same leak `audit` closes. A journal records
+ * `Follow-up CRs:` and then archives WITH its change, so a follow-up nobody copied out by
+ * hand is durable but unreadable — 70 follow-up mentions sit in the archived journals, and
+ * the handful that survived say so explicitly ("pre-recorded in the roadmap memory"). This
+ * compares every journal's follow-up lines against the register in docs/ROADMAP.md.
  *
  * `append` reads JSON on stdin so multi-line prose survives intact:
  *   { "stage": "apply", "status": "ok" | "warn" | "halt" (or the emoji),
@@ -245,6 +252,138 @@ function cmdAudit(root) {
   process.exit(missing || drifted ? 1 : 0);
 }
 
+// ---------------------------------------------------------------- follow-ups
+
+const REGISTER_FILE = path.join('docs', 'ROADMAP.md');
+const REGISTER_HEADING = /^##\s+Follow-up register/i;
+const FIELD_LABELS = /^(Outcome|Decisions|Halts|Follow-up CRs|Modified files):/;
+
+/** A match is textual, so a paraphrase does not count. Says so wherever the check fails —
+ *  the first run of this command flagged a follow-up that WAS in the register, because the
+ *  journal said "jurisdiction problem-type plumbing" and the register said
+ *  `agreement-error-problem-type-plumbing`. Write the slug, not a description of it. */
+const SLUG_HINT =
+  'A follow-up counts as promoted only if its text contains the register slug verbatim.\n' +
+  'Write the slug in the journal (`some-slug`), not a prose paraphrase of it.';
+
+/**
+ * Slugs already in the register, read from backticked tokens under its heading.
+ *
+ * A missing file or heading is fatal, never an empty set: an empty set would silently
+ * reclassify every follow-up in the repo as unpromoted, which reads as a catastrophic leak
+ * when the real fault is a moved path.
+ */
+function registerSlugs(root) {
+  const file = path.join(root, REGISTER_FILE);
+  if (!fs.existsSync(file)) die(`no follow-up register at ${REGISTER_FILE} — expected a "## Follow-up register" section there`);
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  const start = lines.findIndex((l) => REGISTER_HEADING.test(l));
+  if (start < 0) die(`${REGISTER_FILE} has no "## Follow-up register" heading — the register moved or was renamed`);
+  const slugs = new Set();
+  for (let i = start + 1; i < lines.length && !lines[i].startsWith('## '); i++) {
+    for (const m of lines[i].matchAll(/`([a-z0-9]+(?:-[a-z0-9]+)+)`/g)) slugs.add(m[1]);
+  }
+  return slugs;
+}
+
+/** Every `Follow-up CRs:` block in one journal, with the stage heading it sits under. */
+function followUpBlocks(root, change) {
+  const file = journalPath(root, change);
+  if (!fs.existsSync(file)) return [];
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  const blocks = [];
+  let stage = '(before any stage)';
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('## ')) {
+      const h = classifyHeading(lines[i]);
+      stage = h.kind === 'other' ? lines[i].replace(/^##\s*/, '').trim() : h.stage;
+      continue;
+    }
+    if (!lines[i].startsWith('Follow-up CRs:')) continue;
+    // The field is written from free prose and may wrap, so take following lines until the
+    // next labelled field or heading rather than assuming one line.
+    const parts = [lines[i].slice('Follow-up CRs:'.length).trim()];
+    for (let j = i + 1; j < lines.length; j++) {
+      const nxt = lines[j];
+      if (!nxt.trim() || nxt.startsWith('## ') || FIELD_LABELS.test(nxt)) break;
+      parts.push(nxt.trim());
+    }
+    const text = parts.join(' ').trim();
+    if (text && !/^none\b/i.test(text)) blocks.push({ stage, text });
+  }
+  return blocks;
+}
+
+function listChanges(root, { archived }) {
+  const dir = path.join(root, 'openspec', 'changes');
+  const active = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && d.name !== 'archive').map((d) => d.name).sort();
+  if (!archived) return active;
+  const archiveDir = path.join(dir, 'archive');
+  const old = fs.existsSync(archiveDir)
+    ? fs.readdirSync(archiveDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory()).map((d) => `archive/${d.name}`).sort()
+    : [];
+  return { active, archived: old };
+}
+
+/** Unpromoted = the follow-up text names no slug the register already holds. Deliberately a
+ *  coverage check, not a slug extractor: these lines are free prose ("ci-pipeline (CR-7) —
+ *  promote securityScan into CI"), and a tokenizer that guesses wrong is worse than a check
+ *  that reports the line and lets a human judge. */
+const unpromoted = (blocks, slugs) =>
+  blocks.filter((b) => ![...slugs].some((s) => b.text.includes(s)));
+
+function reportChange(change, blocks, slugs) {
+  const bad = unpromoted(blocks, slugs);
+  for (const b of bad) console.log(`  ✗ ${change}  [${b.stage}]\n      ${b.text}`);
+  return bad.length;
+}
+
+function cmdFollowups(root, change) {
+  const slugs = registerSlugs(root);
+
+  if (change) {
+    const blocks = followUpBlocks(root, change);
+    if (!blocks.length) { console.log(`${change}: no follow-ups recorded — nothing to promote`); process.exit(0); }
+    console.log(`${change}: ${blocks.length} follow-up entr(ies), register holds ${slugs.size} slug(s)\n`);
+    const n = reportChange(change, blocks, slugs);
+    if (n) {
+      console.log(`\n${n} follow-up(s) not in ${REGISTER_FILE}. Promote them BEFORE archiving —`);
+      console.log('the journal moves into openspec/changes/archive/ with the change.');
+      console.log(SLUG_HINT);
+    } else {
+      console.log('  ✓ every recorded follow-up names a slug already in the register');
+    }
+    process.exit(n ? 1 : 0);
+  }
+
+  const { active, archived } = listChanges(root, { archived: true });
+  console.log(`Follow-ups vs ${REGISTER_FILE} — register holds ${slugs.size} slug(s)\n`);
+
+  console.log(`Active changes (${active.length}):`);
+  let openLeak = 0;
+  for (const c of active) openLeak += reportChange(c, followUpBlocks(root, c), slugs);
+  if (!openLeak) console.log('  ✓ none unpromoted');
+
+  // Historical entries are reported but never fail the command: they are already archived,
+  // so they can only be mined, not fixed in place. A permanently-red sweep is a gate people
+  // learn to ignore.
+  let past = 0;
+  const rows = [];
+  for (const c of archived) {
+    const bad = unpromoted(followUpBlocks(root, c), slugs);
+    past += bad.length;
+    for (const b of bad) rows.push(`  ~ ${c}  [${b.stage}]\n      ${b.text}`);
+  }
+  console.log(`\nArchived changes (${archived.length}) — historical, informational only:`);
+  console.log(rows.length ? rows.join('\n') : '  ✓ none unpromoted');
+
+  console.log(`\n${openLeak} unpromoted on active changes · ${past} unpromoted in the archive`);
+  if (openLeak) console.log(`Promote the active ones into ${REGISTER_FILE} before those changes archive.\n${SLUG_HINT}`);
+  process.exit(openLeak ? 1 : 0);
+}
+
 // ---------------------------------------------------------------- entry
 
 const argv = process.argv.slice(2);
@@ -258,7 +397,8 @@ switch (cmd) {
   case 'last':   cmdLast(root, change); break;
   case 'check':  cmdCheck(root, change); break;
   case 'audit':  cmdAudit(root); break;
+  case 'followups': cmdFollowups(root, change); break;
   default:
-    console.log('usage: flow-journal.mjs <audit | append | last | check> [--change <name>] [--repo <path>]');
+    console.log('usage: flow-journal.mjs <audit | append | last | check | followups> [--change <name>] [--repo <path>]');
     process.exit(cmd ? 2 : 0);
 }
