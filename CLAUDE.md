@@ -91,6 +91,23 @@ The OpenSpec `tasks:` rule enforces this: a behavioral change must list both a
 unit and an integration test task (pure config/docs/harness changes are exempt,
 recorded with a one-line note atop `tasks.md`).
 
+**Test-suite wall-clock is a tracked budget, not free.** A green run is not
+automatically a good run — slow suites cost every developer on every change, and
+the cost is invisible to whoever is only watching for the green tick.
+
+- **Report the duration.** Whenever you run the full suite (`./gradlew check`,
+  `./run-tests.sh`), state the elapsed wall-clock time in the summary. This makes
+  the trend visible instead of leaving it to whoever happens to notice the wait.
+- **Budget: `check` ≤ 3 minutes on a warm local machine.** Over that, stop and
+  raise it before continuing — say what got slower and propose a fix; don't
+  quietly absorb it. Container-backed slowness is *not* automatically "just how
+  Testcontainers is": shared containers and parallel forks each cut the suite
+  materially, and more headroom likely remains.
+- **Recurring friction is a valid follow-up-register entry.** The register in
+  `docs/ROADMAP.md` is not only for work a CR deliberately descoped — build/test
+  time and repeated manual steps belong there too, with the measured number that
+  triggered it.
+
 **Scanning** (required build gates):
 
 - **Backend dependency-vulnerability scan** — `OSV-Scanner` over the locked
