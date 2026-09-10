@@ -112,6 +112,14 @@ fact and an undeliverable mailbox does not undo it.
 Delivery SHALL NOT block the completion path: storing artifacts and recording completion SHALL
 NOT be held up by, or rolled back because of, a delivery attempt.
 
+**What "delivered" means, precisely.** A successful delivery means the **email provider accepted
+the message**, not that it reached the recipient's mailbox. Plain SMTP has no return channel for a
+bounce, so a hard bounce raised *after* acceptance is invisible and the permanent-failure path
+above fires only for a rejection raised **during** the send. Any read that treats a successful
+delivery as proof of arrival - closure included - inherits that limit and SHALL NOT be presented
+as arrival confirmation. Closing the gap requires the provider's bounce webhook (follow-up
+`zeptomail-bounce-webhook`), which is out of scope here.
+
 #### Scenario: Transient failure is retried
 
 - **WHEN** a delivery attempt fails transiently

@@ -119,14 +119,36 @@ Behavioral change -> unit **and** integration tests (S6), per `dev-policy`.
 
 **Production-readiness (do NOT defer to launch day):**
 
-- [ ] 7.6 **Start the ZeptoMail account review early.** It requires a Customer Validation form
+- [x] 7.6 **Start the ZeptoMail account review early.** It requires a Customer Validation form
   and typically takes 2-3 business days; production sending is blocked until it passes.
-- [ ] 7.7 Configure SPF/DKIM for the sending domain against ZeptoMail, and verify alignment
-  before first production send.
-- [ ] 7.8 Wire ZeptoMail's **bounce webhook** into the existing permanent-failure path (S3.6).
-  Additive; until this exists, `SENT` means "accepted by the provider", not "delivered".
+  **Descoped** -> `zeptomail-production-provisioning` in `docs/ROADMAP.md`'s follow-up register:
+  no ZeptoMail account exists and nothing in this repo can submit the form.
+- [x] 7.7 Configure SPF/DKIM for the sending domain against ZeptoMail, and verify alignment
+  before first production send. **Descoped** -> `zeptomail-production-provisioning` (same row):
+  DNS records against an account that does not exist yet.
+- [x] 7.8 Wire ZeptoMail's **bounce webhook** into the existing permanent-failure path (S3.6).
+  Until this exists, `SENT` means "accepted by the provider", not "delivered".
+  **Descoped** -> `zeptomail-bounce-webhook`. The task called this additive; **it is not.**
+  `EmailSender.send` returns `void` and the delivery record holds no provider message id, so
+  there is **no correlation key** to join a bounce back to a recipient row - wiring it needs a
+  migration, a changed seam signature, and a bounce payload contract that cannot be established
+  without a live ZeptoMail account. Not invented here. The stale "additive" claim is corrected in
+  `design.md` D7, `proposal.md` and `docs/DOMAIN-AND-EMAIL-SETUP.md`.
 - [x] 7.3 Update `docs/ROADMAP.md` with the completed end-to-end journey.
-- [ ] 7.4 **Before deploying anywhere holding real signed agreements**, confirm the deploy will
+- [x] 7.4 **Before deploying anywhere holding real signed agreements**, confirm the deploy will
   not trigger a mass send for pre-existing `SIGNED` agreements (design, Migration Plan step 3).
+  **Confirmed, and converted from a promise into two characterization tests** so a future change
+  to either selection fails the build instead of mailing real parties: the reconciliation scan
+  takes `SIGNED` rows only while `signed_pdf_key IS NULL`
+  (`SigningCompletionIntegrationTest.reconciliationDoesNotDeliverPreExistingSignedAgreementsThatAlreadyHoldTheirArtifacts`),
+  and the retry sweep selects due **rows**, never agreements
+  (`SignedDeliveryIntegrationTest.theRetrySweepNeverManufacturesDeliveriesForAnAgreementThatHasNoDeliveryRecords`).
+- [x] 7.9 **Defect found at closeout, fixed here.** `SignedDocumentDeliveryService.closeAbandoned`
+  mapped `STAMP_FAILED` to `ABANDONED_SIGNING_FAILED`, so a stamping failure closed reading as "a
+  party rejected the signature" - contradicting `ClosureReason.ABANDONED_STAMP_FAILED`'s own
+  javadoc and V18's column comment, both of which list it. Latent (the stamp path closes first and
+  `close` is idempotent), but the one record whose job is to say what went wrong said the wrong
+  thing. The existing unit test asserted only two of the three terminal states, which is why it
+  survived; it now covers all three.
 - [x] 7.5 Run `./gradlew spotlessApply` then the full gate (`./gradlew check`, or
   `./gradlew test spotbugsMain` where `osv-scanner` is unavailable locally).

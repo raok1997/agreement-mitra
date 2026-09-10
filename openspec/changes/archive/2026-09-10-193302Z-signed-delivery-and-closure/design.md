@@ -126,9 +126,19 @@ ever leave Zoho.
 *What does not carry over:* **bounce reporting.** Plain SMTP tells us the provider accepted the
 message, not that it arrived. ZeptoMail offers **bounce webhooks**; the free mailbox does not.
 So in development a hard bounce is invisible, and `SENT` means "handed to the provider". Wiring
-ZeptoMail's bounce webhook is a small **additive** change at productionisation - it feeds the
-existing permanent-failure path (D3) rather than reshaping anything. Deliberately not built now,
-since there is nothing in development to receive from.
+ZeptoMail's bounce webhook closes that gap at productionisation, feeding the existing
+permanent-failure path (D3). Deliberately not built now, since there is nothing in development to
+receive from.
+
+*Correction (2026-09-11, as shipped):* this decision originally called that webhook "a small
+**additive** change ... rather than reshaping anything". **It is not additive.** The seam shipped
+as `void send(EmailMessage)` and `signed_document_delivery` carries no provider message id, so
+nothing links a bounce notification back to the recipient row it belongs to. Wiring it needs a
+forward-only migration for the correlation key, a change to the `EmailSender` signature (and
+therefore to both adapters and `markSent`), and a bounce payload contract that cannot be
+established without a live ZeptoMail account - plausibly forcing ZeptoMail's HTTP API over SMTP
+and reopening the one-adapter choice above. Carried as `zeptomail-bounce-webhook` in the
+follow-up register rather than guessed at here.
 
 ### D7a: Attachment ceiling is derived from the provider's total-message limit
 
@@ -190,6 +200,15 @@ default. Revisit only if streaming becomes a measured bottleneck.
 3. Backfill: existing `SIGNED` agreements are dev data and need no delivery; leave them open
    rather than emitting a burst of emails on deploy. **Confirm this before deploying anywhere
    with real signed agreements** - an accidental mass send is the obvious hazard here.
+
+   *Confirmed as shipped (2026-09-11), and pinned as tests rather than left as a promise.* Nothing
+   re-enters delivery for such an agreement: the reconciliation scan selects `SIGNED` rows only
+   while `signed_pdf_key IS NULL`, and the delivery retry sweep selects **due rows**, of which a
+   pre-existing agreement has none - record creation is reachable only *through* a row the sweep
+   already found. Both are characterization tests
+   (`SigningCompletionIntegrationTest.reconciliationDoesNotDeliverPreExistingSignedAgreementsThatAlreadyHoldTheirArtifacts`,
+   `SignedDeliveryIntegrationTest.theRetrySweepNeverManufacturesDeliveriesForAnAgreementThatHasNoDeliveryRecords`),
+   so widening either selection fails the build instead of mailing real parties.
 
 **Rollback:** delivery and closure are additive and downstream of the legal record; disabling
 delivery stops sends without affecting signing, storage, or stored artifacts.

@@ -422,6 +422,39 @@ class SignedDeliveryIntegrationTest {
   }
 
   @Test
+  void theRetrySweepNeverManufacturesDeliveriesForAnAgreementThatHasNoDeliveryRecords() {
+    // THE OTHER HALF OF THE DEPLOY HAZARD (signed-delivery-and-closure, Migration Plan step 3).
+    // V18 ships no backfill, so on deploy every pre-existing SIGNED agreement has artifacts stored
+    // and ZERO delivery rows. Deleting the rows reproduces exactly that state. The retry sweep
+    // selects DUE ROWS, not agreements - and ensureRecords, which would create rows and send from
+    // them, is only ever reached through a row the sweep already found. Widening the sweep to
+    // select agreements instead would silently turn a deploy into a mass send.
+    UUID agreementId = readyToSign();
+    requestSigning(agreementId, "DOC-DEL-BACKFILL");
+    stubDetails("SIGNED", "SIGNED", true);
+    postWebhook("DOC-DEL-BACKFILL");
+    assertThat(mail.sent()).hasSize(2);
+
+    jdbc.update("DELETE FROM signed_document_delivery WHERE agreement_id = ?", agreementId);
+    jdbc.update(
+        "UPDATE agreement SET closure_state = 'OPEN', closure_reason = NULL, closed_at = NULL"
+            + " WHERE id = ?",
+        agreementId);
+    mail.reset();
+
+    deliveryService.retryDue();
+
+    assertThat(mail.sent()).isEmpty();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM signed_document_delivery WHERE agreement_id = ?",
+                Integer.class,
+                agreementId))
+        .isZero();
+    assertThat(closureState(agreementId)).isEqualTo("OPEN");
+  }
+
+  @Test
   void concurrentCompletionsStillSendEachRecipientExactlyOneMessage() throws Exception {
     UUID agreementId = readyToSign();
     requestSigning(agreementId, "DOC-DEL-4");

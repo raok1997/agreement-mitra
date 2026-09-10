@@ -83,8 +83,13 @@ Two consequences to plan for, not to solve now:
 
 - **Bounce reporting does not exist in development.** Plain SMTP reports that the provider
   accepted a message, not that it arrived, so a hard bounce is invisible and the
-  permanent-failure path never fires. ZeptoMail's bounce webhook closes this in production and
-  is a small **additive** change feeding the failure path this proposal already defines.
+  permanent-failure path never fires. ZeptoMail's bounce webhook closes this in production, feeding the
+  permanent-failure path this proposal already defines. **Correction (2026-09-11, as shipped):
+  it is not additive.** `EmailSender.send` returns nothing and the delivery record holds no
+  provider message id, so there is no correlation key to join a bounce back to a recipient row;
+  wiring the webhook needs a migration, a change to the seam signature, and a payload contract
+  that cannot be verified without a live ZeptoMail account. Tracked in the follow-up register as
+  `zeptomail-bounce-webhook`.
 - **ZeptoMail requires an account review** (a Customer Validation form, typically 2-3 business
   days) because it enforces a transactional-only policy. It is not a same-day switch, so the
   review should be started before production sending is needed.

@@ -229,7 +229,10 @@ State it plainly, because the failure is silent and reputational:
 - **No bounce reporting.** Plain SMTP tells us the provider *accepted* a message,
   never that it *arrived*. A hard bounce is invisible, so `SENT` in our records
   means "handed to the provider" and nothing stronger. ZeptoMail's **bounce
-  webhook** closes this in production; it is additive and not built yet.
+  webhook** closes this in production. It is **not built, and not additive**: the
+  email seam returns nothing and a delivery record holds no provider message id,
+  so there is no correlation key to join a bounce back to a recipient. See the
+  `zeptomail-bounce-webhook` row in `docs/ROADMAP.md`'s follow-up register.
 - **Sending real user mail from it would put the human mailbox's reputation
   behind bulk delivery** -- which is the same argument as the transactional
   subdomain follow-up below.
