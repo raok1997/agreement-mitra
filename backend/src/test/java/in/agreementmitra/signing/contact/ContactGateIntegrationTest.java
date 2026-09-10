@@ -3,6 +3,8 @@ package in.agreementmitra.signing.contact;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import in.agreementmitra.identity.IdentityService;
+import in.agreementmitra.identity.oauth.HandoffService;
+import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
@@ -70,6 +72,8 @@ class ContactGateIntegrationTest {
   }
 
   @Autowired private IdentityService identityService;
+  @Autowired private HandoffService handoffService;
+  @Autowired private SessionService sessionService;
   @Autowired private RecordingEmailSender mail;
 
   @BeforeEach
@@ -91,6 +95,28 @@ class ContactGateIntegrationTest {
         identityService.findOrCreate(
             "google", "owner-" + agreementId, "owner-" + agreementId + "@example.com", true, "T");
     jdbc.update("UPDATE agreement SET owner_identity_id = ? WHERE id = ?", ownerId, agreementId);
+  }
+
+  /**
+   * Claim the agreement and return a live Bearer session for the identity that now owns it.
+   *
+   * <p>Needed because {@code PUT /api/agreements/*} is {@code .authenticated()} in {@link
+   * in.agreementmitra.SecurityConfig}, unlike the contacts route this file otherwise exercises
+   * anonymously. A test that reaches the terms route without a session is refused by the security
+   * chain (403) and never touches the freeze it means to assert.
+   */
+  private String claimAndSignIn(UUID agreementId, String subject) {
+    UUID ownerId =
+        identityService.findOrCreate(
+            "google", subject, subject + "@example.com", true, "T " + subject);
+    jdbc.update("UPDATE agreement SET owner_identity_id = ? WHERE id = ?", ownerId, agreementId);
+    return sessionService.exchange(handoffService.issue(ownerId)).value();
+  }
+
+  private static HttpHeaders bearer(String session) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setBearerAuth(session);
+    return headers;
   }
 
   private UUID createAgreement(List<Party> parties) {
@@ -414,7 +440,14 @@ class ContactGateIntegrationTest {
     // The whole change is that contacts stopped sharing a line with the terms. If this passed for
     // the wrong reason - because BOTH were relaxed - the document could be rewritten under a
     // placed order, so it is asserted explicitly rather than assumed.
+    //
+    // Everything below is what it takes to reach the freeze at all. The terms route is
+    // .authenticated() and its body is @Valid, so an anonymous caller (403) or an empty signer list
+    // (400) is refused BEFORE AgreementService.update runs - a refusal that would still be a
+    // refusal if the terms freeze were deleted outright. Hence the session, the full body, and the
+    // assertion on the exact status and problem type rather than "not 200".
     UUID id = aFinalisedOrder();
+    String session = claimAndSignIn(id, "terms-freeze-owner-" + id);
 
     ResponseEntity<String> edited =
         rest.exchange(
@@ -422,17 +455,43 @@ class ContactGateIntegrationTest {
             HttpMethod.PUT,
             new HttpEntity<>(
                 Map.of(
+                    "state", "TG",
+                    "type", "residential",
                     "propertyAddress", "Somewhere else entirely",
                     "monthlyRent", "1.00",
                     "securityDeposit", "1.00",
                     "startDate", "2026-09-01",
                     "endDate", "2027-07-31",
-                    "signers", List.of())),
+                    "signers",
+                        List.of(
+                            Map.of(
+                                "firstName", "Asha",
+                                "lastName", "Party",
+                                "fatherName", "Some Parent",
+                                "currentAddress", "1 A St",
+                                "role", "OWNER",
+                                "email", "asha@example.com"),
+                            Map.of(
+                                "firstName", "Tara",
+                                "lastName", "Party",
+                                "fatherName", "Some Parent",
+                                "currentAddress", "1 A St",
+                                "role", "TENANT",
+                                "email", "tara@example.com"))),
+                bearer(session)),
             String.class);
 
-    assertThat(edited.getStatusCode()).isNotEqualTo(HttpStatus.OK);
+    // The terms freeze, and specifically the terms freeze: draft-frozen, not contacts-frozen.
+    assertThat(edited.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(edited.getBody()).contains("urn:agreementmitra:problem:draft-frozen");
+    assertThat(edited.getBody()).doesNotContain("contacts-frozen");
+    // Read back as the owner: the agreement is claimed now, so an anonymous GET is scoped away and
+    // would report a null address whether or not the edit had landed.
     @SuppressWarnings("unchecked")
-    ResponseEntity<Map> after = rest.getForEntity("/api/agreements/" + id, Map.class);
+    ResponseEntity<Map> after =
+        rest.exchange(
+            "/api/agreements/" + id, HttpMethod.GET, new HttpEntity<>(bearer(session)), Map.class);
+    assertThat(after.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(after.getBody().get("propertyAddress"))
         .isEqualTo("12 Test Street, Bengaluru 560038");
   }
