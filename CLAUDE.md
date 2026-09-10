@@ -248,6 +248,14 @@ section), included automatically in every OpenSpec request. Keep its `Signing
 status FSM` line in sync with `SignatureStatus.java` — it is injected into every
 artifact the CLI helps generate, so drift there mis-specs future changes.
 
+**The SHALL check reads only the first line.** `openspec validate --strict` extracts a
+requirement's text as the *first* non-blank, non-`**meta**:` line after the `### Requirement:`
+header and requires `SHALL`/`MUST` in that one line — a body full of SHALLs below it does not
+count, and a leading `> NOTE:` blockquote or a "Because ..." preamble fails the check. Lead with
+the SHALL clause and put the rationale or the note after it. A first line of the form
+`**Rule**: ...` is skipped as metadata, so don't start with bold-plus-colon. This bites at
+archive time, not before, because `openspec archive` runs the same validation before it writes.
+
 ### Archiving folds the spec of record — always use the CLI
 
 `openspec archive` parses each delta, rebuilds the target spec, validates it, and

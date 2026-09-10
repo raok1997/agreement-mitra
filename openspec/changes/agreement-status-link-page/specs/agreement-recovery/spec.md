@@ -2,13 +2,13 @@
 
 ### Requirement: Recovered access permits continuation but not alteration of terms
 
+A customer who opens a recovery link SHALL be able to view the agreement's status, obtain its
+document, and continue through the remaining fulfilment steps to completion.
+
 > NOTE: the requirement name is retained verbatim so this delta matches its source at archive
 > time. The name no longer describes the rule -- alteration of terms IS now permitted before
 > stamping. Rename the requirement to "Recovered access permits continuation, and correction
 > of terms before stamping" in a follow-up once `post-payment-continuity` is archived.
-
-A customer who opens a recovery link SHALL be able to view the agreement's status, obtain its
-document, and continue through the remaining fulfilment steps to completion.
 
 They SHALL additionally be able to **correct the agreement's terms and its parties while no
 stamp is attached**. Once a stamp is attached the terms SHALL be frozen and any such attempt

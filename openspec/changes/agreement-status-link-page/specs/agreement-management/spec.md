@@ -66,9 +66,8 @@ a fresh document from the edited terms.
 
 ### Requirement: Every anonymous terms edit is audited
 
-Because a terms edit may be performed by a caller presenting only the agreement id, the system
-SHALL record an audit entry for each such edit, capturing the agreement, the outcome, and the
-time it occurred.
+The system SHALL record an audit entry for each terms edit performed by a caller presenting
+only the agreement id, capturing the agreement, the outcome, and the time it occurred.
 
 The audit entry SHALL NOT store party PII, contact addresses, or the edited values themselves.
 Any recipient or contact value appearing in a related log line SHALL be redacted.

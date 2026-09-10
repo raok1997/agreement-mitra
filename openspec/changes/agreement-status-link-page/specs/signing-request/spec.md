@@ -49,13 +49,13 @@ provider, signing URLs belonging to other parties, or any provider credential.
 
 ### Requirement: The order is placed when the customer finalises, and the draft freezes then
 
-> NOTE: the requirement name is retained verbatim so this delta matches its source at archive
-> time. "freezes then" is no longer accurate -- the freeze falls at stamping. Rename to
-> "...and the draft freezes at stamping" in a follow-up once `manual-estamp-upload` is archived.
-
 The customer's involvement SHALL substantially end when they **finalise** the agreement. At that
 point the system SHALL place the order: it SHALL create the signing request in `PDF_GENERATED`
 and surface the agreement's tracking reference to the customer.
+
+> NOTE: the requirement name is retained verbatim so this delta matches its source at archive
+> time. "freezes then" is no longer accurate -- the freeze falls at stamping. Rename to
+> "...and the draft freezes at stamping" in a follow-up once `manual-estamp-upload` is archived.
 
 The agreement's terms SHALL freeze when a **stamp is attached** (the signing request reaches
 `STAMPED`), not at finalisation. While the request rests in `PDF_GENERATED` the terms SHALL

@@ -35,8 +35,9 @@ Closure SHALL record **when** it closed and **why** (completed, or the abandonme
 
 ### Requirement: Terminally failed agreements also close, as abandoned
 
-An agreement whose signing reached a terminal failure - rejected, expired, or unable to be
-stamped - SHALL also be closable, with a reason distinguishing it from a completed agreement.
+An agreement whose signing reached a terminal failure SHALL also be closable, with a reason
+distinguishing it from a completed agreement. A terminal failure is a signing that was
+rejected, that expired, or that could not be stamped.
 
 This exists so that dead work does not accumulate indefinitely in the staff queue. An
 agreement that can never complete SHALL NOT remain indistinguishable from one still in

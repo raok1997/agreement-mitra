@@ -54,9 +54,9 @@ SHALL be unchanged. The chain SHALL remain deny-by-default for any unmatched rou
 
 ### Requirement: The agreement edit route is rate limited per source
 
-Because `PUT /api/agreements/*` is reachable by an unauthenticated caller holding an agreement
-id, the security baseline SHALL apply a per-source rate limit to it, refusing further attempts
-beyond the configured limit for a lockout period.
+The security baseline SHALL apply a per-source rate limit to `PUT /api/agreements/*`,
+refusing further attempts beyond the configured limit for a lockout period, because that route
+is reachable by an unauthenticated caller holding an agreement id.
 
 The limit SHALL be enforced before the agreement is looked up, so that a throttled response
 cannot act as an existence oracle, and SHALL NOT vary in shape according to whether the

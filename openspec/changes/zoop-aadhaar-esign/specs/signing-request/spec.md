@@ -198,10 +198,10 @@ SHALL NOT be fetched.
 
 ### Requirement: Secrets, config, and PII handling
 
-Provider credentials - base URL, and per-provider authentication values (`app-id` / `api-key`
-for ZOOP; auth token and webhook secret for Leegality) - SHALL come from environment variables
-only. Non-secret provider settings (transaction expiry, the artifact host allowlist, the
-provider selector) MAY be plain configuration.
+Provider credentials SHALL come from environment variables only - the base URL, and the
+per-provider authentication values (`app-id` / `api-key` for ZOOP; auth token and webhook
+secret for Leegality). Non-secret provider settings (transaction expiry, the artifact host
+allowlist, the provider selector) MAY be plain configuration.
 
 A **per-transaction webhook key** issued by a provider SHALL be treated as a credential: it
 SHALL be stored **encrypted at rest**, SHALL NOT be logged in any form, and SHALL be compared

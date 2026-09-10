@@ -191,8 +191,8 @@ existence oracle.
 
 ### Requirement: Confirmation is idempotent under redelivery and duplicate events
 
-The provider redelivers webhooks and MAY send more than one event describing the same
-successful payment. Applying confirmation SHALL be **idempotent**.
+Applying confirmation SHALL be **idempotent**, because the provider redelivers webhooks and
+MAY send more than one event describing the same successful payment.
 
 A repeated or duplicate confirmation for an already-confirmed order SHALL leave the payment
 state, the recorded amount, and the recorded payment id unchanged, and SHALL NOT produce a
