@@ -19,9 +19,9 @@ requirement description, optionally a starting stage. Examples:
 - `/opsx:flow add-otp-resend "resend Aadhaar OTP during signing"`
 - `/opsx:flow add-otp-resend from:apply` (resume an existing change at implement)
 - `/opsx:flow` (will ask what to build)
-- `/opsx:flow add-otp-resend "..." only` (proposal artifact only — skip design + tasks)
 
-Add the `only` token anywhere after the change name to generate the proposal artifact
-alone (skip design + tasks).
+For a proposal artifact on its own — no design, no tasks, and deliberately not
+implementable — use `/opsx:propose <slug> only`. The flow drives a requirement to
+completion, so it has no proposal-only mode.
 
 **Invoke**: Use the **Skill tool** to run `openspec-flow` with the parsed input.

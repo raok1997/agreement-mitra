@@ -42,9 +42,12 @@ specifics live in `docs/integrations/` (e.g. Leegality sandbox/pricing).
 - Java: prefer records for DTOs/value objects; constructor injection (no field
   `@Autowired`); package-private by default, `public` only on the module API.
 - One aggregate's state transitions go through its state machine, not ad-hoc
-  setters. Signing states: `DRAFT → PDF_GENERATED → STAMPED → SIGN_REQUESTED →
-  SIGNED | FAILED | EXPIRED`, with `STAMP_FAILED` as a terminal branch off the
-  stamp step (`PDF_GENERATED → STAMP_FAILED`).
+  setters. Signing states (`SignatureStatus`): the active path is
+  `PDF_GENERATED → STAMPED → SIGN_REQUESTED → SIGNED | FAILED | EXPIRED`, with
+  `STAMP_FAILED` as a terminal branch off the stamp step
+  (`PDF_GENERATED → STAMP_FAILED`). `DRAFT` is declared but **reserved — not yet
+  used**; do not put it on the active path. Keep this line, the `Signing status
+  FSM` line in `openspec/config.yaml`, and `SignatureStatus.java` in sync.
 - eSign is **asynchronous**: never block a request thread waiting on a
   signature. Create the request, return the signing URL, let the webhook drive
   completion. A scheduled reconciliation job is the fallback for missed hooks.
@@ -124,9 +127,11 @@ recorded with a one-line note atop `tasks.md`).
   exclude-build-tooling scope. To accept a finding, add an `[[IgnoredVulns]]` entry
   to `frontend/osv-scanner.toml` with a `reason` AND an `ignoreUntil` expiry —
   justified and time-boxed, never permanent or wildcard. The baseline is currently
-  **empty** (graph is clean). **Not yet wired into CI** (local-only today; not
-  coupled to `npm run build` — a clean local run is not proof the build was gated);
-  CR-7 promotes it. The same `osv-scanner` binary as the backend gate
+  **empty** (graph is clean). It **is** coupled to the build: `npm run build` chains
+  `security:scan && test && vue-tsc -b && vite build`, so a passing build implies a
+  passing scan (note `build` does **not** run eslint — `npm run lint` is separate).
+  Still **not wired into CI** (local-only today, so a clean local run is not proof any
+  shared build was gated); CR-7 promotes it. The same `osv-scanner` binary as the backend gate
   (`brew install osv-scanner`).
   - **`dev: false` is not "ships to the browser".** npm's `dev` flag tracks
     reachability from `dependencies`, not bundle membership. `vue` declares
@@ -228,9 +233,52 @@ Features are built spec-first. Before implementing anything non-trivial:
 1. Propose a change (`/opsx:propose <slug>`), which writes
    `openspec/changes/<slug>/` (proposal, specs, design, tasks).
 2. Review the proposal and spec deltas with me before code lands.
-3. Apply (`/opsx:apply`), then archive (`/opsx:archive`) when done.
+3. Apply (`/opsx:apply`), then archive with `openspec archive -y <slug>` when done.
 Project context for OpenSpec lives in `openspec/config.yaml` (the `context:`
-section), included automatically in every OpenSpec request.
+section), included automatically in every OpenSpec request. Keep its `Signing
+status FSM` line in sync with `SignatureStatus.java` — it is injected into every
+artifact the CLI helps generate, so drift there mis-specs future changes.
+
+### Archiving folds the spec of record — always use the CLI
+
+`openspec archive` parses each delta, rebuilds the target spec, validates it, and
+**aborts without writing** if anything does not hold. Never hand-merge deltas into
+`openspec/specs/`, never delegate that merge to a subagent, and never pass
+`--skip-specs` to a change that has delta specs. Doing so once left six capabilities
+archived but never folded into the baseline (`openspec/BASELINE-FOLD-GAP.md`) and let
+a requirement missing its `SHALL` sit in the spec of record for two months.
+
+There is deliberately **no `openspec-archive-change` skill and no `/opsx:archive`
+command** — both were deleted because they hand-rolled a `mv` around the CLI. If
+`openspec update` regenerates them, delete them again.
+
+### Which skills survive `openspec update`
+
+`.claude/skills/` holds two tiers, and the tier decides where logic may live:
+
+- **Ours (durable).** `openspec-flow`, `review-spec`, `openspec-validate` — none are in
+  the CLI's `WORKFLOW_TO_SKILL_DIR`, so `openspec update` never regenerates or deletes
+  them. **All policy belongs here.**
+- **Vendor's (regenerated).** `openspec-explore`, `openspec-propose`,
+  `openspec-apply-change` and the `opsx:` commands for them are written by
+  `openspec init/update` via unconditional overwrite. **Treat them as read-only** — an
+  edit there survives only until the next openspec release flips the version stamp.
+
+Do not install the upstream skills we omit. `openspec-sync-specs` in particular is
+explicitly "agent-driven … you will read delta specs and directly edit main specs" —
+that is the improvised merge the CLI exists to replace.
+
+### Reviewing the skills — read `DECISIONS.md` first
+
+`.claude/skills/DECISIONS.md` is the adjudication register for the skills and `opsx:`
+commands. Prose instruction files have no test suite, so review is their only quality
+gate — an unbounded one, and three rounds in three days each surfaced fresh Criticals
+that were mostly second-order consequences of the previous round's own fixes. Before
+reviewing any skill: read the register, review **the diff since the last commit rather
+than the whole file**, and do not re-raise an entry marked `accepted`/`deferred` without
+new evidence. When you fix something, land its blast radius in the same round (grep for
+references in the repo, `README.md`, this file, the auto-memory, and
+`~/.config/openspec/config.json`). Cap tooling review at 2 rounds, then commit.
 
 ## Gotchas
 
