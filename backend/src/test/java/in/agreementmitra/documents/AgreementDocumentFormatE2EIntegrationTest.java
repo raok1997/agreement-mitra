@@ -192,10 +192,12 @@ class AgreementDocumentFormatE2EIntegrationTest {
   void previewRendersTheArtifactLayoutHeaderPartyCardsWitnessSectionAndMargins() throws Exception {
     String html = previewHtml(telanganaData(), List.of());
 
-    // meta.document header (title/subtitle/execution line). The ampersand in the subtitle is
-    // escaped.
+    // meta.document header (title/subtitle/execution line). Header escaping is covered as a unit
+    // in TemplateCompilerTest.headerTextContainingMarkupRendersAsLiteralText -- the production
+    // subtitle no longer carries an ampersand since base.yaml v2 dropped "(Leave & Licence)".
     assertThat(html).contains("<h1 class=\"doc-title\">Rental Agreement</h1>");
-    assertThat(html).contains("Residential Tenancy (Leave &amp; Licence)");
+    assertThat(html).contains("Residential Tenancy");
+    assertThat(html).doesNotContain("Licence");
     assertThat(html).contains("This Agreement is executed on");
 
     // Owner + Tenant render as party cards (render: parties).

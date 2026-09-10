@@ -52,19 +52,33 @@
 >   always render, so they sit in the mandatory `Now This Agreement Witnesseth` clause list. The
 >   dispute/jurisdiction/special-conditions *fields* stay in the optional `Dispute Resolution` capture
 >   section.
-> - **TG header override:** none authored -- the national wording is the default (D4 latitude; confirm
->   any TG-specific subtitle/phrasing with legal).
+> - **TG header override:** none authored -- the national wording is the default (D4 latitude).
+>   **Amended 2026-09-10:** the national wording itself was the problem. The subtitle and recital said
+>   "(Leave & Licence)" -- the *Maharashtra* residential form -- while every other signal in the deed
+>   said **lease**: `scheduleClause` uses "lets" (s.105 Transfer of Property Act), the parties are
+>   Owner/Tenant, there is a no-subletting covenant, the TG overlay cites the Telangana Buildings
+>   (**Lease**, Rent and Eviction) Control Act 1960, `state-stamp-duty-quoting` prices under Karnataka
+>   Stamp Act Article 30 (the **lease** article), and the sibling commercial set is a "Commercial Lease
+>   Agreement" with Lessor/Lessee. The licence label was the only licence-shaped thing in the document.
+>   It was removed (`base.yaml` v2) as a **de-contradiction, not a ruling** -- courts read substance
+>   over label (*Associated Hotels of India v. R.N. Kapoor*, 1959: the test is exclusive possession),
+>   so this aligns what the deed says it is with what it already does. The substantive lease-vs-licence
+>   question and the Lessor/Lessee vocabulary went to the follow-up register for counsel.
 
 ## 1. Document header (`meta.document`) -- base + Telangana override
 
 - [x] 1.1 Add a `meta.document` block to `base.yaml`: `title: "Rental Agreement"`, `subtitle:
-  "Residential Tenancy (Leave & Licence)"`, `executionLine: "This Agreement is executed on
+  "Residential Tenancy"` (**amended 2026-09-10** -- authored as `"Residential Tenancy (Leave &
+  Licence)"`, the licence label removed under 9.4 below), `executionLine: "This Agreement is executed on
   {{agreementDate}} in respect of the property in the Schedule below."` (system-authored, `{{slot}}`
   fill, escaped at compile by M1).
 - [x] 1.2 (Optional per D4/Open Questions) **Decision: no TG header override authored** -- the national
-  wording is the default (D4 latitude). No subtitle/execution-line override in the TG layers; confirm any
-  TG-specific phrasing with legal (see 9.4) and add an `overrideField`-style header patch only if they
-  require distinct wording.
+  wording is the default (D4 latitude). No subtitle/execution-line override in the TG layers.
+  **Amended 2026-09-10:** the D4 question was framed as *TG-specific wording*, but the real defect was
+  in the **national** wording, so no TG override is needed -- the national subtitle was corrected
+  instead (`"Residential Tenancy (Leave & Licence)"` -> `"Residential Tenancy"`). Rationale in 9.4 and
+  in the `base.yaml` v2 meta comment. A Maharashtra set, if one is ever added, carries leave-and-licence
+  in its own **state** layer.
 
 ## 2. Split Parties into Owner + Tenant (render kind `parties`)
 
@@ -170,12 +184,76 @@
   tracking row for `rental-document-content-v2` set to `applied`. **A manual PDF eyeball via
   `bootRun` + a live preview is still worth doing before archive** (automated tests assert markup, not
   pixels).
+  - **2026-09-10:** the compiled deed HTML was dumped for all four combinations (IN/TG x default/all
+    add-ons) and the **content** was read end to end: the v2 header renders "Rental Agreement /
+    Residential Tenancy", the recital reads without the licence label, TG names Hyderabad in the
+    jurisdiction covenant and carries the mandatory statutory overlay. **The pixel/pagination check was
+    performed by the repo owner on 2026-09-10**, in Chrome over those rendered documents,
+    and passed. (Chromium-via-`bootRun` PDF pagination was not separately re-checked; the browser
+    render of the same compiled HTML was accepted as the eyeball.)
+    One thing the content read surfaced: the national deed renders
+    "the courts at [ Jurisdiction city ]" -- registered, see 9.4.
 - [x] 9.3 Confirm **no new dependency and no `gradle.lockfile` change** (content + tests only).
-- [ ] 9.4 **Resolved provisionally in code (see the decisions note atop this file); still needs legal
-  sign-off before archive:** `Statutory (Telangana)` authored **mandatory**; coarse optional sections
-  **augmented in the shared base** (not replaced in TG); recital placed in the **witnesseth** section;
-  **no** TG header override (national wording). Each is a one-flag / one-line change if legal decides
-  otherwise. This box stays open until legal confirms.
+- [x] 9.4 **CLOSED 2026-09-10 by descoping the legal sign-off to the follow-up register, on the repo
+  owner's decision.** Original text: *"Resolved provisionally in code; still needs legal sign-off
+  before archive: `Statutory (Telangana)` authored mandatory; coarse optional sections augmented in
+  the shared base (not replaced in TG); recital placed in the witnesseth section; no TG header
+  override (national wording). Each is a one-flag / one-line change if legal decides otherwise. This
+  box stays open until legal confirms."*
+  - **Why it closed rather than waited:** no counsel is engaged and the brief is unsent (see below),
+    so the gate as written had no party who could satisfy it. Holding an otherwise-complete CR open
+    on an unengaged third party is not a gate, it is an indefinitely-parked change. Per CLAUDE.md,
+    work a CR identifies but deliberately does not fold in belongs in the `## Follow-up register` in
+    `docs/ROADMAP.md` **before** the CR archives. It is recorded there, flagged as blocking the first
+    real customer and as a dependency of `state-stamp-duty-quoting`.
+  - **Risk accepted knowingly:** prod is beta with founding-team users only, no real customers, and
+    each of the four calls is a one-flag / one-line reversal.
+  - **Disposition of the four calls:**
+    1. **`Statutory (Telangana)` mandatory -- CONFIRMED as shipped.** Barely a legal question:
+       opt-in was demonstrably broken (a default TG deed rendered with no stamp/registration clause
+       at all), mandatory costs the user no input, and it is strictly safer. If it is ever reverted,
+       `stampRegistrationClause` must return to the TG witnesseth list in the same edit.
+    2. **Coarse optional sections augmented in the shared base -- CONFIRMED as shipped.** An
+       architecture call about where content lives; the rendered deed is identical either way. No
+       legal content in the question.
+    3. **Recital in the witnesseth section -- CONFIRMED as shipped.** Placement convention only.
+       Slightly unconventional (Indian deeds usually put the recital above the witnesseth clause);
+       one entry to move if anyone objects. Registered as a low-priority drafting nit.
+    4. **No TG header override -- RESOLVED DIFFERENTLY.** The question was mis-framed as TG-specific
+       *wording*; the defect was in the **national** wording. `base.yaml` v2 removes the
+       "(Leave & Licence)" label from the subtitle and the recital. Full reasoning in the amended
+       decisions note atop this file and in the `base.yaml` v2 meta comment. **The substantive
+       lease-vs-licence ruling and the Lessor/Lessee vocabulary question are NOT decided here** --
+       both are in the follow-up register for counsel.
+  - **`base.yaml` version bumped 1 -> 2** with the label removal, for the same reason `state:TG` was
+    bumped: agreements already generated pin `base: 1` and rendered the old wording, and
+    `Agreement.pinEffectiveTemplate` exists to keep "which content did this deed render from"
+    answerable. Tests updated with it: `ProductionRentalLayerSetTest` (subtitle + a
+    `doesNotContain("Licence")` guard), `AgreementDocumentFormatE2EIntegrationTest` (rendered header;
+    its incidental ampersand-escaping check was dropped -- escaping is covered as a unit by
+    `TemplateCompilerTest.headerTextContainingMarkupRendersAsLiteralText`), and
+    `ProductionCommercialLayerSetTest` (its `isNotEqualTo` guard repointed at the new string so it
+    does not go vacuous).
+  - **Two documentation-drift defects fixed in the same pass** (both are the exact hazard this task
+    warns about -- a reviewer, counsel included, reading a file that describes behaviour the code no
+    longer has):
+    - `state_type-TG-residential.patch.yaml` still described `Statutory (Telangana)` as "OPT-IN
+      OPTIONAL (2026-07-13 requester decision)" and said `tgGoverningLaw` applies "when the user adds
+      it" -- **two months after the flag was flipped**. Both comments corrected.
+    - This task previously claimed `ReferenceLayerSetResolutionIntegrationTest` "now asserts
+      `state:TG -> 2`". **It asserts 1, and correctly so** -- that test runs over the *fixture* layer
+      set under `documents/template/examples/layers/`, not the production set under
+      `documents/template/sets/rental/`. No production test pins production layer versions
+      (`TemplateResolverTest`'s version assertions are fixture-driven too), which is why the
+      `base.yaml` 1 -> 2 bump above required no test change. Claim corrected here; see the erratum
+      in the bullet below.
+  - **One proposed fix was considered and REJECTED.** Removing the now-redundant national
+    `governingLawClause` from the TG witnesseth list (TG carries both it and the broader
+    `tgGoverningLaw`) would recreate the stamp-clause hole one clause over: revert the statutory flag
+    to optional and a TG deed would have **no** governing-law clause at all. Redundancy where one
+    clause subsumes the other is untidy; a missing choice-of-law clause is dangerous. Left in place,
+    documented in the YAML, and registered with the safe fix (a `replaceClause` consolidation, not a
+    removal).
   - **2026-09-07: the statutory flag was flipped `optional: true -> false`** on the repo owner's
     decision, after the missing-stamp-clause hole was found (full reasoning in the decisions note
     above and in `state-TG.patch.yaml`). Until this date the code and the note disagreed, so **any
@@ -212,6 +290,10 @@
     Test updated with it: `ReferenceLayerSetResolutionIntegrationTest` now asserts `state:TG -> 2`.
     (`TemplateResolverTest`'s `state:TG` version assertions are fixture-driven, not the production
     layer set, and are unaffected.)
+    **ERRATUM 2026-09-10:** the `ReferenceLayerSetResolutionIntegrationTest` claim above is wrong --
+    that test asserts `state:TG -> 1` and always did, because it resolves the *fixture* layer set
+    under `documents/template/examples/layers/`, not the production set. No production test pins
+    production layer versions. Nothing is broken by this; the note was simply untrue.
   - **Still owed before the first real customer:** wire counsel sign-off to the
     `templateContentHash`, so an unreviewed authored template cannot ship silently. The pin makes
     this possible; nothing enforces it yet.

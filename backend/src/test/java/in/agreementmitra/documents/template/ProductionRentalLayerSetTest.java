@@ -165,7 +165,11 @@ class ProductionRentalLayerSetTest {
     DocumentMeta document = eff.template().meta().document();
     assertThat(document).isNotNull();
     assertThat(document.title()).isEqualTo("Rental Agreement");
-    assertThat(document.subtitle()).isEqualTo("Residential Tenancy (Leave & Licence)");
+    // Neutral subtitle: the "(Leave & Licence)" label was removed in base.yaml v2 -- it is the
+    // Maharashtra form, and every other signal in this deed (the "lets" verb, Owner/Tenant, the
+    // no-subletting covenant, the TG 1960 LEASE Act, Article 30 stamping) says lease.
+    assertThat(document.subtitle()).isEqualTo("Residential Tenancy");
+    assertThat(document.subtitle()).doesNotContain("Licence");
     assertThat(document.executionLine())
         .contains("{{agreementDate}}")
         .contains("in respect of the property in the Schedule below");
@@ -370,6 +374,50 @@ class ProductionRentalLayerSetTest {
           .contains("constitutes the entire agreement") // entire agreement / amendment
           .contains("Any notice required or permitted"); // service of notice
     }
+  }
+
+  @Test
+  void theAlwaysOnJurisdictionCovenantIsUnfilledOutsideTelangana() {
+    // KNOWN GAP, pinned deliberately -- see the follow-up register in docs/ROADMAP.md.
+    //
+    // disputeClause/disputeAlternativeClause sit in the MANDATORY witnesseth list, gated only on
+    // disputeResolution (base default "courts"), so one of them renders on EVERY deed. The city it
+    // names, jurisdictionCity, is declared required:false with NO national default and lives in the
+    // OPTIONAL "Dispute Resolution" section. TG patches the default to "Hyderabad"; nothing patches
+    // the base. So a deed generated without that optional section renders an operative
+    // exclusive-jurisdiction covenant naming a placeholder instead of a court:
+    //
+    //     "...exclusive jurisdiction of the courts at [ Jurisdiction city ]."
+    //
+    // That reaches KARNATAKA, not just a hypothetical "IN" deed: KA matches no state patch, so a
+    // Karnataka agreement resolves to this base alone.
+    //
+    // This test asserts the CURRENT behaviour so the gap is visible and cannot regress silently. It
+    // is expected to be rewritten by the CR that fixes it (the likely fix is a fallback clause
+    // reading "courts of competent jurisdiction" when no city is set -- a drafting decision).
+    EffectiveTemplate national = resolve("IN", "residential");
+    String nationalHtml =
+        new TemplateCompiler()
+            .compile(
+                national,
+                SubmittedDataValidator.validateAndCoerce(
+                    national, aggregateBackedData(), ProjectionMode.GENERATE));
+    assertThat(nationalHtml)
+        .as("national deed leaves the jurisdiction covenant unfilled")
+        .contains("exclusive jurisdiction of the courts at [ Jurisdiction city ]");
+
+    // Telangana is unaffected: the state+type layer defaults the city.
+    EffectiveTemplate telangana = resolve("TG", "residential");
+    String telanganaHtml =
+        new TemplateCompiler()
+            .compile(
+                telangana,
+                SubmittedDataValidator.validateAndCoerce(
+                    telangana, aggregateBackedData(), ProjectionMode.GENERATE));
+    assertThat(telanganaHtml)
+        .as("Telangana names a court")
+        .contains("exclusive jurisdiction of the courts at Hyderabad.")
+        .doesNotContain("[ Jurisdiction city ]");
   }
 
   @Test
