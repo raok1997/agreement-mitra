@@ -77,14 +77,64 @@
 
 ## 7. Acceptance -- inspect a real signed document
 
-- [ ] 7.1 Take one order through the full pipeline on the sandbox: draft, stamp, signing
-      request, both parties sign.
-- [ ] 7.2 Inspect the returned signed PDF: signatures sit in the signature areas, overlap
+- [x] 7.1 Take one order through the full pipeline on the sandbox: draft, stamp, signing
+      request, both parties sign. **Done 2026-09-11** (see the inspection record below).
+- [x] 7.2 Inspect the returned signed PDF: signatures sit in the signature areas, overlap
       no printed text and no other party's block, the per-page strip appears on every page
       including the stamp certificate page, and no `esign:<role>` token is visible
-      anywhere.
-- [ ] 7.3 Confirm the strip on the stamp-certificate page does not cover the certificate's
-      serial number or the vendor block.
-- [ ] 7.4 Record the inspection result (and the document it was performed on) in the
+      anywhere. **PASS on all four.**
+- [x] 7.3 Confirm the strip on the stamp-certificate page does not cover the certificate's
+      serial number or the vendor block. **PASS, by a wide margin** -- the certificate's
+      printed content occupies the upper third of the sheet and the strips sit at the foot.
+- [x] 7.4 Record the inspection result (and the document it was performed on) in the
       change before archiving -- the spec requires the loop be closed by inspection, not
       by arithmetic.
+
+### Inspection record -- 2026-09-11
+
+**Document inspected.** Tracking reference `AM63AV7B8WZ`, Telangana residential, four physical
+pages: a composited SHCIL-style e-stamp certificate (dummy: Rs. 100 Telangana non-judicial,
+serial `AA 000000`, `SAMPLE STAMP VENDOR`) followed by three agreement pages footered
+"Agreement page 1..3 of 3". Signed on the ZOOP **test host**, viewer **v4.2.0**, transaction
+`6aa386abc8889fad5a2e857a`. Both parties signed via Aadhaar eSign at 10:13:20 and 10:15:03 IST.
+Dummy party data throughout (`j k` / `h k`); signer addresses redacted from this record.
+
+**Result: all seven placement checks PASS.**
+
+1. **Signatures land inside their own signature areas** -- and, decisively, **are not mirrored**.
+   Both signature blocks sit in the `IN WITNESS WHEREOF` zones on the final agreement page,
+   directly above the rule and the printed party name; owner on the left, tenant on the right.
+   This is the acceptance criterion for S4: the mirrored x axis (`xCoord` is distance from the
+   RIGHT edge) fails silently, producing valid coordinates and a successfully signed document
+   with the signature on the wrong side. It did not.
+2. **No signature overlaps printed text.** The compensating shift by `BOX_WIDTH_PT` put the
+   box's left edge on the anchor rather than hanging it leftwards over template content.
+3. **The two signers' blocks do not overlap each other** on any page; lane 0 and lane 1 stay
+   clearly separated at the content column's left and right.
+4. **The per-page strip appears on all four pages**, the composited certificate page included,
+   seated between the body text and the tracking footer -- the `FOOTER_Y_PT = 26` band holds
+   against a real render (this is the value that was once 55pt and printed a signature across
+   every page's last lines).
+5. **The strip covers neither the certificate serial nor the vendor block.** Worth noting for
+   whoever re-runs this: the clearance was large because this certificate's printed content sits
+   in the upper third. A denser scan is a different test, and the geometry gives no guarantee
+   about a page our renderer did not lay out.
+6. **No `esign:<role>` token is visible.** Both tokens are present in the **text layer** --
+   confirmed by extraction, and required, since that layer is how the provider locates them --
+   and neither is legible in the rendered page. Painted-in-page-colour is working as specified;
+   `display:none` would have broken location instead.
+7. **Page numbering accounts for the composited certificate.** The anchored placements landed on
+   physical page 4 (= agreement page 3 of 3), where the signature block lives. Had the +1 shift
+   been missed they would have landed on physical page 3.
+
+**Out of scope of this change, observed on the same document and already registered:** the
+Telangana deed carries two choice-of-law clauses -- witnesseth clause 9 ("the laws of India")
+and Statutory clause 1 ("the laws of India **and** the tenancy laws applicable in ... Telangana").
+That is `tg-governing-law-duplication` in the follow-up register, now confirmed against a real
+rendered instrument rather than inferred from the YAML.
+
+**What this record does NOT cover.** The ZOOP callback never reached the app on this run (local
+tunnel), so the transaction is still `SIGN_REQUESTED` on our side with no stored artifacts. That
+is `zoop-aadhaar-esign` task 8.5 and it remains open there. It does not affect any check above:
+every one of them was made against the signed PDF the provider produced, and placement is
+decided before a webhook exists.

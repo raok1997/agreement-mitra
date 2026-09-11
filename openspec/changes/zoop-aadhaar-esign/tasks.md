@@ -110,22 +110,53 @@ anywhere beyond the test host.
 
 ## 8. Test-environment tracer (MANUAL GATE -- do before enabling ZOOP further)
 
-> **NOT DONE, and cannot be done from here.** No ZOOP account exists and no credentials are
-> configured in this repo, so every step below needs a human with a dashboard login. Nothing in
-> this change has ever contacted a real ZOOP host - all testing is against WireMock. Step 8.3 in
-> particular is the acceptance criterion for S4: the mirrored x axis fails silently, so only a
-> rendered document can confirm it. Status is tracked in `docs/integrations/zoop.md` section 5.
+> **RUN 2026-09-11 -- five of six steps pass; 8.5 remains open.** This note previously read "NOT
+> DONE, and cannot be done from here. No ZOOP account exists ... Nothing in this change has ever
+> contacted a real ZOOP host". **That was wrong when written and stayed wrong for weeks**: the
+> box geometry in `ZoopSignCoordinate` was calibrated against the live test host on 2026-08-28
+> (viewer v4.2.0, a recorded group id), so a real call predated this note. The contradiction was
+> found on 2026-09-11 while triaging this CR, and it had the practical effect of parking two CRs
+> as "blocked on an account that does not exist". Status tracked in `docs/integrations/zoop.md`
+> section 5.
 
-- [ ] 8.1 Sign up for free staging access; configure the test host and credentials via env.
-- [ ] 8.2 Run one real `/init` against `https://test.zoop.plus/contract/esign` with two dummy
+- [x] 8.1 Sign up for free staging access; configure the test host and credentials via env.
+  Credentials supplied from env against `https://test.zoop.plus/contract/esign/` (the shipped
+  default; the production host is never a default).
+- [x] 8.2 Run one real `/init` against `https://test.zoop.plus/contract/esign` with two dummy
   Aadhaar signers, `SEQUENTIAL`, `send_invite: true`, on a stamped fixture document.
-- [ ] 8.3 **Visually confirm** both signatures land inside their intended signature zones. This
+  **Done 2026-09-11**: agreement `AM63AV7B8WZ`, Telangana residential, transaction
+  `6aa386abc8889fad5a2e857a`, two invitees at signing order 0 and 1.
+- [x] 8.3 **Visually confirm** both signatures land inside their intended signature zones. This
   is the acceptance check for S4 -- the mirrored x axis fails silently, so an assertion over our
-  own arithmetic is not sufficient.
-- [ ] 8.4 Confirm both invitation emails arrive and the 7-day expiry is honoured.
+  own arithmetic is not sufficient. **PASS -- not mirrored.** Full inspection (all seven
+  placement checks) recorded under `esign-signature-placement` task 7.4; that CR's section 7 and
+  this step were closed by one run, since this step is a subset of its inspection.
+- [x] 8.4 Confirm both invitation emails arrive and the 7-day expiry is honoured. **PASS.** Both
+  invitations arrived and both parties signed (10:13:20 and 10:15:03 IST). Expiry stored as
+  `2026-09-18T04:42:19Z` against a request created `2026-09-11T04:42:19Z` -- exactly the
+  configured 7 days (`txn-expiry-min: 10080`), confirmed from the persisted invitee rows rather
+  than from the mail body.
 - [ ] 8.5 Confirm the webhook arrives with the `webhook-security-key` header and that the
   transaction completes end to end to `SIGNED` with artifacts stored.
-- [ ] 8.6 Record the outcome in `docs/integrations/zoop.md`.
+  **NOT VERIFIED -- the 2026-09-11 run did not close this.** ZOOP completed the signing and
+  emailed the parties, but **no callback reached the app**: the run used a local host that ZOOP
+  could not reach. The persisted state proves the gap rather than inferring it --
+  `signing_request.status` is still `SIGN_REQUESTED`, both invitees still `PENDING`,
+  `signed_pdf_key` and `audit_trail_key` both null. So the signed artifacts were never downloaded
+  or stored, and nothing downstream of completion ran.
+  - The per-transaction `webhook_security_key` **was** issued and persisted (encrypted), so the
+    half of this step that precedes the callback is in place; what is unproven is receipt,
+    header verification, and the completion path.
+  - **A passing provider email is not evidence for this step.** "The document has been completely
+    signed" comes from ZOOP, carries our `org-name`, and says nothing about our callback. Anyone
+    re-running this must check the persisted state, not the inbox.
+  - The scheduled reconciliation fallback (`signing.reconciliation`, 5-minute interval over
+    requests older than 15 minutes) is designed to recover exactly this case and also did not
+    advance it on this run -- worth checking deliberately when 8.5 is re-run, since a missed
+    webhook is the scenario it exists for.
+  - To close: re-run with a publicly reachable callback (`ZOOP_RESPONSE_URL` must be set **before**
+    the app starts -- it is read at startup and baked into the `/init` call).
+- [x] 8.6 Record the outcome in `docs/integrations/zoop.md`. **Done 2026-09-11**, section 5.
 
 ## 9. Tests
 

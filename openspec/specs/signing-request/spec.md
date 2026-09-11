@@ -310,7 +310,11 @@ signing request without itself parsing the vendor payload. The provider request/
 value objects SHALL be vendor-neutral and multi-invitee: the create request carries a
 list of invitees, and the create result carries the document id plus a per-invitee
 signing URL, expiry, and the provider's per-invitee identifier (captured for later
-correlation). The authoritative-status read SHALL return a vendor-neutral **per-invitee**
+correlation). Each invitee SHALL carry an **ordered set of signature placements** rather
+than a single anchor, so that a signer can be placed in more than one position on the
+instrument without any adapter inventing extra positions of its own; an adapter that
+supports only one position SHALL use the first and SHALL NOT silently drop the rest.
+The authoritative-status read SHALL return a vendor-neutral **per-invitee**
 status view (each invitee's status plus a correlation token — the provider per-invitee id
 when available, an ordinal otherwise — with non-terminal/`PENDING` representable), not a
 single document-level status. Downloading the signed document and audit trail SHALL be
@@ -341,6 +345,13 @@ audit-trail bytes **each with its provider-declared content type** (default
 - **WHEN** the signed-document download is invoked for a completed document id
 - **THEN** the provider returns the signed PDF bytes and the audit-trail bytes (no
   not-yet-supported error)
+
+#### Scenario: An invitee carries every placement it was given
+
+- **WHEN** a create request is built for a signer who is to be placed both on the
+  execution page and on every page
+- **THEN** the vendor-neutral invitee carries both placements in order, and the adapter
+  submits both rather than only the first
 
 ### Requirement: Secrets, config, and PII handling
 
@@ -624,3 +635,4 @@ distinguishable from a payment-required or stamp-required refusal at the same st
 - **WHEN** an eSign request is initiated for an agreement whose duty jurisdiction is
   eligible and which satisfies every existing precondition
 - **THEN** initiation proceeds exactly as before this change
+
