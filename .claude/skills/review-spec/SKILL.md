@@ -288,7 +288,7 @@ Omit any severity section with no findings.
 ## Step 7 — Offer next steps
 
 **Skip this step entirely when invoked from `openspec-flow`.** The flow's Stage 2
-owns what happens next — it applies its Issue policy and enforces a ≤5-round cap.
+owns what happens next — it applies its Issue policy and enforces a ≤3-round cap.
 Prompting here routes around both: the user picking "proceed to apply" or "update
 artifacts" bypasses the policy and the round counter never advances. When the
 caller is the flow, **return the consolidated report and stop.**

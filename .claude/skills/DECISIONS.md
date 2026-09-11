@@ -211,3 +211,34 @@ Two structural pieces landed (user-authorised, lifting the `8c776d3` freeze for 
 
 **Baseline at landing:** register holds 6 slugs · 0 unpromoted on active changes · 15 unpromoted
 in the archive (historical, available to mine).
+
+---
+
+## Round 6 — 2026-09-11 · session `9ecbca31` · token cost of the flow
+
+Not a spec review — a **measured** cost audit of the refactored flow, prompted by two simple
+CRs exhausting a usage limit on 2026-09-11. Evidence is the usage records in
+`~/.claude/projects/-Users-janu-Desktop-code-agreement-mitra/*.jsonl`, 17 sessions from
+2026-09-04 onward. Findings are numbered as elsewhere; verdicts as usual.
+
+| # | Finding | Verdict | Note |
+|---|---|---|---|
+| 6.1 | Stage 2 had **no proportionality gate**: `frontend-dev-dep-refresh` (a dependency bump) drew 3 review rounds and 8 persona agents — more than the `jurisdiction-checkout-gating` feature got at 2. Stage 4a already defines a config/docs/harness exemption class; Stage 2 did not reuse it | **deferred** | Tiering (full three-persona for behavioural changes; one round, Security-only for config/docs/harness) was agreed but the edit was rejected twice at apply time and is not in the file. **Not the PII/secret guard** — the identical text writes cleanly under the hook, tested both in and out of the project tree — so the rejection was user-side and its intent is unresolved. Carry to round 7. **This was the round's largest saving**: without it a config CR still draws 3 personas per round |
+| 6.2 | The ≤5-round cap is a direct multiplier — at three personas per round it authorises up to **15 subagents per CR** — and rounds past the second returned prose-drift | **fixed** | Lowered to **3**. All four copies updated: flow `SKILL.md` (Stage 2, the `DUPLICATED PROJECT FACTS` map, the resume note), `review-spec/SKILL.md` Step 7, `commands/opsx/flow.md`. Auto-memory `openspec-flow-review-cap` rewritten |
+| 6.3 | Checkpoint-and-clear was **advisory and therefore never acted on**. Splitting both 2026-09-11 sessions at the `openspec-apply-change` invocation: apply began carrying **224k / 342k** of review context and re-sent it across ~200 further requests — **~40M / ~55M tokens**, the largest single line item in either session | **fixed** | Made a ⛔ halt at the review → apply boundary **only**; every other boundary keeps the advisory note. Resume is `/clear` then `/opsx:flow <name> from:apply`. Rests on the skill's own "source of truth is the change directory on disk" contract — so the fix is a transcript discard, not an information discard |
+| 6.4 | The clear's one real exposure: a review decision that lives **only** in the transcript (a deferred finding, an approach settled by hand) does not survive it | **fixed** | Checkpoint-and-clear now requires a fuller journal entry before this halt, with those under `decisions:` |
+| 6.5 | **Subagent token usage is not in the transcripts at all** — no `isSidechain` entries in any file, and the persona preamble appears only in parent sessions as the `Agent` prompt. The 122M / 94M per-session figures are **floors**, excluding 15 and 10 subagents respectively | **accepted** | Nothing to fix in the skills; recorded so no future round mistakes the logged totals for actual cost. It also means 6.1's saving is larger than the logged numbers can show |
+| 6.6 | Fable 5.1 is an independent multiplier, not a flow defect: 3,927 output tokens/request against a 494–1,080 band across 15 Opus sessions, ~90% of it non-persisted thinking, driving average context to 352k (band: 91–255k) | **accepted** | Model choice, not tooling. Keep Fable off `opsx:flow` until round counts settle. The same-day Opus session was in-band on every *per-request* metric — its cost was **volume** (438 requests for a dep bump), which is what 6.1–6.3 target |
+
+**Round cap note:** this round made three edits against rule 4's two-round budget for a single
+change; 6.1 is explicitly carried rather than retried, keeping the round closed.
+
+**Post-landing checks (same round):**
+- `flow-journal.mjs last` returns `resumeAt: "apply"` for a journal ending in
+  `## review (round 2) — … [✅]` — verified against a synthetic journal, so the mandatory
+  clear resumes correctly on the journal path.
+- The **no-journal artifact fallback** was the one hazard: "all artifacts done + no ticked
+  tasks → resume at review" is the exact state the clear leaves behind. Hardened in the same
+  round to ask rather than silently re-run the personas.
+- The 6.1 rejection was tested against `.claude/hooks/pii-secret-guard.sh` and is **not** a
+  hook deny; recorded so a future round does not read it as a technical block.

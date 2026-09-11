@@ -83,6 +83,8 @@ Auto-advance stage to stage. **Halt and ask the user** the moment you hit any of
 - A **hard error**: failing tests, `openspec validate` errors, CLI failures, a skill that can't complete.
 - A point where you'd otherwise **silently expand scope** beyond the current CR's slice.
 - The **manual-test gate before Archive** — archive is never automatic. After validate is clean, halt and ask the user to manually test the change; only archive once they confirm it works (see Stage 6).
+- The **context clear between Review and Apply** — the only other scheduled halt, and the
+  only one that is not a judgment call (see Checkpoint-and-clear).
 
 When you halt, state: the stage, what you found, the options, and your recommendation. Then wait.
 
@@ -157,13 +159,38 @@ failure at all (`check` exits 0 and says so) — a change that predates the jour
 its very first stage, has nothing to validate yet. Missing journals are `audit`'s business,
 not `check`'s.
 
-### Checkpoint-and-clear (backstop, not a halt)
+### Checkpoint-and-clear
 
-The spine cannot `/clear` or `/compact` itself — those are user actions. So when context
-is heavy at a **clean** stage boundary, after writing the journal, add a one-line non-halt
-note: "Journal written — safe to `/clear` and resume with `from:<next-stage>`." Do not
-stop for it; it's a recommendation, not a decision. Prevention (subagent delegation per
-the Execution model) is the primary defense; this is the backstop.
+The spine cannot `/clear` or `/compact` itself — those are user actions. So the flow asks.
+
+**Mandatory at the review → apply boundary (a ⛔ halt).** Review is where context is *built*
+— the grounding map, three persona reports per round, every round's findings. Apply is where
+that context is *paid for*, on every request. Measured across the two 2026-09-11 runs, apply
+began already carrying **224k and 342k** of review context and re-sent it across ~200 further
+requests: roughly **40M and 55M tokens**, the largest single line item in either session.
+Apply needs none of it — the artifacts, the `## Coverage` matrix and the journal are all on
+disk (see "Source of truth between stages"), which is exactly what makes this free.
+
+So once the final review round closes and its journal entry is written, **halt** and tell the
+user, verbatim:
+
+> Review is complete and the journal is written. Clear the context before implementing:
+> **`/clear`**, then **`/opsx:flow <name> from:apply`**
+
+Name the actual change in place of `<name>`. Mark the stage ⛔ — the spine waits; it does not
+drift into Stage 3 on its own.
+
+**Write a fuller journal entry than at any other boundary before this halt.** It is the one
+place transcript loss can cost something. Beyond the usual outcome, record under `decisions:`
+anything agreed during review that is **not** yet visible in an artifact: findings
+deliberately deferred, an approach settled for a specific task, a scope line drawn by hand.
+A decision that exists only in the transcript does not survive the clear.
+
+**Everywhere else it stays advisory** — at a clean stage boundary with heavy context, after
+writing the journal, add a one-line non-halt note: "Journal written — safe to `/clear` and
+resume with `from:<next-stage>`." Do not stop for those; making every boundary a halt turns
+the flow into stop-and-go. Prevention (subagent delegation per the Execution model) remains
+the primary defense — review → apply is simply the one boundary where the saving is measured.
 
 ## Stage sequence
 
@@ -186,7 +213,7 @@ the Execution model) is the primary defense; this is the backstop.
        - Backend conventions (records for DTOs; constructor injection; state machine) Stage 3
        - Build/scan gate commands (./run-tests.sh check; npm run build + lint) ... Stage 4a
        - eSign/webhook caution (async flow, HMAC-verify hooks, redact PII) ........ Stages 0/1/3 + Operating mode
-       - Spec-review halting cap (≤5 rounds) ..................................... Stage 2
+       - Spec-review halting cap (≤3 rounds) ..................................... Stage 2
        - Scenario-coverage matrix is a gate; no UNMAPPED rows into Stage 3 ....... Stage 2
        - Coverage waiver rules (never waive money/PII/legal-validity paths) ...... Stage 2 + review-spec
        - Archive folds the spec of record — always via `openspec archive` ........ Stage 7
@@ -226,7 +253,12 @@ openspec status --change "<name>" --json    # artifact completion, applyRequires
 ```
 - Some `applyRequires` artifact not `done` → resume at **propose**.
 - All artifacts `done`, `tasks.md` all `- [ ]` → resume at **review** (it may already
-  have been reviewed — say so and ask rather than silently re-running 5 rounds).
+  have been reviewed — say so and ask rather than silently re-running 3 rounds). **This
+  is also the exact on-disk state left by the mandatory review → apply clear**, which is
+  indistinguishable from "never reviewed" without the journal — so when there is no
+  journal to consult, ask; never re-run the personas the clear was taken to avoid.
+  (With a journal this resolves cleanly: a last entry of `## review … [✅]` returns
+  `resumeAt: "apply"`, verified 2026-09-11.)
 - `tasks.md` partly ticked → resume at **apply**.
 - `tasks.md` fully ticked → resume at **validate**.
 
@@ -288,11 +320,22 @@ returned report and apply the Issue policy; do not re-wrap it.
   *before* code exists; discovering an untested scenario after implementation costs a round trip.
   A `WAIVED` row touching money, PII, or the document's legal validity is not acceptable —
   send it to `MANUAL` instead (see the skill for the full rules and the waiver-rate cap).
-- **Cap at 5 rounds.** Each round: review → address findings (in explore mode) → re-review. If the final round still surfaces only fresh prose-drift with no clear oracle, **stop reviewing** and default to "start implementing" — do not loop beyond the cap. The cap does **not** license
+- **Cap at 3 rounds.** Each round: review → address findings (in explore mode) → re-review. If the final round still surfaces only fresh prose-drift with no clear oracle, **stop reviewing** and default to "start implementing" — do not loop beyond the cap. The cap does **not** license
   entering Stage 3 with `UNMAPPED` rows: that is a halt, not a finding to carry forward.
+  The cap was 5 until 2026-09-11 and was **lowered on measured evidence**, not taste: a round
+  costs three persona agents, and `frontend-dev-dep-refresh` — a dependency bump — drew 3
+  rounds and 8 persona agents, more than the `jurisdiction-checkout-gating` feature got at 2.
+  Rounds past the second returned prose-drift. Do not raise it back without a round that
+  demonstrably earned its keep.
 - Address findings between rounds via the **openspec-explore** skill (edit the artifacts), not ad-hoc.
+- **When the final round closes, halt for the context clear** — see Checkpoint-and-clear
+  above. It is the one mandatory checkpoint in the flow, and it sits at this boundary.
 
 ### 3. Apply (implement)
+Entered after the mandatory context clear (see Checkpoint-and-clear) — so assume the review
+transcript is gone and **reconstruct from the change directory and the journal**, which is
+what the resume path does anyway.
+
 Invoke the **openspec-apply-change** skill to work the tasks.
 - **If it reports `state: "blocked"`** (missing artifacts), it — and the CLI's own
   `instruction` string — will tell you to use `openspec-continue-change`. That skill is
