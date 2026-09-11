@@ -5,9 +5,10 @@ next. Update this in a PR like any other doc. Per-feature intent lives in
 `openspec/` (specs + archived changes); deep architecture in
 `docs/ARCHITECTURE.md`; vendor specifics in `docs/integrations/`; legal exposure,
 template-approval governance and the open questions for counsel in
-`docs/LEGAL-POSTURE.md`.
+`docs/LEGAL-POSTURE.md`; the bring-your-own-document direction in
+`docs/BYO-DOCUMENT-UPLOAD.md`.
 
-_Last updated: 2026-09-11_
+_Last updated: 2026-09-12_
 
 **What lives here:** only work that is **pending** — where we are, what's next, and
 the follow-up register. **Completed work is removed from this file**, not moved to a
@@ -150,6 +151,27 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
 2. **Frontend signing-flow** — no-login self-serve UI per
    `docs/PRODUCT-FEATURE-SET.md`. Surfaces two backend gaps to fill alongside:
    a **status endpoint** and a **signed-artifact fetch endpoint**.
+3. **Bring-your-own document** — let the customer upload their own PDF instead of
+   picking a template, then carry it through the existing stamp + eSign flow.
+   Direction agreed 2026-09-12 and **not yet proposed**; the reasoning, the
+   rejected alternatives and the mock screens are in
+   `docs/BYO-DOCUMENT-UPLOAD.md`. Four changes in dependency order:
+   - **`signing-auth`** (item 1 above) — BYO does not create it, it makes it
+     urgent: a public upload UI widens that hole, and `/api/agreements/*/draft`
+     is named in the register row.
+   - **`estamp-signature-band`** — reserve the 26–66pt per-page signature band
+     when composing the certificate page. **This is a defect on the shipping
+     path today, not BYO work:** `PdfStampComposer` fits the scan into A4 minus
+     28pt, so a tall certificate reaches into the band and a signature is drawn
+     over it on *templated* documents. Unobserved because no signing has
+     completed end to end against a real callback. Independent of everything
+     below — it can be picked up on its own.
+   - **`byo-document-upload`** — BYO end to end, deliberately **block-only**
+     (signatures on the appended page, none on the customer's pages). Carries
+     the instrument-type declaration and the ToS delta; neither may be split out.
+   - **`byo-every-page-signatures`** — detect whether every page's footer band is
+     free of text, decide once per document, and disclose the outcome with a
+     remedy. Needs the two above.
 
 ## Track B — ZOOP test access is free and self-serve (no longer blocked)
 
