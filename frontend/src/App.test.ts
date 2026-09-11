@@ -371,3 +371,96 @@ describe("App route switch", () => {
     expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(false);
   });
 });
+
+// The emailed agreement link (agreement-status-link-page): it lands on the status view, not the
+// edit form, and the address bar keeps the link so a reload or a bookmark comes back here.
+vi.mock("./api/agreements", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/agreements")>();
+  return { ...actual, getAgreement: vi.fn() };
+});
+vi.mock("./api/payments", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/payments")>();
+  return { ...actual, getPaymentProgress: vi.fn() };
+});
+vi.mock("./api/signingProgress", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/signingProgress")>();
+  return { ...actual, getSigningProgress: vi.fn() };
+});
+
+describe("App agreement link", () => {
+  const LINK = "/agreement/3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+
+  beforeEach(async () => {
+    const agreements = await import("./api/agreements");
+    const payments = await import("./api/payments");
+    const signingProgress = await import("./api/signingProgress");
+    vi.mocked(agreements.getAgreement).mockReset();
+    vi.mocked(payments.getPaymentProgress).mockReset().mockResolvedValue({
+      agreementId: "ag-1",
+      paymentState: "PAID",
+      orderStatus: "paid",
+      amountMinorUnits: 49900,
+      currency: "INR",
+    });
+    vi.mocked(signingProgress.getSigningProgress)
+      .mockReset()
+      .mockResolvedValue({
+        agreementId: "ag-1",
+        status: "IN_PROGRESS",
+        stage: "AWAITING_STAMP",
+        terminal: false,
+        signedDocumentReady: false,
+        parties: [],
+      });
+  });
+
+  it("mounts the status view, not the capture form, and keeps the link in the address bar", async () => {
+    const agreements = await import("./api/agreements");
+    vi.mocked(agreements.getAgreement).mockResolvedValue({
+      id: "ag-1",
+      trackingNumber: "AM3G3VXSAKD",
+      propertyAddress: "12 MG Road",
+      monthlyRent: 25000,
+      securityDeposit: 50000,
+      startDate: "2026-01-01",
+      endDate: "2026-12-01",
+      durationMonths: 11,
+      createdAt: "2026-01-01T00:00:00Z",
+      signers: [],
+      state: "TG",
+      type: "residential",
+    });
+    window.history.replaceState({}, "", LINK);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="agreement-status"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="status-reference"]').text()).toBe(
+      "AM3G3VXSAKD",
+    );
+    expect(wrapper.find('[data-testid="capture-form"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Edit agreement");
+    expect(window.location.pathname).toBe(LINK);
+    wrapper.unmount();
+  });
+
+  it("keeps the claimed-or-unknown message and its sign-in button", async () => {
+    const agreements = await import("./api/agreements");
+    vi.mocked(agreements.getAgreement).mockRejectedValue(
+      new agreements.AgreementHttpError(404),
+    );
+    window.history.replaceState({}, "", LINK);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="agreement-status"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.text()).toContain("saved to an account, sign in");
+    expect(wrapper.text()).toContain("Sign in");
+    expect(window.location.pathname).toBe(LINK);
+    wrapper.unmount();
+  });
+});

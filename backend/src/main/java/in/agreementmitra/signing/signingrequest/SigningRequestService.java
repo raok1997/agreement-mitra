@@ -5,9 +5,11 @@ import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
+import in.agreementmitra.signing.FulfilmentStage;
 import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
+import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.WebhookHeaders;
 import in.agreementmitra.signing.agreement.AgreementService;
@@ -338,9 +340,14 @@ public class SigningRequestService {
                         statusBySigner.getOrDefault(s.id(), InviteeStatus.PENDING).name()))
             .toList();
 
+    Optional<SignatureStatus> status = progress.map(SigningRequestPersistence.Progress::status);
+    FulfilmentStage stage = FulfilmentStage.from(status);
     return new SigningProgressResponse(
         agreementId,
-        AgreementDisplayStatus.from(progress.map(SigningRequestPersistence.Progress::status)),
+        AgreementDisplayStatus.from(status),
+        stage,
+        stage.terminal(),
+        progress.map(SigningRequestPersistence.Progress::signedPdfStored).orElse(false),
         parties);
   }
 

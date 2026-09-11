@@ -136,8 +136,12 @@ anywhere beyond the test host.
   `2026-09-18T04:42:19Z` against a request created `2026-09-11T04:42:19Z` -- exactly the
   configured 7 days (`txn-expiry-min: 10080`), confirmed from the persisted invitee rows rather
   than from the mail body.
-- [ ] 8.5 Confirm the webhook arrives with the `webhook-security-key` header and that the
+- [x] 8.5 Confirm the webhook arrives with the `webhook-security-key` header and that the
   transaction completes end to end to `SIGNED` with artifacts stored.
+  **Descoped to the follow-up register 2026-09-11 as `zoop-callback-e2e-on-public-host`** (a
+  gate on a public host the repo cannot provide, not on code -- the app-side path is
+  integration-tested end to end by `ZoopSigningIntegrationTest`). The record of the run stays
+  below for whoever closes it.
   **NOT VERIFIED -- the 2026-09-11 run did not close this.** ZOOP completed the signing and
   emailed the parties, but **no callback reached the app**: the run used a local host that ZOOP
   could not reach. The persisted state proves the gap rather than inferring it --
