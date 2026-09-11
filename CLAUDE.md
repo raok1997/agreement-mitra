@@ -19,6 +19,17 @@ again. Stage 7a of `openspec-flow` gates on this
 and do not keep backlog content in agent memory — memory is per-user and does not
 reach a teammate working on `main`.
 
+**`docs/ROADMAP.md` tracks only PENDING work.** When something completes, **delete it
+from the file** — do not move it to a "done" list and do not add one.
+`openspec/changes/archive/` is the authoritative record of what shipped (the CLI
+maintains it), and `git log` says when and by whom; a hand-kept completion list is a
+second source of truth that drifts silently. The previous one did: it claimed "15
+changes archived" when there were 57. So closing a follow-up's register row **is** the
+completion record — nothing further is owed. The test for whether a line belongs in
+ROADMAP: *does it tell you something true about the system today that the archive
+cannot?* Narrative about how the system currently behaves stays; "we finished X" does
+not.
+
 ## Architecture (decided — do not relitigate without a proposal)
 
 - **Backend**: Java 21 + Spring Boot 3.x, structured as a **modular monolith**
@@ -42,7 +53,8 @@ reach a teammate working on `main`.
 ### Modules (`in.agreementmitra.*`)
 - `signing` — agreements, signing requests, status state machine, webhook
   intake, `EsignProvider` + vendor adapters. The heart of the app.
-- `documents` — template → PDF rendering (headless Chromium via Playwright).
+- `documents` — template → PDF rendering (headless Chromium via **Gotenberg**, an
+  HTTP service; the app ships no browser binary).
 - `identity` — KYC / DigiLocker (future feature; stub for now).
 - `rules` — multi-state legal-logic rules engine (future; Drools, JVM-native).
 
@@ -318,6 +330,10 @@ references in the repo, `README.md`, this file, the auto-memory, and
 
 - The webhook listener needs a **public URL** in local dev — front it with a
   cloudflared/ngrok tunnel or the aggregator's callback never arrives.
-- PDF rendering for vernacular/Indic scripts must use Chromium (Playwright),
-  not a pure-Java PDF lib — only Chromium shapes complex scripts correctly.
-  Bundle Noto fonts. (This is why `documents` is its own module.)
+- PDF rendering for vernacular/Indic scripts must use **Chromium**, not a pure-Java
+  PDF lib — only Chromium shapes complex scripts correctly. It runs as **Gotenberg**
+  (a thin HTTP service with bundled Noto fonts, `docker/gotenberg`), so the app is a
+  plain HTTP client at `GOTENBERG_URL` and carries no browser binary. Chromium's
+  outbound network is denied both private and public IPs as an SSRF/exfil guard. (This
+  is why `documents` is its own module.) *Not Playwright — this file said so until
+  2026-09-11 and no Playwright has ever been in the backend.*

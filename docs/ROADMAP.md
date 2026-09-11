@@ -7,7 +7,16 @@ next. Update this in a PR like any other doc. Per-feature intent lives in
 template-approval governance and the open questions for counsel in
 `docs/LEGAL-POSTURE.md`.
 
-_Last updated: 2026-09-10_
+_Last updated: 2026-09-11_
+
+**What lives here:** only work that is **pending** — where we are, what's next, and
+the follow-up register. **Completed work is removed from this file**, not moved to a
+"done" list: `openspec/changes/archive/` is the authoritative, self-maintaining record
+of what shipped, and `git log` says when and by whom. A hand-kept completion list is a
+second source of truth that drifts silently — the previous one did, by 42 changes.
+The test for a line staying here: *does it tell you something true about the system
+today that the archive cannot?* Narrative about current behaviour stays; "we finished
+X" does not.
 
 ## Where we are
 
@@ -24,12 +33,11 @@ agreement -> draft PDF upload -> finalise (order placed) -> payment
           -> agreement CLOSED
 ```
 
-**The journey now has an end.** `signed-delivery-and-closure` adds the last two
-steps: on completion each party is emailed the signed agreement as an
-attachment, a party-authenticated in-app copy stays retrievable indefinitely,
-and the agreement reaches a terminal **fulfilment** state. Terminal signing
-failures (`FAILED`, `EXPIRED`, `STAMP_FAILED`) close as **abandoned**, so dead
-work leaves the staff queue instead of accumulating in it. Key properties:
+**The journey has an end.** On completion each party is emailed the signed
+agreement as an attachment, a party-authenticated in-app copy stays retrievable
+indefinitely, and the agreement reaches a terminal **fulfilment** state. Terminal
+signing failures (`FAILED`, `EXPIRED`, `STAMP_FAILED`) close as **abandoned**, so
+dead work leaves the staff queue instead of accumulating in it. Key properties:
 
 - **Delivery goes only to signing-verified addresses** -- the address the
   invitation was issued to and at which that party completed signing. There is
@@ -48,56 +56,12 @@ work leaves the staff queue instead of accumulating in it. Key properties:
   `docs/DOMAIN-AND-EMAIL-SETUP.md` section 5b -- including the ZeptoMail account
   review, which is a **2-3 business day lead-time item, not a switch**.
 
-- 13 capability specs under `openspec/specs/`; 15 changes archived.
 - FSM: `PDF_GENERATED → STAMPED → SIGN_REQUESTED → SIGNED | FAILED | EXPIRED`
   (terminal `STAMP_FAILED` branch off the stamp step).
 - 131+ tests green (Testcontainers Postgres + MinIO + WireMock); all build
   gates passing (OSV deps, SpotBugs/FindSecBugs, JaCoCo, ModularityTests).
 - Everything runs against a **WireMock/stub** Leegality provider — no live
   vendor credentials have been required to reach this point.
-
-### Done (archived OpenSpec changes)
-
-Hardening: `dev-policy-tightening`, `backend-test-harness`,
-`frontend-test-harness`, `backend-security-scanning`,
-`bump-spring-boot-security-patches`, `bump-spotbugs-plugin`,
-`spring-security-baseline`, `frontend-security-scanning`.
-
-Signing slice: `persistence-foundation`, `agreement-aggregate`,
-`validation-error-responses`, `create-signing-request`, `signing-completion`,
-`draft-ingestion`, `stamp-composition`.
-
-Guided rental-agreement flow: `rich-agreement-capture` (structured tenant/owner details —
-first/last/father name + current address — tenancy start/end dates with a derived duration
-in months, full name as per Aadhaar, contact optional at draft; Vue capture screen). Next
-in the arc: `agreement-document-render` (CR-3, proposed) — embed the captured data into one
-bundled rental template and preview it via a Gotenberg render service. A searchable template
-catalog is proposed-but-parked.
-
-Optional Google login — **now complete** across two CRs: `google-oauth-login` (CR-A) delivers
-backend-mediated Google OAuth + an opaque server-side session (the SPA never sees a Google
-token); `agreement-ownership` (CR-B) attaches save / resume / edit to that identity — an
-anonymous draft can be **claimed** into the caller's account, **listed** in "My Agreements"
-with a derived status, and **edited** while it is still pre-signing-request. Login stays
-**optional**: create + draft-upload + capability read remain fully anonymous. The parked
-`mobile-otp-auth` change mirrors CR-B's ownership decisions so a second credential is a
-drop-in. Deferred follow-ups (not in CR-B): ownership authZ on the signing create route
-(folded into `signing-auth` below; the stamping routes are `hasRole(STAFF)`, which is a
-different gate, not the same hole), a retain-and-purge job for unclaimed anonymous drafts,
-a cookie session (in-memory only today), and an owner-scoped signed-artifact download surface.
-
-Full-capture persistence — **now complete**: `agreement-capture-persistence` (M5) persists an
-agreement's **full capture state** (the flat working-set field map + added optional-section
-titles) in a nullable `capture_state jsonb` column (migration `V13`), accepted on create/edit and
-returned on read, and **generate-as-draft + preview now render from that stored state** (the fixed
-typed columns stay authoritative via render-time reconciliation; a null capture state falls back to
-the fixed-column mapping unchanged). This **retires the preview/draft parity STOPGAP** (old
-flow-journal 8.4/8.5): optional sections and dynamic field values (e.g. `lockInMonths`, `petAllowed`)
-now round-trip on Save and the stored/signed draft matches what the user saw in preview, so the
-frontend `NON_PERSISTED_FIELDS` hide-list shrank to only genuinely system-owned template defaults
-(`stampDuty`). Deferred (not in M5): normalized per-attribute columns (a jsonb blob suffices to
-round-trip and render); write-time validation of the capture map (it is validated at render by the
-`documents` projection, the same contract the preview already uses).
 
 ## Payment status — a gateway now exists
 
@@ -259,6 +223,11 @@ whichever one matters to you.
 | `frontend-engines-node-narrowing` | `frontend/package.json` declares `engines.node >= 20.19.0`, but vitest 4 supports `^20 \|\| ^22 \|\| >=24`. A developer on Node 21 or 23 satisfies ours and violates the runner's, with no warning until something breaks oddly. Narrowing `engines` affects every developer, so it was not folded into a build-gate fix. | `frontend-dev-dep-refresh` | 2026-09-11 | Low-medium — latent, environment-dependent |
 | `frontend-vue-lint-warnings` | 26 `vue/html-indent` + `vue/html-closing-bracket-newline` **warnings** across four `.vue` views, from the Prettier vs `eslint-plugin-vue` stylistic overlap the config's existing off-block only partly covers. Advisory only — `eslint .` exits non-zero on errors, so they fail nothing — but a permanently noisy lint run is where a real new warning goes unnoticed. Extend the off-block or reformat. | `frontend-dev-dep-refresh` | 2026-09-11 | Low — cosmetic, but it normalises noise |
 | `frontend-root-config-node-globals` | The Node-globals fix in `frontend-dev-dep-refresh` is scoped to `frontend/scripts/`, but `eslint .` also lints four Node programs at the frontend root — `eslint.config.js`, `vite.config.ts`, `postcss.config.js`, `tailwind.config.js` — which keep the inverted globals (`window` defined, `process` not). Adding ordinary `process.env` gating to `tailwind.config.js` would fail lint with no hint why. Pre-existing, not a regression, and widening it needs a spec-scope change rather than a config tweak — hence not folded in. Extend the scoped block's `files` to the root configs. | `frontend-dev-dep-refresh` | 2026-09-11 | Low-medium — a confusing false error waiting for whoever edits a root config |
+| `anonymous-draft-retain-and-purge` | Unclaimed anonymous drafts accumulate forever. No retention window, no purge job — so PII-bearing draft rows from abandoned sessions are kept indefinitely, which is the wrong default for identity/legal infra. Deferred from `agreement-ownership` (CR-B); rescued from ROADMAP prose 2026-09-11 when the completion narrative was removed. | `agreement-ownership` | 2026-09-11 | Medium — data-retention exposure that grows with traffic |
+| `session-store-not-durable` | The server-side session is **in-memory only**, so every restart or redeploy signs every logged-in user out, and it cannot survive more than one app instance. A cookie/persistent session store was deferred from `agreement-ownership` (CR-B); rescued from ROADMAP prose 2026-09-11. | `agreement-ownership` | 2026-09-11 | Medium — blocks horizontal scaling and makes deploys user-visible |
+| `owner-scoped-artifact-download` | No owner-scoped surface for downloading a signed artifact — deferred from `agreement-ownership` (CR-B). Partly overtaken by `signed-delivery-and-closure`'s party-authenticated in-app copy; **confirm what remains before scheduling** rather than assuming it is still open. Rescued from ROADMAP prose 2026-09-11. | `agreement-ownership` | 2026-09-11 | Low — may be largely superseded; verify first |
+| `capture-state-normalized-columns` | `capture_state` is stored as an opaque `jsonb` blob (migration `V13`). Sufficient to round-trip and render, but not queryable or constrainable per attribute. Deferred from `agreement-capture-persistence` (M5); rescued from ROADMAP prose 2026-09-11. | `agreement-capture-persistence` | 2026-09-11 | Low — deliberate trade-off, revisit only if querying is needed |
+| `capture-state-write-time-validation` | The capture map is validated only at **render** time by the `documents` projection, not on write, so an invalid map can be persisted and fails later. Deferred from `agreement-capture-persistence` (M5); rescued from ROADMAP prose 2026-09-11. | `agreement-capture-persistence` | 2026-09-11 | Low-medium — moves a failure from write to render |
 
 ## Other queued non-goals (not scheduled)
 

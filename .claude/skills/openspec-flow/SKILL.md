@@ -444,6 +444,15 @@ date, priority — then re-run until clean. Do **not** archive over an unpromote
   archived ones are reported as historical only, since they can be mined but not fixed in
   place — a permanently-red gate is one people learn to ignore.
 
+**Closing a register row IS the completion record — do not add a "done" entry anywhere.**
+`docs/ROADMAP.md` tracks only **pending** work. If this CR resolves a follow-up, delete that
+row; if it resolves a roadmap item, delete that too. Do **not** create or append to a "Done"
+section — `openspec/changes/archive/` is the authoritative, self-maintaining record of what
+shipped and `git log` says when. A hand-kept completion list is a second source of truth that
+drifts: the one this rule replaced claimed 15 archived changes against an actual 57. The test
+for leaving prose in ROADMAP is *does it state something true about the system today that the
+archive cannot?* — current behaviour stays, "we finished X" goes.
+
 **(ii) Check delta ordering.** A `MODIFIED`/`REMOVED`/`RENAMED` delta
 needs its target requirement to already exist in the baseline. When a sibling
 change *adds* that requirement, the two must archive in dependency order — and a
