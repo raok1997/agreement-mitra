@@ -10,6 +10,26 @@ lives in `docs/ARCHITECTURE.md`; per-feature intent lives in `openspec/`. The
 team-shared roadmap (what's done / what's next) is `docs/ROADMAP.md`; vendor
 specifics live in `docs/integrations/` (e.g. Leegality sandbox/pricing).
 
+`docs/ROADMAP.md` also holds the **`## Follow-up register`** — the single list of
+follow-ups spun out of a change. A CR that identifies work it deliberately does not
+fold in records it there **before it archives**; a follow-up left only in the change's
+`.flow-journal.md` moves into `openspec/changes/archive/` with it and is never read
+again. Stage 7a of `openspec-flow` gates on this
+(`flow-journal.mjs followups --change <name>`). Do not start a second backlog file,
+and do not keep backlog content in agent memory — memory is per-user and does not
+reach a teammate working on `main`.
+
+**`docs/ROADMAP.md` tracks only PENDING work.** When something completes, **delete it
+from the file** — do not move it to a "done" list and do not add one.
+`openspec/changes/archive/` is the authoritative record of what shipped (the CLI
+maintains it), and `git log` says when and by whom; a hand-kept completion list is a
+second source of truth that drifts silently. The previous one did: it claimed "15
+changes archived" when there were 57. So closing a follow-up's register row **is** the
+completion record — nothing further is owed. The test for whether a line belongs in
+ROADMAP: *does it tell you something true about the system today that the archive
+cannot?* Narrative about how the system currently behaves stays; "we finished X" does
+not.
+
 ## Architecture (decided — do not relitigate without a proposal)
 
 - **Backend**: Java 21 + Spring Boot 3.x, structured as a **modular monolith**
@@ -33,7 +53,8 @@ specifics live in `docs/integrations/` (e.g. Leegality sandbox/pricing).
 ### Modules (`in.agreementmitra.*`)
 - `signing` — agreements, signing requests, status state machine, webhook
   intake, `EsignProvider` + vendor adapters. The heart of the app.
-- `documents` — template → PDF rendering (headless Chromium via Playwright).
+- `documents` — template → PDF rendering (headless Chromium via **Gotenberg**, an
+  HTTP service; the app ships no browser binary).
 - `identity` — KYC / DigiLocker (future feature; stub for now).
 - `rules` — multi-state legal-logic rules engine (future; Drools, JVM-native).
 
@@ -42,9 +63,12 @@ specifics live in `docs/integrations/` (e.g. Leegality sandbox/pricing).
 - Java: prefer records for DTOs/value objects; constructor injection (no field
   `@Autowired`); package-private by default, `public` only on the module API.
 - One aggregate's state transitions go through its state machine, not ad-hoc
-  setters. Signing states: `DRAFT → PDF_GENERATED → STAMPED → SIGN_REQUESTED →
-  SIGNED | FAILED | EXPIRED`, with `STAMP_FAILED` as a terminal branch off the
-  stamp step (`PDF_GENERATED → STAMP_FAILED`).
+  setters. Signing states (`SignatureStatus`): the active path is
+  `PDF_GENERATED → STAMPED → SIGN_REQUESTED → SIGNED | FAILED | EXPIRED`, with
+  `STAMP_FAILED` as a terminal branch off the stamp step
+  (`PDF_GENERATED → STAMP_FAILED`). `DRAFT` is declared but **reserved — not yet
+  used**; do not put it on the active path. Keep this line, the `Signing status
+  FSM` line in `openspec/config.yaml`, and `SignatureStatus.java` in sync.
 - eSign is **asynchronous**: never block a request thread waiting on a
   signature. Create the request, return the signing URL, let the webhook drive
   completion. A scheduled reconciliation job is the fallback for missed hooks.
@@ -78,6 +102,23 @@ as a **pyramid** — broad base, narrow top:
 The OpenSpec `tasks:` rule enforces this: a behavioral change must list both a
 unit and an integration test task (pure config/docs/harness changes are exempt,
 recorded with a one-line note atop `tasks.md`).
+
+**Test-suite wall-clock is a tracked budget, not free.** A green run is not
+automatically a good run — slow suites cost every developer on every change, and
+the cost is invisible to whoever is only watching for the green tick.
+
+- **Report the duration.** Whenever you run the full suite (`./gradlew check`,
+  `./run-tests.sh`), state the elapsed wall-clock time in the summary. This makes
+  the trend visible instead of leaving it to whoever happens to notice the wait.
+- **Budget: `check` ≤ 3 minutes on a warm local machine.** Over that, stop and
+  raise it before continuing — say what got slower and propose a fix; don't
+  quietly absorb it. Container-backed slowness is *not* automatically "just how
+  Testcontainers is": shared containers and parallel forks each cut the suite
+  materially, and more headroom likely remains.
+- **Recurring friction is a valid follow-up-register entry.** The register in
+  `docs/ROADMAP.md` is not only for work a CR deliberately descoped — build/test
+  time and repeated manual steps belong there too, with the measured number that
+  triggered it.
 
 **Scanning** (required build gates):
 
@@ -118,20 +159,42 @@ recorded with a one-line note atop `tasks.md`).
   **fail-closed** — a missing `osv-scanner` binary fails with an install hint, it
   does not skip. **Scan scope:** the **whole lockfile — dev + production deps,
   including transitives** (npm devDependencies are the dominant surface here; only
-  `vue` ships to the browser, and dev-tool install scripts/typosquatting are a real
-  supply-chain risk). This **deliberately differs** from the backend's
+  `vue`'s **runtime** ships to the browser, and dev-tool install
+  scripts/typosquatting are a real supply-chain risk). This **deliberately differs**
+  from the backend's
   exclude-build-tooling scope. To accept a finding, add an `[[IgnoredVulns]]` entry
   to `frontend/osv-scanner.toml` with a `reason` AND an `ignoreUntil` expiry —
   justified and time-boxed, never permanent or wildcard. The baseline is currently
-  **empty** (graph is clean). **Not yet wired into CI** (local-only today; not
-  coupled to `npm run build` — a clean local run is not proof the build was gated);
-  CR-7 promotes it. The same `osv-scanner` binary as the backend gate
+  **empty** (graph is clean). It **is** coupled to the build: `npm run build` chains
+  `security:scan && test && vue-tsc -b && vite build`, so a passing build implies a
+  passing scan (note `build` does **not** run eslint — `npm run lint` is separate).
+  Still **not wired into CI** (local-only today, so a clean local run is not proof any
+  shared build was gated); CR-7 promotes it. The same `osv-scanner` binary as the backend gate
   (`brew install osv-scanner`).
+  - **`dev: false` is not "ships to the browser".** npm's `dev` flag tracks
+    reachability from `dependencies`, not bundle membership. `vue` declares
+    `@vue/compiler-sfc` (a *build-time* compiler), which pulls `postcss` → `nanoid`,
+    so npm marks both non-dev — but Vite precompiles SFCs and tree-shakes the
+    compiler out, so neither reaches `dist/`. Verified 2026-09-05 by grepping the
+    production bundle for nanoid's `urlAlphabet` (absent) with the vue runtime
+    present. So a high-CVSS `dev: false` finding in that subtree is **build-tooling
+    risk, not shipped-surface risk** — still fixed (the gate is fail-on-any), but
+    don't triage it as browser-reachable. Re-check only if `@vue/compiler-sfc` ever
+    becomes browser-reachable; note that a `vue/dist/vue.esm-bundler` alias is *not*
+    that trigger — it ships `@vue/compiler-dom`, whose deps are `@vue/compiler-core`,
+    not postcss.
 - **Not yet covered (follow-up CRs):** CI that runs these gates automatically
   (today they run only on local `./gradlew` / `npm run security:scan`). The backend
   `osv-scanner.toml` suppression baseline is currently **empty** — CR-8 remediated
   the Spring Boot 3.4.2 CVEs by bumping to 3.5.15, and CR-9 cleared the residual
   tool-classpath findings via the scan-scope policy above.
+- **Boot 3.5.15 is NOT clean on its own.** As of 2026-09-05 four of its BOM-managed
+  versions carry open advisories and are **overridden** in `build.gradle.kts`:
+  `tomcat` 10.1.59, `postgresql` 42.7.12, `jackson-bom` 2.21.5, `log4j2` 2.25.5
+  (a Boot bump could not fix these — 3.5.16 manages the identical versions). Those
+  `extra[...]` overrides are load-bearing: **on the next Boot upgrade, drop one only
+  after confirming the new BOM manages that artifact at or above the pinned version**,
+  or the fixes silently regress. Full detail in `backend/config/osv-scanner.toml`.
 
 The local PII/secret edit guard (`.claude/hooks/pii-secret-guard.sh`) is
 **defense-in-depth — a reminder, not the authoritative control**: it can be
@@ -173,6 +236,27 @@ left: `./scripts/sweep-test-containers.sh` (dry-run by default, `--force` to rem
 selects on the `org.testcontainers` label and skips compose-managed containers, so it
 cannot touch the local dev stack).
 
+Container-backed tests that *fail* (rather than skip) with `Connection refused` on a
+Testcontainers-mapped port are a different problem: **an asynchronous host port
+forwarder**. Rancher Desktop's experimental `sshPortForwarder` publishes the mapped
+port 0.3-1.8s *after* the container reports ready, and Postgres' stock wait strategy is
+log-based - it only proves the service is up *inside* the container. Testcontainers
+returns, Flyway dials `localhost:<mapped>`, and the port is not bound yet. This is
+environmental, not a code bug, and it fails ~200+ tests at once via cascading
+`ApplicationContext failure threshold exceeded`. `HarnessTestConfig` handles it by
+pairing the log wait with a host-port TCP check (see the javadoc there - the port check
+is necessary but NOT sufficient on its own, since the forwarder accepts before the
+service behind it is ready, so the two strategies must stay paired). MinIO needs no such
+override: its default `Wait.forHttp` already dials the mapped port from the host.
+
+A third variant is a **startup `TimeoutException` on `postgresContainer` only** (never MinIO)
+that reshuffles between runs and passes on an isolated re-run. Cause: `WaitAllStrategy`'s
+default budget is 30s — half the 60s a bare Postgres wait gets — and in the default
+`WITH_OUTER_TIMEOUT` mode `withStrategy()` stamps the *current* outer timeout onto each child
+as it is added. So `withStartupTimeout()` must be called **before** `withStrategy()`, or the
+children keep 30s, which is not enough under a full suite's container contention. Full
+reasoning in `HarnessTestConfig`.
+
 Frontend (from `frontend/`):
 - `npm run dev` — Vite dev server
 - `npm run build` — production build
@@ -187,14 +271,69 @@ Features are built spec-first. Before implementing anything non-trivial:
 1. Propose a change (`/opsx:propose <slug>`), which writes
    `openspec/changes/<slug>/` (proposal, specs, design, tasks).
 2. Review the proposal and spec deltas with me before code lands.
-3. Apply (`/opsx:apply`), then archive (`/opsx:archive`) when done.
+3. Apply (`/opsx:apply`), then archive with `openspec archive -y <slug>` when done.
 Project context for OpenSpec lives in `openspec/config.yaml` (the `context:`
-section), included automatically in every OpenSpec request.
+section), included automatically in every OpenSpec request. Keep its `Signing
+status FSM` line in sync with `SignatureStatus.java` — it is injected into every
+artifact the CLI helps generate, so drift there mis-specs future changes.
+
+**The SHALL check reads only the first line.** `openspec validate --strict` extracts a
+requirement's text as the *first* non-blank, non-`**meta**:` line after the `### Requirement:`
+header and requires `SHALL`/`MUST` in that one line — a body full of SHALLs below it does not
+count, and a leading `> NOTE:` blockquote or a "Because ..." preamble fails the check. Lead with
+the SHALL clause and put the rationale or the note after it. A first line of the form
+`**Rule**: ...` is skipped as metadata, so don't start with bold-plus-colon. This bites at
+archive time, not before, because `openspec archive` runs the same validation before it writes.
+
+### Archiving folds the spec of record — always use the CLI
+
+`openspec archive` parses each delta, rebuilds the target spec, validates it, and
+**aborts without writing** if anything does not hold. Never hand-merge deltas into
+`openspec/specs/`, never delegate that merge to a subagent, and never pass
+`--skip-specs` to a change that has delta specs. Doing so once left six capabilities
+archived but never folded into the baseline (`openspec/BASELINE-FOLD-GAP.md`) and let
+a requirement missing its `SHALL` sit in the spec of record for two months.
+
+There is deliberately **no `openspec-archive-change` skill and no `/opsx:archive`
+command** — both were deleted because they hand-rolled a `mv` around the CLI. If
+`openspec update` regenerates them, delete them again.
+
+### Which skills survive `openspec update`
+
+`.claude/skills/` holds two tiers, and the tier decides where logic may live:
+
+- **Ours (durable).** `openspec-flow`, `review-spec`, `openspec-validate` — none are in
+  the CLI's `WORKFLOW_TO_SKILL_DIR`, so `openspec update` never regenerates or deletes
+  them. **All policy belongs here.**
+- **Vendor's (regenerated).** `openspec-explore`, `openspec-propose`,
+  `openspec-apply-change` and the `opsx:` commands for them are written by
+  `openspec init/update` via unconditional overwrite. **Treat them as read-only** — an
+  edit there survives only until the next openspec release flips the version stamp.
+
+Do not install the upstream skills we omit. `openspec-sync-specs` in particular is
+explicitly "agent-driven … you will read delta specs and directly edit main specs" —
+that is the improvised merge the CLI exists to replace.
+
+### Reviewing the skills — read `DECISIONS.md` first
+
+`.claude/skills/DECISIONS.md` is the adjudication register for the skills and `opsx:`
+commands. Prose instruction files have no test suite, so review is their only quality
+gate — an unbounded one, and three rounds in three days each surfaced fresh Criticals
+that were mostly second-order consequences of the previous round's own fixes. Before
+reviewing any skill: read the register, review **the diff since the last commit rather
+than the whole file**, and do not re-raise an entry marked `accepted`/`deferred` without
+new evidence. When you fix something, land its blast radius in the same round (grep for
+references in the repo, `README.md`, this file, the auto-memory, and
+`~/.config/openspec/config.json`). Cap tooling review at 2 rounds, then commit.
 
 ## Gotchas
 
 - The webhook listener needs a **public URL** in local dev — front it with a
   cloudflared/ngrok tunnel or the aggregator's callback never arrives.
-- PDF rendering for vernacular/Indic scripts must use Chromium (Playwright),
-  not a pure-Java PDF lib — only Chromium shapes complex scripts correctly.
-  Bundle Noto fonts. (This is why `documents` is its own module.)
+- PDF rendering for vernacular/Indic scripts must use **Chromium**, not a pure-Java
+  PDF lib — only Chromium shapes complex scripts correctly. It runs as **Gotenberg**
+  (a thin HTTP service with bundled Noto fonts, `docker/gotenberg`), so the app is a
+  plain HTTP client at `GOTENBERG_URL` and carries no browser binary. Chromium's
+  outbound network is denied both private and public IPs as an SSRF/exfil guard. (This
+  is why `documents` is its own module.) *Not Playwright — this file said so until
+  2026-09-11 and no Playwright has ever been in the backend.*

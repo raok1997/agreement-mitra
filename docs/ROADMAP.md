@@ -3,9 +3,21 @@
 Team-shared, git-tracked source of truth for where the product is and what's
 next. Update this in a PR like any other doc. Per-feature intent lives in
 `openspec/` (specs + archived changes); deep architecture in
-`docs/ARCHITECTURE.md`; vendor specifics in `docs/integrations/`.
+`docs/ARCHITECTURE.md`; vendor specifics in `docs/integrations/`; legal exposure,
+template-approval governance and the open questions for counsel in
+`docs/LEGAL-POSTURE.md`; the bring-your-own-document direction in
+`docs/BYO-DOCUMENT-UPLOAD.md`.
 
-_Last updated: 2026-06-27_
+_Last updated: 2026-09-12_
+
+**What lives here:** only work that is **pending** — where we are, what's next, and
+the follow-up register. **Completed work is removed from this file**, not moved to a
+"done" list: `openspec/changes/archive/` is the authoritative, self-maintaining record
+of what shipped, and `git log` says when and by whom. A hand-kept completion list is a
+second source of truth that drifts silently — the previous one did, by 42 changes.
+The test for a line staying here: *does it tell you something true about the system
+today that the archive cannot?* Narrative about current behaviour stays; "we finished
+X" does not.
 
 ## Where we are
 
@@ -22,12 +34,11 @@ agreement -> draft PDF upload -> finalise (order placed) -> payment
           -> agreement CLOSED
 ```
 
-**The journey now has an end.** `signed-delivery-and-closure` adds the last two
-steps: on completion each party is emailed the signed agreement as an
-attachment, a party-authenticated in-app copy stays retrievable indefinitely,
-and the agreement reaches a terminal **fulfilment** state. Terminal signing
-failures (`FAILED`, `EXPIRED`, `STAMP_FAILED`) close as **abandoned**, so dead
-work leaves the staff queue instead of accumulating in it. Key properties:
+**The journey has an end.** On completion each party is emailed the signed
+agreement as an attachment, a party-authenticated in-app copy stays retrievable
+indefinitely, and the agreement reaches a terminal **fulfilment** state. Terminal
+signing failures (`FAILED`, `EXPIRED`, `STAMP_FAILED`) close as **abandoned**, so
+dead work leaves the staff queue instead of accumulating in it. Key properties:
 
 - **Delivery goes only to signing-verified addresses** -- the address the
   invitation was issued to and at which that party completed signing. There is
@@ -46,55 +57,12 @@ work leaves the staff queue instead of accumulating in it. Key properties:
   `docs/DOMAIN-AND-EMAIL-SETUP.md` section 5b -- including the ZeptoMail account
   review, which is a **2-3 business day lead-time item, not a switch**.
 
-- 13 capability specs under `openspec/specs/`; 15 changes archived.
 - FSM: `PDF_GENERATED → STAMPED → SIGN_REQUESTED → SIGNED | FAILED | EXPIRED`
   (terminal `STAMP_FAILED` branch off the stamp step).
 - 131+ tests green (Testcontainers Postgres + MinIO + WireMock); all build
   gates passing (OSV deps, SpotBugs/FindSecBugs, JaCoCo, ModularityTests).
 - Everything runs against a **WireMock/stub** Leegality provider — no live
   vendor credentials have been required to reach this point.
-
-### Done (archived OpenSpec changes)
-
-Hardening: `dev-policy-tightening`, `backend-test-harness`,
-`frontend-test-harness`, `backend-security-scanning`,
-`bump-spring-boot-security-patches`, `bump-spotbugs-plugin`,
-`spring-security-baseline`, `frontend-security-scanning`.
-
-Signing slice: `persistence-foundation`, `agreement-aggregate`,
-`validation-error-responses`, `create-signing-request`, `signing-completion`,
-`draft-ingestion`, `stamp-composition`.
-
-Guided rental-agreement flow: `rich-agreement-capture` (structured tenant/owner details —
-first/last/father name + current address — tenancy start/end dates with a derived duration
-in months, full name as per Aadhaar, contact optional at draft; Vue capture screen). Next
-in the arc: `agreement-document-render` (CR-3, proposed) — embed the captured data into one
-bundled rental template and preview it via a Gotenberg render service. A searchable template
-catalog is proposed-but-parked.
-
-Optional Google login — **now complete** across two CRs: `google-oauth-login` (CR-A) delivers
-backend-mediated Google OAuth + an opaque server-side session (the SPA never sees a Google
-token); `agreement-ownership` (CR-B) attaches save / resume / edit to that identity — an
-anonymous draft can be **claimed** into the caller's account, **listed** in "My Agreements"
-with a derived status, and **edited** while it is still pre-signing-request. Login stays
-**optional**: create + draft-upload + capability read remain fully anonymous. The parked
-`mobile-otp-auth` change mirrors CR-B's ownership decisions so a second credential is a
-drop-in. Deferred follow-ups (not in CR-B): ownership authZ on the signing/stamping routes
-(folded into `signing-auth` below), a retain-and-purge job for unclaimed anonymous drafts,
-a cookie session (in-memory only today), and an owner-scoped signed-artifact download surface.
-
-Full-capture persistence — **now complete**: `agreement-capture-persistence` (M5) persists an
-agreement's **full capture state** (the flat working-set field map + added optional-section
-titles) in a nullable `capture_state jsonb` column (migration `V13`), accepted on create/edit and
-returned on read, and **generate-as-draft + preview now render from that stored state** (the fixed
-typed columns stay authoritative via render-time reconciliation; a null capture state falls back to
-the fixed-column mapping unchanged). This **retires the preview/draft parity STOPGAP** (old
-flow-journal 8.4/8.5): optional sections and dynamic field values (e.g. `lockInMonths`, `petAllowed`)
-now round-trip on Save and the stored/signed draft matches what the user saw in preview, so the
-frontend `NON_PERSISTED_FIELDS` hide-list shrank to only genuinely system-owned template defaults
-(`stampDuty`). Deferred (not in M5): normalized per-attribute columns (a jsonb blob suffices to
-round-trip and render); write-time validation of the capture map (it is validated at render by the
-`documents` projection, the same contract the preview already uses).
 
 ## Payment status — a gateway now exists
 
@@ -183,6 +151,27 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
 2. **Frontend signing-flow** — no-login self-serve UI per
    `docs/PRODUCT-FEATURE-SET.md`. Surfaces two backend gaps to fill alongside:
    a **status endpoint** and a **signed-artifact fetch endpoint**.
+3. **Bring-your-own document** — let the customer upload their own PDF instead of
+   picking a template, then carry it through the existing stamp + eSign flow.
+   Direction agreed 2026-09-12 and **not yet proposed**; the reasoning, the
+   rejected alternatives and the mock screens are in
+   `docs/BYO-DOCUMENT-UPLOAD.md`. Four changes in dependency order:
+   - **`signing-auth`** (item 1 above) — BYO does not create it, it makes it
+     urgent: a public upload UI widens that hole, and `/api/agreements/*/draft`
+     is named in the register row.
+   - **`estamp-signature-band`** — reserve the 26–66pt per-page signature band
+     when composing the certificate page. **This is a defect on the shipping
+     path today, not BYO work:** `PdfStampComposer` fits the scan into A4 minus
+     28pt, so a tall certificate reaches into the band and a signature is drawn
+     over it on *templated* documents. Unobserved because no signing has
+     completed end to end against a real callback. Independent of everything
+     below — it can be picked up on its own.
+   - **`byo-document-upload`** — BYO end to end, deliberately **block-only**
+     (signatures on the appended page, none on the customer's pages). Carries
+     the instrument-type declaration and the ToS delta; neither may be split out.
+   - **`byo-every-page-signatures`** — detect whether every page's footer band is
+     free of text, decide once per document, and disclose the outcome with a
+     remedy. Needs the two above.
 
 ## Track B — ZOOP test access is free and self-serve (no longer blocked)
 
@@ -220,7 +209,61 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
   `docs/TECH_DEBT.md` TD-1) but is not blocking. Revisit before any
   production / real-PII deployment.
 
+## Follow-up register (raised by changes, not yet scheduled)
+
+The single list of follow-ups spun out of an OpenSpec change. Anything a change
+identifies but deliberately does not fold in belongs here **before that change is
+archived** — the `followUps` line in a change's `.flow-journal.md` moves into
+`openspec/changes/archive/` with it and is not a durable record.
+
+**Sorted by:** what unblocks work soonest — (1) blocking the repo *today*, (2) blocking the
+first real customer, (3) everything else. Two clocks, deliberately interleaved; re-sort by
+whichever one matters to you.
+
+| Slug | Scope | Raised by | Date | Priority |
+|---|---|---|---|---|
+| `agreement-error-problem-type-plumbing` | `AgreementHttpError` carries the RFC 9457 problem `type` at only 1 of 6 throw sites, so the client cannot tell which 409 it got. Customers see the raw `Agreement request failed: 409` for a frozen-terms save and for an ineligible jurisdiction, where written copy exists but is unreachable. Wire the remaining five sites; carry the type on `PaymentHttpError` too. | `contacts-editable-until-payment` | 2026-09-10 | High — customer-visible today |
+| `national-jurisdiction-city-unfilled` | `disputeClause`/`disputeAlternativeClause` sit in the **mandatory** witnesseth list gated only on `disputeResolution` (base default `courts`), so an operative exclusive-jurisdiction covenant renders on every deed -- but `jurisdictionCity` is `required: false` with **no national default** and lives in the *optional* `Dispute Resolution` section. TG patches the default to Hyderabad; nothing patches the base. So a deed generated without that optional section reads "...exclusive jurisdiction of the courts at **[ Jurisdiction city ]**". **This reaches Karnataka**, one of the two seeded stamp-duty states -- KA matches no state patch and resolves to the base alone. Pinned as a characterization test (`ProductionRentalLayerSetTest.theAlwaysOnJurisdictionCovenantIsUnfilledOutsideTelangana`), so it cannot regress silently. Likely fix is a fallback clause ("courts of competent jurisdiction") when no city is set -- a drafting decision, hence not folded in. | `rental-document-content-v2` | 2026-09-10 | High -- a placeholder in an operative clause of every Karnataka deed |
+| `zeptomail-production-provisioning` | ZeptoMail is chosen for production sending but **no account exists**. Two external, sequential steps, neither startable from this repo: (a) submit the **Customer Validation form** — ZeptoMail enforces a transactional-only policy and reviews new accounts, typically **2–3 business days**; (b) publish **SPF + DKIM** for the sending domain against ZeptoMail and verify alignment before the first production send. Until both pass, `MAIL_PROVIDER=smtp` against a production host sends nothing (or sends unauthenticated mail that lands in spam). Descoped from `signed-delivery-and-closure` tasks 7.6/7.7: lead-time work on a third party, not code. | `signed-delivery-and-closure` | 2026-09-11 | High — blocks the first production send; 2–3 business days of external lead time |
+| `operating-entity-disclosure` | **The brand is not the legal person.** If AgreementMitra is operated by a differently-named entity (e.g. Kavisat Labs LLP), nothing in the product says so today — brand name only, everywhere. Three independent forces require the registered name: (a) **payment-gateway onboarding** (Razorpay/Cashfree/PayU) checks that the legal name shown on the website matches the entity on the settlement bank account — a mismatch is a common cause of onboarding rejection or a later account freeze, and the card-statement descriptor customers see will carry the *legal* entity, not the brand; (b) **consumer-protection e-commerce rules** require a seller to display legal name, registered address and contact details; (c) once GST-registered, **tax invoices must carry the legal name + GSTIN**, not the brand. Known surfaces: **site footer** (one line — "AgreementMitra is a service of Kavisat Labs LLP" + LLPIN + registered address + contact email — this single line does most of the work), **Terms of Service** (the contracting party must be the LLP; edit the generator source, not `docs/TERMS-OF-SERVICE.md`, and see `terms-doc-ungated`), **Privacy Policy** (the LLP is the data fiduciary under the DPDP Act), **refund/cancellation policy** and **Contact Us**, and **invoices / payment receipts** (legal name + GSTIN, emitted by billing code — not user-configurable). Expect more surfaces; enumerating them is part of the CR. Entity details should come from one config source rather than being retyped per page. Blocked on the entity facts themselves (LLPIN, registered address, GSTIN) being confirmed. Related: the terms-acceptance checkpoint below, which records *which* version of whose terms a customer accepted. | product owner (direct) | 2026-09-12 | High — blocks payment-gateway onboarding and therefore the first real payment; also a statutory display requirement |
+| `terms-doc-ungated` | `npm run terms:doc` regenerates `docs/TERMS-OF-SERVICE.md`, customer-facing legal text — and **no gate invokes it**. `npm run build` does not, and the parity test (`termsOfService.test.ts:15-20`) reads the committed file in-process, so it passes with the generator completely broken. That is exactly how it broke unnoticed when vitest 4 dropped `vite-node`. Wire the generator (or a regenerate-and-diff check) into a gate so a broken generator fails something. | `frontend-dev-dep-refresh` | 2026-09-11 | Medium-high — a silent-failure path on a legal document |
+| `zeptomail-bounce-webhook` | Wire ZeptoMail's bounce webhook into the delivery permanent-failure path, so `SENT` can mean "arrived" rather than "the provider accepted it". **The CR shipped calling this "additive"; it is not** — `EmailSender.send` returns `void` and `signed_document_delivery` holds no provider message id, so **no correlation key exists** to join a bounce back to a recipient row. Scope: a forward-only migration for the correlation key, a changed `EmailSender` signature (both adapters + `markSent`), an HMAC/secret-verified inbound endpoint, and a bounce payload contract **that cannot be established without a live ZeptoMail account** — so it is blocked on `zeptomail-production-provisioning`, and may force ZeptoMail's HTTP API over SMTP, reopening design D7's one-adapter choice. A new inbound webhook also inherits the rate-limit / verify-failure-logging gap tracked in `signing-auth`. Until it lands, treat delivery status as best-effort and rely on the durable in-app copy. | `signed-delivery-and-closure` | 2026-09-11 | High — blocks the first production send; a hard bounce is silent today |
+| `signing-auth` | `POST /api/signing/*/request` is still `permitAll` with no ownership check, no rate limit, and no security-event logging — it egresses signer PII to the eSign vendor and can burn provider quota. Deferred in June because "no auth mechanism exists yet"; that blocker is gone (`google-oauth-login` + `agreement-ownership` shipped, and `GET /*/progress` already does service-level ownership authZ). `mobile-otp-auth` states in its proposal and D-note that it leaves this permit untouched — **nobody is holding it.** Scope: ownership authZ on create, rate limit on create + webhook, redacted security-event logging of webhook verify-failures / documentId enumeration. Fix the stale "unauthenticated today" javadoc on `SigningController` and `SecurityConfig` in the same CR. **Widened 2026-09-11 by `agreement-status-link-page`:** the rate limit should also cover the three anonymous, owner-scoped reads the status page now polls — `GET /api/agreements/{id}`, `/{id}/payment`, `/api/signing/{id}/progress` (~3 req/min per open in-flight tab; the client floor is a courtesy, not a control). | `create-signing-request` | 2026-06-21 | High — must land before the first real user (CLAUDE.md: sandbox + dummy data only) |
+| `rental-deed-lease-vs-licence` | **Counsel ruling owed on the instrument type.** `rental-document-content-v2` removed the "(Leave & Licence)" label (a Maharashtra form) from the national subtitle and recital because it contradicted the rest of the deed -- but that was a *de-contradiction, not a ruling*. Still open: (a) is a residential tenancy in KA/TG properly a **lease**, and should the vocabulary move to **Lessor/Lessee** to match the sibling commercial set (customer-visible across form labels + frontend copy, so not a drift fix); (b) confirm the stamp basis follows from that -- **this is a dependency of `state-stamp-duty-quoting`**, which seeds Karnataka Stamp Act 1957 **Article 30, the lease article**, and an instrument assessed under the wrong article is under-stamped and inadmissible under s.35 Indian Stamp Act until duty + penalty is paid; (c) low-priority drafting nit, ask in the same pass: the recital sits *inside* `Now This Agreement Witnesseth` where Indian deeds conventionally place it above. `docs/COUNSEL-BRIEF.md` Part A holds the drafted questions (**unsent, no counsel engaged**); its Q1 is this one. | `rental-document-content-v2` | 2026-09-10 | High -- blocks the first real customer; blocks `state-stamp-duty-quoting` |
+| `template-counsel-signoff-gate` | Nothing prevents an unreviewed authored template from shipping. Every agreement pins `templateContentHash` + `layerVersions` (`Agreement.pinEffectiveTemplate`), which makes "was this content reviewed?" answerable -- but no gate consults it. Wire counsel sign-off to the content hash so a template edited after review cannot generate a deed silently. Raised by the CR as "still owed before the first real customer". | `rental-document-content-v2` | 2026-09-10 | High -- blocks the first real customer |
+| `prod-readiness-preflight` | **Nothing enumerates or enforces what must be true before the first production send / first real customer.** Today the answer is scattered across two archived `tasks.md` files, `docs/DOMAIN-AND-EMAIL-SETUP.md` §"Before production sending works", `docs/DEPLOYMENT.md` and register prose — and a gate that passes has nowhere to record that it passed, because register rows leave by deletion. Two mechanisms, one CR: **(a) `scripts/prod-preflight.sh`** for gates outside the JVM — SPF + DKIM published and aligned for the sending domain (`dig`, assert don't print), ZeptoMail account approved and the send token live, tunnel/callback URL publicly reachable for both webhook endpoints; **(b) fail-closed startup validation** under a new `prod` profile (no `application-prod.yml` exists yet) for gates the JVM can see — `MAIL_PROVIDER` not `stub`, `MAIL_FROM` set, production SMTP host explicitly configured rather than defaulted, every webhook secret non-blank, `ddl-auto: validate`. Same fail-closed idiom as `securityScan`, `MinioClient` and `RazorpaySignatures`. **A script alone is opt-in and therefore still a promise — the startup half is what makes a gate unforgettable, so do not drop it to ship the script sooner.** Also add a `## Production gates` section to this file (`Gate │ Enforced by │ Status │ Verified on │ Evidence`) so a passed gate keeps its evidence instead of being deleted, and an OpenSpec rule that a CR's production-readiness task may close only as implemented, converted to a named enforced gate, or descoped to a production-gate row — never to a plain follow-up. That rule is what would have caught `signed-delivery-and-closure` 7.4 at proposal time instead of at close-out. | `signed-delivery-and-closure` | 2026-09-11 | Medium — the gates it enforces are High and carry their own rows; this is the mechanism, and prod is still founding-team beta |
+| `pii-lint-custom-rules` | Nothing automated enforces CLAUDE.md's two non-negotiables — never-log Aadhaar/OTP/VID/full signer PII, and verify-HMAC-before-acting. Stock FindSecBugs does not model them, and `.claude/hooks/pii-secret-guard.sh` is self-declared "defense-in-depth — a reminder, not the authoritative control" (local, evadable, does not run in any shared build). Needs custom SpotBugs detectors or an equivalent PII-lint wired into `securityScan`. | `backend-security-scanning` | 2026-06-20 | Medium — a non-negotiable rule with no gate behind it |
+| `terms-correctable-until-stamping` | Let the owner correct terms after payment and before the stamp. **Explored and deliberately dropped from `agreement-status-link-page`** (its `.flow-journal.md` review rounds 1–2 and the pre-rescope `design.md` in git history are the prior art — read them first). The freeze move alone generated every finding across two review rounds, so the minimum viable shape is already known: draft regeneration **outside** the agreement row lock (render is a 30 s Gotenberg call; two transactions), a `draft_generation` counter (the blob key is deterministic, so a key compare cannot detect a superseded draft) checked under `findByIdForUpdate` on the `STAMPED` transition with a distinct audited 409, server-preserved party contacts (the edit form sends none and the contacts freeze at payment must hold), party notification via the existing draft delivery with corrected copy, a staff queue timestamp, `(state,type)` immutable post-order, attribution columns, and `MODIFIED` deltas for `payment-processing` and the `estamp-intake` console requirement. | `agreement-status-link-page` | 2026-09-11 | Medium — customer-visible gap, but today's behaviour; needs `zoop-aadhaar-esign` archived and a Gotenberg-backed test harness in four more classes |
+| `zoop-callback-e2e-on-public-host` | `zoop-aadhaar-esign` task 8.5 — prove the real ZOOP callback end to end: the webhook arrives with the `webhook-security-key` header, the transaction completes to `SIGNED`, artifacts are stored, and (deliberately) the 5-minute reconciliation fallback advances a request whose callback was missed. The 2026-09-11 sandbox run signed the document but **no callback reached the app** because it ran on a local host ZOOP cannot reach; persisted state proved it (`SIGN_REQUESTED`, invitees `PENDING`, null artifact keys). Every piece the app controls is integration-tested (`ZoopSigningIntegrationTest` drives init → webhook → fetch → `SIGNED` + artifacts; `SigningProgressApiIntegrationTest` pins the read model after it); what is unproven is the *vendor's* delivery to *our* URL. To close: run on a publicly reachable host with `ZOOP_RESPONSE_URL` set **before** start (it is baked into `/init`), then check `signing_request`, not the inbox. Also closes `agreement-status-link-page`'s step 4 (signed-document download after a real signing). Overlaps the tunnel/callback gate in `prod-readiness-preflight`. | `zoop-aadhaar-esign` | 2026-09-11 | High — must pass before the first real signing; blocked on a public host, not on code |
+| `claim-bound-to-initiator` | Claim is "first signed-in link holder wins": `Agreement` records no initiator (no creator field; `owner_identity_id` is null until claimed) and `Identity` is Google-email only, so any recipient of the emailed link who signs in and claims first owns the agreement and revokes the link for everyone else — including the drafter. Pre-existing (`agreement-management` D2), surfaced by `agreement-status-link-page`'s review, and untouched there because the fix needs an initiator contact captured at draft time plus a verified identity to match against (mobile once `mobile-otp-auth` lands). Related: claim has no state precondition, so a party can claim after `SIGNED` and lock the counterparty out of the signed-document route — gate claim on the pipeline not having ended, in the same CR. | `agreement-status-link-page` | 2026-09-11 | Medium — bounded today (one named claimant, the drafter sees "saved to an account" at once), but it decides who controls a paid legal document |
+| `progress-read-hot-path` | `GET /api/signing/{id}/progress` and `GET /api/agreements/{id}/payment` are now polled every 20 s per open status tab. Per tick, progress builds a full `AgreementResponse` (two JSON columns decoded, lazy signers, a template-catalog lookup for `state`/`type` the caller discards) plus the `SigningRequest` aggregate with lazy invitees — ~5 queries for four scalars — and payment loads the same `Agreement` row twice (`isAccessibleBy` then `paymentState`). Pre-existing shapes; the status page is what put them on a loop. Fix: a narrow owner-scoped signers/status projection (`@EntityGraph` or JPQL) and one `paymentStateForReader` used by both checks. Measure before optimising — at founding-team scale this is noise. | `agreement-status-link-page` | 2026-09-11 | Low — cost scales with open tabs × 3/min; revisit before real customers |
+| `agreement-status-detail` | "My agreements" collapses `PDF_GENERATED`/`STAMPED`/`SIGN_REQUESTED` into one "In progress" badge and omits `payment_state` entirely, so awaiting-payment, paid-awaiting-stamp and out-for-signature are indistinguishable. Separately, `@view` and `@edit` both call `openForEdit`, so "View/Download" opens an editable form on a frozen agreement whose only feedback is a raw 409. **`agreement-status-link-page` (2026-09-11) added `FulfilmentStage` + `terminal` + `signedDocumentReady` to `GET /api/signing/{id}/progress` — the list can reuse that projection rather than invent one; the `@view`/`@edit` conflation is untouched and is the remaining scope.** | `contacts-editable-until-payment` | 2026-09-10 | Medium |
+| `rental-default-commercial-terms` | Three commercial terms are silently defaulted and always render: `lockInMonths` **6**, `rentEscalationPercent` **5**, `noticePeriodMonths` **1** (and `noticeClause` carries no `showWhen`, so it renders regardless). A customer who never opens those fields signs a six-month lock-in and 5% annual escalation they were never asked about. Decide whether these should be defaulted at all, surfaced explicitly in the capture form, or gated off when untouched. | `rental-document-content-v2` | 2026-09-10 | Medium -- customer signs terms they were not shown |
+| `tg-governing-law-duplication` | A Telangana deed carries two choice-of-law clauses: the national `governingLawClause` ("laws of India") in the witnesseth list and the broader `tgGoverningLaw` ("laws of India **and** the tenancy laws applicable in Telangana, including the 1960 Act") in the now-mandatory statutory section. The second subsumes the first. **Do not fix by plain removal** -- that recreates the stamp-clause hole one clause over: revert the statutory flag to `optional: true` and a TG deed would have no governing-law clause at all. The safe shape is a `replaceClause` of `governingLawClause` with the TG text, keeping it in the always-on witnesseth list and dropping `tgGoverningLaw` from the statutory section. Reasoning is also inline in `state_type-TG-residential.patch.yaml`. | `rental-document-content-v2` | 2026-09-10 | Low -- redundant, not wrong |
+| `frontend-coverage-gate` | The frontend has no coverage threshold. The backend fails `check` on a JaCoCo gate; `vitest` runs without `--coverage` and `vite.config.ts` declares no thresholds, so frontend coverage can regress to zero silently. Add a `vitest --coverage` threshold and chain it into `npm run build` alongside `security:scan`. | `frontend-test-harness` | 2026-06-20 | Low |
+| `frontend-contract-test-msw` | No cross-stack contract test. Frontend API tests mock `fetch` by hand, so a backend DTO rename (e.g. the `SignSession` / signing-progress shape) compiles clean on both sides and fails only in the browser. Introduce MSW handlers generated from — or asserted against — the real backend response shape. | `frontend-test-harness` | 2026-06-20 | Low |
+| `frontend-config-driven-test-teardown` | Set `restoreMocks`/`clearMocks` in `vite.config.ts` and retire the **47 hand-written `.mockReset()` calls across 9 test files** (`CaptureForm.test.ts` alone has 22, in a bare `beforeEach`). Config-driven teardown makes the next vitest major cheap instead of a 9-file audit. Cheaper now that the suite is on v4 semantics, so it is sequenced work rather than unrelated cleanup. | `frontend-dev-dep-refresh` | 2026-09-11 | Medium — pays for itself at the next runner bump |
+| `frontend-engines-node-narrowing` | `frontend/package.json` declares `engines.node >= 20.19.0`, but vitest 4 supports `^20 \|\| ^22 \|\| >=24`. A developer on Node 21 or 23 satisfies ours and violates the runner's, with no warning until something breaks oddly. Narrowing `engines` affects every developer, so it was not folded into a build-gate fix. | `frontend-dev-dep-refresh` | 2026-09-11 | Low-medium — latent, environment-dependent |
+| `frontend-vue-lint-warnings` | 26 `vue/html-indent` + `vue/html-closing-bracket-newline` **warnings** across four `.vue` views, from the Prettier vs `eslint-plugin-vue` stylistic overlap the config's existing off-block only partly covers. Advisory only — `eslint .` exits non-zero on errors, so they fail nothing — but a permanently noisy lint run is where a real new warning goes unnoticed. Extend the off-block or reformat. | `frontend-dev-dep-refresh` | 2026-09-11 | Low — cosmetic, but it normalises noise |
+| `frontend-root-config-node-globals` | The Node-globals fix in `frontend-dev-dep-refresh` is scoped to `frontend/scripts/`, but `eslint .` also lints four Node programs at the frontend root — `eslint.config.js`, `vite.config.ts`, `postcss.config.js`, `tailwind.config.js` — which keep the inverted globals (`window` defined, `process` not). Adding ordinary `process.env` gating to `tailwind.config.js` would fail lint with no hint why. Pre-existing, not a regression, and widening it needs a spec-scope change rather than a config tweak — hence not folded in. Extend the scoped block's `files` to the root configs. | `frontend-dev-dep-refresh` | 2026-09-11 | Low-medium — a confusing false error waiting for whoever edits a root config |
+| `anonymous-draft-retain-and-purge` | Unclaimed anonymous drafts accumulate forever. No retention window, no purge job — so PII-bearing draft rows from abandoned sessions are kept indefinitely, which is the wrong default for identity/legal infra. Deferred from `agreement-ownership` (CR-B); rescued from ROADMAP prose 2026-09-11 when the completion narrative was removed. | `agreement-ownership` | 2026-09-11 | Medium — data-retention exposure that grows with traffic |
+| `session-store-not-durable` | The server-side session is **in-memory only**, so every restart or redeploy signs every logged-in user out, and it cannot survive more than one app instance. A cookie/persistent session store was deferred from `agreement-ownership` (CR-B); rescued from ROADMAP prose 2026-09-11. | `agreement-ownership` | 2026-09-11 | Medium — blocks horizontal scaling and makes deploys user-visible |
+| `owner-scoped-artifact-download` | No owner-scoped surface for downloading a signed artifact — deferred from `agreement-ownership` (CR-B). Partly overtaken by `signed-delivery-and-closure`'s party-authenticated in-app copy; **confirm what remains before scheduling** rather than assuming it is still open. Rescued from ROADMAP prose 2026-09-11. | `agreement-ownership` | 2026-09-11 | Low — may be largely superseded; verify first |
+| `capture-state-normalized-columns` | `capture_state` is stored as an opaque `jsonb` blob (migration `V13`). Sufficient to round-trip and render, but not queryable or constrainable per attribute. Deferred from `agreement-capture-persistence` (M5); rescued from ROADMAP prose 2026-09-11. | `agreement-capture-persistence` | 2026-09-11 | Low — deliberate trade-off, revisit only if querying is needed |
+| `capture-state-write-time-validation` | The capture map is validated only at **render** time by the `documents` projection, not on write, so an invalid map can be persisted and fails later. Deferred from `agreement-capture-persistence` (M5); rescued from ROADMAP prose 2026-09-11. | `agreement-capture-persistence` | 2026-09-11 | Low-medium — moves a failure from write to render |
+
 ## Other queued non-goals (not scheduled)
+
+**Terms-of-service acceptance checkpoint** — nothing today records that a user
+agreed to the terms. `/terms` is linked (landing footer, `LegalDisclaimer` on
+the capture/contact/payment screens) but a link is not assent: we store no
+timestamp, no terms version, and no per-agreement record of what the customer
+accepted. Clause 18 says "the version that applies to an agreement is the
+version published when you paid for it", which we currently cannot evidence.
+Needs deciding before the first external customer — a checkbox or
+click-through at save/pay, persisting the accepted version (the template
+fingerprint pattern already in `signing` is the model). Added 2026-09-08.
+
 
 STAMP_FAILED orphan recovery (**re-scoped**: `PDF_GENERATED` is now a
 **durable** state — a request rests there for however long staff take to buy

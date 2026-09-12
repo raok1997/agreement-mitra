@@ -3,8 +3,11 @@ package in.agreementmitra.signing.contact;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import in.agreementmitra.identity.IdentityService;
+import in.agreementmitra.identity.oauth.HandoffService;
+import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
+import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.TestPdfs;
 import java.util.List;
@@ -55,7 +58,22 @@ class ContactGateIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private IdentityService identityService;
+  @Autowired private HandoffService handoffService;
+  @Autowired private SessionService sessionService;
   @Autowired private RecordingEmailSender mail;
 
   @BeforeEach
@@ -79,6 +97,28 @@ class ContactGateIntegrationTest {
     jdbc.update("UPDATE agreement SET owner_identity_id = ? WHERE id = ?", ownerId, agreementId);
   }
 
+  /**
+   * Claim the agreement and return a live Bearer session for the identity that now owns it.
+   *
+   * <p>Needed because {@code PUT /api/agreements/*} is {@code .authenticated()} in {@link
+   * in.agreementmitra.SecurityConfig}, unlike the contacts route this file otherwise exercises
+   * anonymously. A test that reaches the terms route without a session is refused by the security
+   * chain (403) and never touches the freeze it means to assert.
+   */
+  private String claimAndSignIn(UUID agreementId, String subject) {
+    UUID ownerId =
+        identityService.findOrCreate(
+            "google", subject, subject + "@example.com", true, "T " + subject);
+    jdbc.update("UPDATE agreement SET owner_identity_id = ? WHERE id = ?", ownerId, agreementId);
+    return sessionService.exchange(handoffService.issue(ownerId)).value();
+  }
+
+  private static HttpHeaders bearer(String session) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setBearerAuth(session);
+    return headers;
+  }
+
   private UUID createAgreement(List<Party> parties) {
     List<Map<String, Object>> signers =
         parties.stream()
@@ -100,6 +140,8 @@ class ContactGateIntegrationTest {
 
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 Test Street, Bengaluru 560038",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -138,6 +180,79 @@ class ContactGateIntegrationTest {
     // Named by role and position so the customer can fix the right one - never by name or contact.
     assertThat(response.getBody()).contains("tenant 1");
     assertThat(response.getBody()).doesNotContain("Tara");
+  }
+
+  /**
+   * 9.15. Anti-mass-assignment at the checkout route. Contacts are set through {@code PATCH
+   * /contacts} and nowhere else; if order creation honoured contacts in its own body, a caller
+   * could satisfy the reachability gate for a party they cannot actually reach, and the finished
+   * agreement would have nowhere to go.
+   */
+  @Test
+  void orderCreationIgnoresContactDetailsSuppliedInItsOwnBody() {
+    UUID id =
+        createAgreement(
+            List.of(
+                new Party("Asha", "OWNER", "asha@example.com", null),
+                new Party("Tara", "TENANT", null, null)));
+
+    // Exactly the shape a caller would try in order to talk their way past the gate.
+    ResponseEntity<String> response =
+        rest.postForEntity(
+            "/api/agreements/" + id + "/payment/order",
+            Map.of(
+                "contacts",
+                List.of(Map.of("role", "TENANT", "email", "smuggled@example.com")),
+                "signers",
+                List.of(Map.of("role", "TENANT", "email", "smuggled@example.com"))),
+            String.class);
+
+    // Still refused, and refused for the same party as before.
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(response.getBody()).contains("tenant 1");
+
+    // ...and nothing was written: the smuggled address is nowhere on the agreement.
+    assertThat(signersOf(id))
+        .noneSatisfy(signer -> assertThat(signer.get("email")).isEqualTo("smuggled@example.com"));
+  }
+
+  /**
+   * 9.16. The reachability rule has to hold at <b>both</b> gates or it holds at neither: payment is
+   * skippable when the gate is OPTIONAL, and a party admitted at checkout must not then be admitted
+   * into signing. Both call the same {@link in.agreementmitra.signing.contact.PartyReachability},
+   * and this asserts the second caller actually enforces it.
+   */
+  @Test
+  void esignInitiationRefusesAPartyTheOldEmailOrMobileRuleWouldHaveAdmitted() {
+    // Mobile-only: reachable under the retired email-OR-mobile rule, unreachable while SMS is off.
+    UUID id =
+        createAgreement(
+            List.of(
+                new Party("Asha", "OWNER", "asha@example.com", null),
+                new Party("Tara", "TENANT", null, "9876543210")));
+    Payments.waive(jdbc, id);
+
+    ResponseEntity<String> requested =
+        rest.postForEntity("/api/signing/" + id + "/request", null, String.class);
+
+    // Exactly 409, not "some refusal": POST /api/signing/*/request is permitAll, so the request
+    // reaches the handler and the only thing that can refuse it here is the reachability gate. A
+    // looser assertion would pass on an auth rejection and prove nothing about reachability.
+    assertThat(requested.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    // It is the reachability refusal specifically, not some other 409.
+    assertThat(requested.getBody()).contains("urn:agreementmitra:problem:contact-required");
+    // Still leaks no party identity or contact.
+    assertThat(requested.getBody()).doesNotContain("Tara").doesNotContain("9876543210");
+    // NOTE (observed 2026-09-05, not a defect this test asserts against): unlike the checkout gate,
+    // this one does NOT name the offending party -- the body is the generic "Every party needs a
+    // contact we can reach them on before payment." So a customer refused here is told less than
+    // one
+    // refused at checkout, and the wording says "before payment" on a signing path. Worth tidying;
+    // deliberately not asserted, so tidying it will not fail this test.
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM signing_request WHERE agreement_id = ?", Integer.class, id))
+        .isZero();
   }
 
   @Test
@@ -325,7 +440,14 @@ class ContactGateIntegrationTest {
     // The whole change is that contacts stopped sharing a line with the terms. If this passed for
     // the wrong reason - because BOTH were relaxed - the document could be rewritten under a
     // placed order, so it is asserted explicitly rather than assumed.
+    //
+    // Everything below is what it takes to reach the freeze at all. The terms route is
+    // .authenticated() and its body is @Valid, so an anonymous caller (403) or an empty signer list
+    // (400) is refused BEFORE AgreementService.update runs - a refusal that would still be a
+    // refusal if the terms freeze were deleted outright. Hence the session, the full body, and the
+    // assertion on the exact status and problem type rather than "not 200".
     UUID id = aFinalisedOrder();
+    String session = claimAndSignIn(id, "terms-freeze-owner-" + id);
 
     ResponseEntity<String> edited =
         rest.exchange(
@@ -333,17 +455,43 @@ class ContactGateIntegrationTest {
             HttpMethod.PUT,
             new HttpEntity<>(
                 Map.of(
+                    "state", "TG",
+                    "type", "residential",
                     "propertyAddress", "Somewhere else entirely",
                     "monthlyRent", "1.00",
                     "securityDeposit", "1.00",
                     "startDate", "2026-09-01",
                     "endDate", "2027-07-31",
-                    "signers", List.of())),
+                    "signers",
+                        List.of(
+                            Map.of(
+                                "firstName", "Asha",
+                                "lastName", "Party",
+                                "fatherName", "Some Parent",
+                                "currentAddress", "1 A St",
+                                "role", "OWNER",
+                                "email", "asha@example.com"),
+                            Map.of(
+                                "firstName", "Tara",
+                                "lastName", "Party",
+                                "fatherName", "Some Parent",
+                                "currentAddress", "1 A St",
+                                "role", "TENANT",
+                                "email", "tara@example.com"))),
+                bearer(session)),
             String.class);
 
-    assertThat(edited.getStatusCode()).isNotEqualTo(HttpStatus.OK);
+    // The terms freeze, and specifically the terms freeze: draft-frozen, not contacts-frozen.
+    assertThat(edited.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(edited.getBody()).contains("urn:agreementmitra:problem:draft-frozen");
+    assertThat(edited.getBody()).doesNotContain("contacts-frozen");
+    // Read back as the owner: the agreement is claimed now, so an anonymous GET is scoped away and
+    // would report a null address whether or not the edit had landed.
     @SuppressWarnings("unchecked")
-    ResponseEntity<Map> after = rest.getForEntity("/api/agreements/" + id, Map.class);
+    ResponseEntity<Map> after =
+        rest.exchange(
+            "/api/agreements/" + id, HttpMethod.GET, new HttpEntity<>(bearer(session)), Map.class);
+    assertThat(after.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(after.getBody().get("propertyAddress"))
         .isEqualTo("12 Test Street, Bengaluru 560038");
   }

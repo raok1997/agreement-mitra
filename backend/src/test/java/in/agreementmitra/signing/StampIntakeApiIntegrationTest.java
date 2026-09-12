@@ -58,6 +58,19 @@ class StampIntakeApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private BlobStore blobStore;
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
@@ -115,6 +128,8 @@ class StampIntakeApiIntegrationTest {
   private UUID bareAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -208,6 +223,60 @@ class StampIntakeApiIntegrationTest {
     return "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
   }
 
+  // --- the jurisdiction gate -------------------------------------------------
+
+  @Test
+  void aGrandfatheredIneligibleAgreementIsRefusedAndNoCertificateIsSpent() {
+    // The case gate 3 exists for. An agreement finalised BEFORE the jurisdiction gate shipped is
+    // already sitting in this queue, and PaymentGate is the only other control here -- which a
+    // staff WAIVER satisfies. Without its own check, staff could buy a real SHCIL certificate for
+    // an agreement in a state whose duty nobody can compute.
+    //
+    // Built by finalising while eligible and then moving the pin, because the customer path can no
+    // longer produce such a row at all -- which is the point.
+    UUID agreementId = agreementWithDraft();
+    in.agreementmitra.support.Payments.waive(jdbc, agreementId);
+    UUID nationalTemplate = in.agreementmitra.support.TemplateCatalogFixture.seedNational(jdbc);
+    jdbc.update("UPDATE agreement SET template_id = ? WHERE id = ?", nationalTemplate, agreementId);
+
+    String certificate = uniqueCertificate();
+    ResponseEntity<String> refused =
+        postIntake(staffToken, intakeForm(staffReferenceOf(agreementId), certificate));
+
+    assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(refused.getBody()).contains("jurisdiction-unsupported");
+    // Distinct from payment-required, so staff can tell the two refusals apart at the same step.
+    assertThat(refused.getBody()).doesNotContain("payment-required");
+    // Nothing was spent: no stamp attached, and the certificate number stays unused.
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("PDF_GENERATED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM agreement WHERE stamp_certificate_number = ?",
+                Integer.class,
+                certificate))
+        .isZero();
+  }
+
+  @Test
+  void theJurisdictionRefusalIsAuditedAsItsOwnOutcomeNotAGenericError() {
+    // outcomeFor() ends `default -> OUTCOME_ERROR`, so without an explicit branch this refusal
+    // would be recorded as an unspecified error -- silently, since that switch still compiles.
+    UUID agreementId = agreementWithDraft();
+    UUID nationalTemplate = in.agreementmitra.support.TemplateCatalogFixture.seedNational(jdbc);
+    jdbc.update("UPDATE agreement SET template_id = ? WHERE id = ?", nationalTemplate, agreementId);
+
+    postIntake(staffToken, intakeForm(staffReferenceOf(agreementId), uniqueCertificate()));
+
+    List<String> outcomes =
+        jdbc.queryForList(
+            "SELECT outcome FROM stamp_intake_audit WHERE agreement_id = ?"
+                + " ORDER BY occurred_at DESC",
+            String.class,
+            agreementId);
+    assertThat(outcomes).isNotEmpty();
+    assertThat(outcomes.get(0)).isEqualTo("REJECTED_JURISDICTION_UNSUPPORTED");
+  }
+
   // --- happy path ------------------------------------------------------------
 
   @Test
@@ -237,11 +306,16 @@ class StampIntakeApiIntegrationTest {
 
     // The scan is retained as the evidence artifact...
     assertThat(blobStore.get("estamp-scans/" + agreementId)).isNotEmpty();
-    // ...and the composite has the scan as page 1 with the certificate number on the document page.
+    // ...and the composite has the scan as page 1, with NOTHING stamped onto the agreement page.
+    // The number printed there was whatever staff transcribed at intake, so the document could
+    // assert a stamp it could not vouch for; it is persisted (asserted above) but never printed.
+    // See PdfStampComposer#compose and PdfStampComposerTest.
     byte[] stamped = blobStore.get("stamped/" + agreementId + ".pdf");
     try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(stamped)) {
       assertThat(doc.getNumberOfPages()).isEqualTo(2);
-      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(certificate);
+      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc))
+          .doesNotContain(certificate)
+          .doesNotContain("e-Stamp Certificate No.");
     }
 
     assertThat(statusOfAgreement(agreementId)).isEqualTo("STAMPED");
@@ -603,11 +677,16 @@ class StampIntakeApiIntegrationTest {
         .contains("Bengaluru")
         .contains("waitingSeconds")
         .contains("awaitingSince");
-    // Non-PII: no party names, no contact details, no full street address.
-    assertThat(resp.getBody())
-        .doesNotContain("Asha")
-        .doesNotContain("asha@example.com")
-        .doesNotContain("12 MG Road");
+    // STAFF-only, and it deliberately DOES carry party names: buying the certificate means naming
+    // both parties on the vendor's form, so the row lists every party with their name and father's
+    // name (staff-queue-fulfilment-context reversed the row's original non-PII shape). The PII rule
+    // this must still respect is that party names never reach a LOG line -- not that they are
+    // absent from a role-gated response. See StampQueueEntry.
+    assertThat(resp.getBody()).contains("Asha Owner").contains("Tara Tenant");
+    // Still excluded, deliberately: contact details, rent/deposit, and the full street address --
+    // only the property city. A fulfilment queue carries the least data that lets someone do the
+    // job.
+    assertThat(resp.getBody()).doesNotContain("asha@example.com").doesNotContain("12 MG Road");
   }
 
   @Test

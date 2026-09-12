@@ -5,12 +5,15 @@ import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
+import in.agreementmitra.signing.FulfilmentStage;
 import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
+import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.WebhookHeaders;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.StampInfo;
 import in.agreementmitra.signing.api.AgreementDisplayStatus;
 import in.agreementmitra.signing.api.AgreementResponse;
@@ -53,6 +56,7 @@ public class SigningRequestService {
   private final SigningRequestPersistence persistence;
   private final BlobStore blobStore;
   private final PaymentGate paymentGate;
+  private final JurisdictionEligibility jurisdiction;
   private final SignedDocumentDeliveryService deliveryService;
   private final PartyReachability reachability;
 
@@ -62,6 +66,7 @@ public class SigningRequestService {
       SigningRequestPersistence persistence,
       BlobStore blobStore,
       PaymentGate paymentGate,
+      JurisdictionEligibility jurisdiction,
       SignedDocumentDeliveryService deliveryService,
       PartyReachability reachability) {
     this.agreementService = agreementService;
@@ -69,6 +74,7 @@ public class SigningRequestService {
     this.persistence = persistence;
     this.blobStore = blobStore;
     this.paymentGate = paymentGate;
+    this.jurisdiction = jurisdiction;
     this.deliveryService = deliveryService;
     this.reachability = reachability;
   }
@@ -119,6 +125,13 @@ public class SigningRequestService {
     // signing-request row is touched and before the provider call - so a refusal costs nothing and
     // incurs no vendor charge. In OPTIONAL mode (today's default) this always passes.
     paymentGate.require(agreementId);
+
+    // JURISDICTION GATE. Independent of the payment gate above, NOT implied by it: a staff waiver
+    // sets WAIVED, which satisfies that gate, so "paid" does not imply "fulfillable". Each
+    // signature is a billable vendor transaction, and we must not incur one for an agreement whose
+    // duty jurisdiction has no defined stamping path. Checked before the provider call, so a
+    // refusal costs nothing.
+    jurisdiction.require(agreementId);
 
     // An attached e-stamp is a PRECONDITION, not something this flow can create. Distinct 409 kind
     // (stamp-required) so an operator can tell it apart from a missing draft or an uncontactable
@@ -207,6 +220,12 @@ public class SigningRequestService {
     // There must be something to finalise. Checked before the order row exists, so a premature
     // finalise leaves the agreement fully editable rather than freezing an empty order.
     requireDraft(agreementId);
+
+    // JURISDICTION GATE. Placing the order creates the signing request in PDF_GENERATED, which is
+    // what puts this agreement in front of staff to buy a certificate for. Checked BEFORE
+    // placeOrder - the path above is reads-only, so a refusal leaves nothing to roll back: no
+    // signing request, no freeze, no queue entry.
+    jurisdiction.require(agreementId);
 
     persistence.placeOrder(agreementId);
     log.debug("Order placed for agreement {}", agreementId);
@@ -321,9 +340,14 @@ public class SigningRequestService {
                         statusBySigner.getOrDefault(s.id(), InviteeStatus.PENDING).name()))
             .toList();
 
+    Optional<SignatureStatus> status = progress.map(SigningRequestPersistence.Progress::status);
+    FulfilmentStage stage = FulfilmentStage.from(status);
     return new SigningProgressResponse(
         agreementId,
-        AgreementDisplayStatus.from(progress.map(SigningRequestPersistence.Progress::status)),
+        AgreementDisplayStatus.from(status),
+        stage,
+        stage.terminal(),
+        progress.map(SigningRequestPersistence.Progress::signedPdfStored).orElse(false),
         parties);
   }
 

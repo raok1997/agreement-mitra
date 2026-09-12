@@ -42,7 +42,7 @@ class OptionalSectionProjectionIntegrationTest {
           new TemplateResolver(new ClasspathLayerSource("documents/template/testsets/optional/")),
           new TemplateCompiler(),
           NO_PDF,
-          new DocumentFooterProperties("agreementmitra.com"),
+          new DocumentFooterProperties("agreementmitra.com", ""),
           FIXED_CLOCK);
 
   private static Map<String, Object> data() {

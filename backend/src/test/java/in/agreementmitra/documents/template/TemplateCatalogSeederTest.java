@@ -53,7 +53,16 @@ class TemplateCatalogSeederTest {
         .contains("IN|residential", "TG|residential", "IN|commercial", "TG|commercial")
         .doesNotHaveDuplicates();
     assertThat(saved).allSatisfy(e -> assertThat(e.status()).isEqualTo(TemplateStatus.PUBLISHED));
-    assertThat(saved).allSatisfy(e -> assertThat(e.version()).isEqualTo(1));
+    // A catalog row's version is derived from its layer set's BASE meta.version, so a base bump
+    // propagates here. rental/base.yaml is v2 (the "(Leave & Licence)" label removal);
+    // commercial/base.yaml is still v1. Asserted per set so the derivation stays pinned and a
+    // future bump fails loudly rather than drifting.
+    assertThat(saved)
+        .filteredOn(e -> e.type().equals("residential"))
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(2));
+    assertThat(saved)
+        .filteredOn(e -> e.type().equals("commercial"))
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(1));
     // The commercial rows are named from the commercial base header and point at its layer set.
     assertThat(saved)
         .filteredOn(e -> e.type().equals("commercial"))

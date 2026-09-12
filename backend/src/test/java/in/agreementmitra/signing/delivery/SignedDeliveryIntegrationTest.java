@@ -100,6 +100,19 @@ class SignedDeliveryIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private RecordingEmailSender mail;
   @Autowired private SigningRequestService signingRequestService;
   @Autowired private SignedDocumentDeliveryService deliveryService;
@@ -128,6 +141,8 @@ class SignedDeliveryIntegrationTest {
   private UUID readyToSign() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -407,6 +422,39 @@ class SignedDeliveryIntegrationTest {
   }
 
   @Test
+  void theRetrySweepNeverManufacturesDeliveriesForAnAgreementThatHasNoDeliveryRecords() {
+    // THE OTHER HALF OF THE DEPLOY HAZARD (signed-delivery-and-closure, Migration Plan step 3).
+    // V18 ships no backfill, so on deploy every pre-existing SIGNED agreement has artifacts stored
+    // and ZERO delivery rows. Deleting the rows reproduces exactly that state. The retry sweep
+    // selects DUE ROWS, not agreements - and ensureRecords, which would create rows and send from
+    // them, is only ever reached through a row the sweep already found. Widening the sweep to
+    // select agreements instead would silently turn a deploy into a mass send.
+    UUID agreementId = readyToSign();
+    requestSigning(agreementId, "DOC-DEL-BACKFILL");
+    stubDetails("SIGNED", "SIGNED", true);
+    postWebhook("DOC-DEL-BACKFILL");
+    assertThat(mail.sent()).hasSize(2);
+
+    jdbc.update("DELETE FROM signed_document_delivery WHERE agreement_id = ?", agreementId);
+    jdbc.update(
+        "UPDATE agreement SET closure_state = 'OPEN', closure_reason = NULL, closed_at = NULL"
+            + " WHERE id = ?",
+        agreementId);
+    mail.reset();
+
+    deliveryService.retryDue();
+
+    assertThat(mail.sent()).isEmpty();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM signed_document_delivery WHERE agreement_id = ?",
+                Integer.class,
+                agreementId))
+        .isZero();
+    assertThat(closureState(agreementId)).isEqualTo("OPEN");
+  }
+
+  @Test
   void concurrentCompletionsStillSendEachRecipientExactlyOneMessage() throws Exception {
     UUID agreementId = readyToSign();
     requestSigning(agreementId, "DOC-DEL-4");
@@ -644,6 +692,8 @@ class SignedDeliveryIntegrationTest {
   private UUID readyToSignWithoutStamp() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "9 Residency Road, Bengaluru",
             "monthlyRent", "18000.00",
             "securityDeposit", "36000.00",

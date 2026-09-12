@@ -14,6 +14,8 @@ import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.MailTestConfig;
+import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.StaffSessions;
 import java.time.Instant;
 import java.util.List;
@@ -50,7 +52,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * this repository, no real money is involved, and the payment gate stays {@code OPTIONAL}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, MailTestConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class RazorpayPaymentIntegrationTest {
@@ -65,6 +67,8 @@ class RazorpayPaymentIntegrationTest {
 
   private static final String WEBHOOK_KEY = "it-wh-mac";
 
+  private static final String RECOVERY_BASE_URL = "https://app.example.test";
+
   private static final WireMockServer WIREMOCK = new WireMockServer(options().dynamicPort());
 
   static {
@@ -77,6 +81,10 @@ class RazorpayPaymentIntegrationTest {
     registry.add("payment.razorpay.key-id", () -> KEY_ID);
     registry.add("payment.razorpay.key-secret", () -> API_KEY);
     registry.add("payment.razorpay.webhook-secret", () -> WEBHOOK_KEY);
+    // The recovery link rides on payment confirmation, so these tests need a base URL
+    // and an enabled channel to observe it at all.
+    registry.add("delivery.public-base-url", () -> RECOVERY_BASE_URL);
+    registry.add("delivery.channels.email.enabled", () -> "true");
   }
 
   @AfterAll
@@ -86,9 +94,23 @@ class RazorpayPaymentIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
+  @Autowired private RecordingEmailSender mail;
 
   private String customerToken;
   private String otherCustomerToken;
@@ -97,6 +119,7 @@ class RazorpayPaymentIntegrationTest {
   @BeforeEach
   void reset() {
     WIREMOCK.resetAll();
+    mail.reset();
     customerToken =
         StaffSessions.customerSession(
             identityService, handoffService, sessionService, "rzp-cust-" + UUID.randomUUID());
@@ -117,6 +140,8 @@ class RazorpayPaymentIntegrationTest {
   private UUID createAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -394,6 +419,84 @@ class RazorpayPaymentIntegrationTest {
   }
 
   // --- idempotency -----------------------------------------------------------
+
+  // --- the recovery link that rides on payment confirmation (post-payment-continuity) ----------
+
+  /**
+   * 9.18 + 9.21b. The whole point of the unprompted send: a customer pays and closes the tab. The
+   * webhook -- not the browser -- settles the payment, and the link must reach <b>every</b> party,
+   * not only whoever happened to be at the keyboard.
+   *
+   * <p>The agreement is deliberately left <b>unclaimed</b>. An anonymous customer can pay (the
+   * checkout routes are {@code permitAll}), and recovery only applies while nobody owns the
+   * agreement -- so this unowned-and-paid state is precisely the one the feature exists for.
+   */
+  @Test
+  void payingSendsEveryPartyALinkTheyCanOpen() {
+    UUID agreementId = createAgreement();
+    stubOrderCreation("order_RECOV1", 49_900L);
+    startCheckout(agreementId, null);
+
+    assertThat(
+            deliverSignedWebhook(paymentCapturedBody("order_RECOV1", "pay_RECOV1", 49_900L))
+                .getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
+    assertThat(mail.sentTo("tara@example.com")).hasSize(1);
+
+    // The link is the agreement identifier out of band, and it opens the agreement.
+    String body = mail.sentTo("tara@example.com").get(0).body();
+    assertThat(body).contains(RECOVERY_BASE_URL).contains(agreementId.toString());
+    assertThat(rest.getForEntity("/api/agreements/" + agreementId, String.class).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+  }
+
+  /**
+   * 9.9. Task 5.2 claims the send is idempotent; nothing asserted it. The guarantee comes from
+   * {@code PaymentConfirmations.apply} taking the order row {@code FOR UPDATE} and returning {@code
+   * ALREADY_CONFIRMED} <b>before</b> it publishes -- so a refactor that moved the publish above
+   * that guard would mail the customer once per provider retry, and Razorpay retries.
+   */
+  @Test
+  void aRedeliveredWebhookDoesNotMailTheCustomerTwice() {
+    UUID agreementId = createAgreement();
+    stubOrderCreation("order_RECOV2", 49_900L);
+    startCheckout(agreementId, null);
+    String body = paymentCapturedBody("order_RECOV2", "pay_RECOV2", 49_900L);
+
+    deliverSignedWebhook(body);
+    deliverSignedWebhook(body);
+    deliverSignedWebhook(body);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
+    assertThat(mail.sentTo("tara@example.com")).hasSize(1);
+  }
+
+  /**
+   * 9.26. The customer's money has already moved by the time the link is sent, so a mail failure
+   * must never reach back into the payment path. {@code RecoveryOnPaymentListener} swallows and
+   * runs after commit; this asserts the outcome rather than trusting the construction.
+   */
+  @Test
+  void aDispatchFailureDoesNotUnsettleTheConfirmedPayment() {
+    UUID agreementId = createAgreement();
+    stubOrderCreation("order_RECOV3", 49_900L);
+    startCheckout(agreementId, null);
+    mail.failEverything(m -> new IllegalStateException("provider refused"));
+
+    ResponseEntity<String> delivered =
+        deliverSignedWebhook(paymentCapturedBody("order_RECOV3", "pay_RECOV3", 49_900L));
+
+    // Acknowledged, settled, and still reachable -- the failure is absorbed, not propagated.
+    assertThat(delivered.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    assertThat(rest.getForEntity("/api/agreements/" + agreementId, String.class).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+    mail.healAll();
+  }
 
   @Test
   void aRedeliveredWebhookRecordsNothingExtraAndChangesNothing() {

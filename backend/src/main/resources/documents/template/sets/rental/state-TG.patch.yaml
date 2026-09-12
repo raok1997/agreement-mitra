@@ -5,7 +5,11 @@
 meta:
   kind: state
   dimensions: { state: TG }
-  version: 1
+  # v2 (2026-09-07): "Statutory (Telangana)" flipped opt-in -> mandatory. Bumped because agreements
+  # already generated pin `state:TG: 1` and were rendered from the OPT-IN content; leaving the
+  # version at 1 would make two materially different Telangana deeds report the same authored
+  # version, and the pin (Agreement.pinEffectiveTemplate) exists precisely to keep that answerable.
+  version: 2
 
 ops:
   - { op: addField,
@@ -34,9 +38,25 @@ ops:
                        withhold or disconnect essential supplies or services (including water and
                        electricity) to the Premises during the subsistence of this Agreement." } }
 
-  # Optional/opt-in per the requester's decision (2026-07-13): the Telangana statutory overlay is an
-  # add-on the user adds from the catalog, absent from preview + signed draft until added.
+  # MANDATORY (2026-09-07). This reverses the 2026-07-13 opt-in decision, and the reason is NOT the
+  # one recorded in the old tasks.md note (the deferred-active-set risk) -- it is a concrete hole:
+  # the TG residential layer re-authors the witnesseth list WITHOUT the national
+  # `stampRegistrationClause` (see state_type-TG-residential.patch.yaml), so with this section opt-in
+  # a Telangana deed rendered with NO stamp/registration clause at all, while every national deed
+  # carries one. Telangana -- the one state with a bespoke layer -- shipped strictly worse than the
+  # default template. Making the section mandatory restores the clause and, with it, the TG tenancy
+  # law reference (tgGoverningLaw) and the essential-services protection (tgEssentialServices).
+  #
+  # Costs the user no input: both fields are `required: false`, and tgStampAmount is gated
+  # `showWhen: stampDutyAmount > 0`, so no empty amount ever renders. Render kind is unset, which
+  # defaults to KEYVALUE -- verified safe for this section's mixed entries: TemplateCompiler's
+  # appendKeyValueBody emits a <table class="kv"> for the two fields and switches to
+  # <ol class="clauses"> for the four clauses.
+  #
+  # STILL PENDING LEGAL SIGN-OFF (rental-document-content-v2 task 9.4). Flip back to `optional: true`
+  # only if counsel says the overlay is genuinely opt-in -- and if so, restore
+  # `stampRegistrationClause` to the TG witnesseth list in the same edit, or the hole returns.
   - { op: addSection,
-      section: { title: "Statutory (Telangana)", optional: true,
+      section: { title: "Statutory (Telangana)", optional: false,
                  entries: [ stampDutyAmount, registrationChargesBorneBy,
                             tgGoverningLaw, tgStampRegistration, tgStampAmount, tgEssentialServices ] } }

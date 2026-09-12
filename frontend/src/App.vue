@@ -6,7 +6,10 @@ import MyAgreements from "./views/MyAgreements.vue";
 import TemplatePicker from "./components/TemplatePicker.vue";
 import AuthCallback from "./views/AuthCallback.vue";
 import LandingPage from "./views/LandingPage.vue";
+import TermsOfService from "./views/TermsOfService.vue";
 import StaffConsole from "./views/StaffConsole.vue";
+import AgreementStatus from "./views/AgreementStatus.vue";
+import { LINK_UNAVAILABLE_MESSAGE } from "./views/linkCopy";
 import wordmark from "./assets/logo-wordmark.svg";
 import { auth, logout } from "./api/authStore";
 import { googleStartUrl } from "./api/auth";
@@ -31,10 +34,14 @@ const editError = ref<string | null>(null);
 //   "/"              -> the public marketing page (LandingPage.vue), no app chrome
 //   "/start"         -> the agreement app (picker -> capture, "My agreements")
 //   "/staff"         -> the STAFF fulfilment console (orders awaiting an e-stamp)
+//   "/terms"         -> the published terms of service, reachable without app chrome or a session
+//                       (the in-product disclaimer links here, and it must open for a reader who
+//                       has no account and is halfway through paying)
 //   "/auth/callback" -> the OAuth landing the backend 302s to, which exchanges the
 //                       handoff for a session and then drops the caller into the app
 // Anything else falls through to the app so deep links do not dead-end on the marketing page.
-type Route = "landing" | "app" | "callback" | "staff" | "recover" | "openLink";
+type Route =
+  "landing" | "app" | "callback" | "staff" | "recover" | "openLink" | "terms";
 
 /** `/agreement/<uuid>` - the link emailed to the parties after payment. */
 const AGREEMENT_LINK =
@@ -43,6 +50,7 @@ const AGREEMENT_LINK =
 function routeFor(pathname: string): Route {
   if (pathname === "/auth/callback") return "callback";
   if (pathname === "/staff") return "staff";
+  if (pathname === "/terms") return "terms";
   if (pathname === "/recover") return "recover";
   if (AGREEMENT_LINK.test(pathname)) return "openLink";
   if (pathname === "/" || pathname === "") return "landing";
@@ -67,7 +75,20 @@ const route = ref<Route>(routeFor(window.location.pathname));
 // rendered route in step with them.
 function syncRoute(): void {
   route.value = routeFor(window.location.pathname);
+  // The agreement link is a real history entry now, so a history move onto a different link must
+  // resolve that link rather than show whatever agreement was loaded last.
+  if (
+    route.value === "openLink" &&
+    agreementIdFromPath(window.location.pathname)?.toLowerCase() !==
+      linkAgreement.value?.id.toLowerCase()
+  ) {
+    void openFromLink();
+  }
 }
+
+// Only the newest link resolution may land: a back/forward across two links while the first
+// read is still in flight must not leave agreement A on the page at B's address.
+let linkResolution = 0;
 onMounted(() => {
   window.addEventListener("popstate", syncRoute);
   // A recovery link resolves on arrival: the customer clicked a link to their agreement, so it
@@ -99,6 +120,13 @@ function leaveCallback(): void {
   // history. Land in the app rather than on the marketing page -- login is only ever
   // started from inside the app.
   navigate("/start", "replace");
+}
+// The terms are reached from a link on whatever screen the reader was on, so "Back" means back --
+// the browser's own history, which is the only thing that knows where they came from. A directly
+// opened /terms has nowhere to return to, so it falls through to the marketing page.
+function leaveTerms(): void {
+  if (window.history.length > 1) window.history.back();
+  else navigate("/", "replace");
 }
 function signIn(): void {
   // Full navigation: the backend redirects to Google, then back to /auth/callback.
@@ -140,6 +168,9 @@ function goToCreate(): void {
 
 const linkError = ref<string | null>(null);
 const linkNeedsSignIn = ref(false);
+// The agreement the link resolved to. The status view is mounted on it; the shell keeps the
+// first read here so the claimed-or-unknown branch below stays exactly as it was.
+const linkAgreement = ref<AgreementView | null>(null);
 
 /** Leave the recovery form for the marketing page. */
 function leaveRecover(): void {
@@ -151,22 +182,30 @@ async function openFromLink(): Promise<void> {
   if (!id) return;
   linkError.value = null;
   linkNeedsSignIn.value = false;
+  linkAgreement.value = null;
+  const resolution = ++linkResolution;
   try {
-    editTarget.value = await getAgreement(id);
-    mode.value = "edit";
-    route.value = "app";
-    // Drop the id out of the address bar once it has been used. It stays in history either way -
-    // this is tidiness, not a security control; the referrer policy in index.html is what stops it
-    // leaking to another origin.
-    window.history.replaceState({}, "", "/app");
+    // The link lands on the status view, and the address bar keeps the link itself so a reload
+    // or a bookmark comes back to the same page. Leaving the id in the URL is not a security
+    // concern beyond what the emailed link already is: it sits in history either way, and the
+    // referrer policy in index.html is what stops it leaking to another origin.
+    const agreement = await getAgreement(id);
+    if (resolution !== linkResolution) return;
+    linkAgreement.value = agreement;
   } catch {
+    if (resolution !== linkResolution) return;
     // A claimed agreement and an unknown one look identical from here by design (the server returns
     // the same 404 so ownership cannot be probed), so the message has to cover both without
     // asserting either.
-    linkNeedsSignIn.value = !!auth.session === false;
-    linkError.value =
-      "This link no longer opens the agreement. If it has been saved to an account, sign in to open it.";
+    linkNeedsSignIn.value = !auth.session;
+    linkError.value = LINK_UNAVAILABLE_MESSAGE;
   }
+}
+
+/** From the link page: the signed-in customer's list, via the app route. */
+function openMyAgreementsFromLink(): void {
+  navigate("/start");
+  showMyAgreements();
 }
 
 // From the list: load the chosen agreement and reopen it in the capture form (edit mode).
@@ -194,10 +233,32 @@ function onSavedToAccount(): void {
 <template>
   <!-- "I lost the link." Reachable without an account, because the customer it serves has none. -->
   <RecoverAgreement v-if="route === 'recover'" @back="leaveRecover" />
-  <!-- A recovery link is resolving, or could not be. -->
-  <section v-else-if="route === 'openLink'" class="mx-auto max-w-lg p-6">
-    <template v-if="linkError">
-      <h2 class="text-lg font-semibold text-slate-900">This link did not open</h2>
+  <!-- The emailed agreement link: the status view once it resolves, or why it could not. -->
+  <section v-else-if="route === 'openLink'" class="mx-auto max-w-2xl p-6">
+    <!-- A bookmarkable page needs a way onward: home, and the list for a signed-in customer. -->
+    <nav class="mb-6 flex items-center justify-between">
+      <button type="button" class="flex items-center" @click="navigate('/')">
+        <img :src="wordmark" alt="AgreementMitra" class="h-8" />
+      </button>
+      <button
+        v-if="auth.session"
+        type="button"
+        class="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
+        data-testid="link-my-agreements"
+        @click="openMyAgreementsFromLink"
+      >
+        My agreements
+      </button>
+    </nav>
+    <AgreementStatus
+      v-if="linkAgreement"
+      :agreement="linkAgreement"
+      @sign-in="signIn"
+    />
+    <template v-else-if="linkError">
+      <h2 class="text-lg font-semibold text-slate-900">
+        This link did not open
+      </h2>
       <p class="mt-2 text-sm text-slate-600">{{ linkError }}</p>
       <button
         v-if="linkNeedsSignIn"
@@ -210,6 +271,9 @@ function onSavedToAccount(): void {
     </template>
     <p v-else class="text-sm text-slate-600">Opening your agreement...</p>
   </section>
+  <!-- The terms of service. Like the landing page it is public and chrome-free: it is linked from
+       the in-product disclaimer, and a reader following that link is not necessarily signed in. -->
+  <TermsOfService v-else-if="route === 'terms'" @back="leaveTerms" />
   <!-- "/" is the public marketing page: full-bleed, no app chrome, no API calls. -->
   <LandingPage v-else-if="route === 'landing'" @start="enterApp" />
 
@@ -305,10 +369,14 @@ function onSavedToAccount(): void {
 
       <!-- Edit an owned agreement -->
       <template v-else-if="mode === 'edit' && editTarget">
-        <h1 class="text-lg font-semibold text-ink-800 print:hidden">Edit agreement</h1>
+        <h1 class="text-lg font-semibold text-ink-800 print:hidden">
+          Edit agreement
+        </h1>
         <CaptureForm
           :agreement-id="editTarget.id"
           :initial-agreement="editTarget"
+          :state="editTarget.state ?? undefined"
+          :type="editTarget.type ?? undefined"
           @change-template="showMyAgreements"
           @saved-to-account="onSavedToAccount"
         />

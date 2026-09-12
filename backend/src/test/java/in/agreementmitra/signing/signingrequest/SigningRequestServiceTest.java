@@ -18,6 +18,7 @@ import in.agreementmitra.signing.SignSession;
 import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.WebhookHeaders;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.agreement.StampInfo;
 import in.agreementmitra.signing.api.AgreementResponse;
@@ -51,6 +52,11 @@ class SigningRequestServiceTest {
   @Mock private BlobStore blobStore;
   @Mock private PaymentGate paymentGate;
 
+  // Permissive by default (a Mockito mock does nothing), which is what these tests want: they
+  // exercise the OTHER preconditions. The jurisdiction gate's own behaviour is covered by
+  // JurisdictionEligibilityTest and by the integration tests.
+  @Mock private JurisdictionEligibility jurisdiction;
+
   /**
    * Fulfilment is downstream of the legal record and must never be able to affect it, so it is
    * mocked here and its own behaviour is tested in the delivery tests. What these tests still pin
@@ -82,6 +88,7 @@ class SigningRequestServiceTest {
         persistence,
         blobStore,
         paymentGate,
+        jurisdiction,
         deliveryService,
         reachability());
   }

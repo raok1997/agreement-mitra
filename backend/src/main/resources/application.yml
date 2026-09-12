@@ -208,6 +208,22 @@ esign:
 #
 # The webhook endpoint must be publicly reachable (cloudflared/ngrok in local dev) or the callback
 # never arrives - the same requirement the eSign webhook already has.
+# Which jurisdictions may reach PAID FULFILMENT: order placement, payment, e-stamp purchase and
+# eSign initiation. An ALLOWLIST, not a denylist - a state is ineligible until deliberately admitted,
+# because stamp duty is state law and a state nobody has assessed has no computable duty and no
+# defined place to buy a certificate.
+#
+# EMPTY OR ABSENT REFUSES EVERYTHING. That is the intended failure direction for legal infra: a
+# misconfigured deployment stops paid fulfilment rather than opening it. The resolved list is logged
+# once at startup, so an operator can see what the running instance admits.
+#
+# Codes are case-insensitive here (normalized on binding), but the national dimension "IN" can NEVER
+# be admitted - there is no national stamp-duty rate, so adding it has no effect by design.
+#
+# Drafting, preview and download are NOT restricted by this list; only the four gated steps are.
+jurisdiction:
+  eligible: ${ELIGIBLE_JURISDICTIONS:TG}
+
 payment:
   mode: ${PAYMENT_MODE:REQUIRED}
   # The flat price, as INTEGER MINOR UNITS (paise) plus an explicit currency. Never a float: the
@@ -279,6 +295,11 @@ auth:
 documents:
   footer:
     platform-url: ${DOCUMENT_FOOTER_PLATFORM_URL:agreementmitra.com}
+    # Screen-only advisory rendered under the document body, beside the provenance line. It is
+    # hidden in print media, so it never reaches the executed instrument (a deliberate decision --
+    # counsel brief Q6(d)). Lives here, not in the documents module, for the same reason
+    # platform-url does: the module holds no brand literal and no legal copy. Blank omits it.
+    screen-notice: ${DOCUMENT_FOOTER_SCREEN_NOTICE:AgreementMitra is not a law firm and this is not legal advice. This document is generated from a template and is not reviewed by a lawyer for your circumstances. See the terms of service at agreementmitra.com/terms.}
 
 logging:
   level:

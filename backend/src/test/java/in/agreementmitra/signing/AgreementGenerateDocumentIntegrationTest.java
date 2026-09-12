@@ -3,9 +3,9 @@ package in.agreementmitra.signing;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -18,11 +18,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -32,25 +27,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * while unsigned and locking (409) once a signing request exists. Skips (not fails) without Docker.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, GotenbergTestConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class AgreementGenerateDocumentIntegrationTest {
-
-  @Container
-  static final GenericContainer<?> gotenberg =
-      new GenericContainer<>(
-              new ImageFromDockerfile().withFileFromPath(".", Path.of("..", "docker", "gotenberg")))
-          .withExposedPorts(3000)
-          .withEnv("CHROMIUM_DENY_PUBLIC_IPS", "true")
-          .withEnv("CHROMIUM_DENY_PRIVATE_IPS", "true");
-
-  @DynamicPropertySource
-  static void gotenbergUrl(DynamicPropertyRegistry registry) {
-    registry.add(
-        "gotenberg.url",
-        () -> "http://" + gotenberg.getHost() + ":" + gotenberg.getMappedPort(3000));
-  }
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;

@@ -139,17 +139,19 @@ final class TemplateCompiler {
       Map<String, Object> data,
       String resolvedExecutionDate,
       Set<String> activeSections) {
-    return compile(effective, data, resolvedExecutionDate, activeSections, null, null);
+    return compile(effective, data, resolvedExecutionDate, activeSections, null, null, null);
   }
 
   /**
    * As {@link #compile(EffectiveTemplate, Map, String, Set)}, additionally emitting a system-owned
    * <b>provenance line at the document foot</b>: the escaped {@code reference} (a tracking number
-   * or a preview marker) and the escaped {@code platformUrl}, each part omitted when blank. Both
-   * are values passed in -- the compiler reads no configuration -- rendered as literal text, so
-   * they appear <b>identically in the preview HTML and the PDF</b> (parity, they are body content)
-   * and cannot inject markup. A {@code null}/blank {@code reference} and {@code platformUrl} emit
-   * no line, so a pre-identifier preview can carry only the URL, or nothing.
+   * or a preview marker) and the escaped {@code platformUrl}, each part omitted when blank, plus an
+   * optional escaped {@code screenNotice} beneath it. All three are values passed in -- the
+   * compiler reads no configuration -- rendered as literal text, so they appear <b>identically in
+   * the preview HTML and the PDF</b> (parity, they are body content) and cannot inject markup. A
+   * {@code null}/blank {@code reference} and {@code platformUrl} emit no provenance line, so a
+   * pre-identifier preview can carry only the URL, or nothing; a blank {@code screenNotice} emits
+   * no notice.
    */
   String compile(
       EffectiveTemplate effective,
@@ -157,7 +159,8 @@ final class TemplateCompiler {
       String resolvedExecutionDate,
       Set<String> activeSections,
       String reference,
-      String platformUrl) {
+      String platformUrl,
+      String screenNotice) {
     Set<String> active = activeSections == null ? Set.of() : activeSections;
     // Bind the resolved execution date under the reserved key on a COPY (the request data is never
     // mutated); the resolved value overrides any submitted agreementDate.
@@ -204,6 +207,7 @@ final class TemplateCompiler {
       html.append(SIGNATURE_BLOCK);
     }
     html.append(provenanceLine(reference, platformUrl));
+    html.append(screenNotice(screenNotice));
     html.append("</body>\n</html>\n");
     return html.toString();
   }
@@ -237,6 +241,28 @@ final class TemplateCompiler {
       line.append("<span>").append(escape(url)).append("</span>");
     }
     return line.append("</div>\n").toString();
+  }
+
+  /**
+   * A system-owned advisory line for the document foot: the escaped {@code notice}, or the empty
+   * string when it is blank. Rendered as literal text (it cannot inject markup) and deliberately
+   * <b>not</b> a link -- the preview iframe is fully sandboxed, so an anchor there could not
+   * navigate; the clickable route to the terms lives on the surrounding app screens.
+   *
+   * <p>Like {@link #provenanceLine}, it is a <b>screen-only</b> body element ({@code
+   * .doc-screen-notice} is {@code display:none} by default, shown only under {@code @media
+   * screen}), so the on-screen preview shows it and the Gotenberg PDF -- print media -- does not.
+   * That is the point rather than a side effect: the notice must reach the reader looking at the
+   * draft and must never be printed inside the executed instrument (counsel brief Q6(d)). Unlike
+   * the provenance line it has <b>no</b> per-page print-footer counterpart, which is why the notice
+   * is absent from a downloaded preview PDF as well.
+   */
+  private static String screenNotice(String notice) {
+    String text = notice == null ? "" : notice.strip();
+    if (text.isEmpty()) {
+      return "";
+    }
+    return "<div class=\"doc-screen-notice\">" + escape(text) + "</div>\n";
   }
 
   /**
@@ -670,7 +696,8 @@ final class TemplateCompiler {
          would drop the glyphs and every signing request would then be refused. */
       .sign-anchor { font-size: 8px; color: #ffffff; letter-spacing: 0.4px; padding-bottom: 2px; }
       .doc-provenance { display: none; margin-top: 18px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 10px; color: #666; text-align: center; }
-      @media screen { .doc-provenance { display: block; } }
+      .doc-screen-notice { display: none; margin-top: 8px; font-size: 10px; line-height: 1.5; color: #666; text-align: center; }
+      @media screen { .doc-provenance, .doc-screen-notice { display: block; } }
       """;
 
   // System-owned closing block: a witness paragraph and blank signature lines. Domain-neutral (the

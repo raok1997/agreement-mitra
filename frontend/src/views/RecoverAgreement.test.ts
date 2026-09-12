@@ -16,9 +16,13 @@ describe("RecoverAgreement", () => {
 
   it("will not submit a reference that fails its own check character", async () => {
     const wrapper = mount(RecoverAgreement);
-    await wrapper.get('[data-testid="recovery-reference"]').setValue("AM3G3VXSAKE");
+    await wrapper
+      .get('[data-testid="recovery-reference"]')
+      .setValue("AM3G3VXSAKE");
 
-    expect(wrapper.get('[data-testid="recovery-submit"]').attributes("disabled")).toBeDefined();
+    expect(
+      wrapper.get('[data-testid="recovery-submit"]').attributes("disabled"),
+    ).toBeDefined();
     expect(wrapper.text()).toContain("does not look right");
     expect(mockedRequest).not.toHaveBeenCalled();
   });
@@ -48,7 +52,9 @@ describe("RecoverAgreement", () => {
   });
 
   it("reports a transport failure without implying anything about the reference", async () => {
-    mockedRequest.mockImplementationOnce(() => Promise.reject(new Error("offline")));
+    mockedRequest.mockImplementationOnce(() =>
+      Promise.reject(new Error("offline")),
+    );
     const wrapper = mount(RecoverAgreement);
     await wrapper.get('[data-testid="recovery-reference"]').setValue(VALID);
     await wrapper.get("form").trigger("submit");

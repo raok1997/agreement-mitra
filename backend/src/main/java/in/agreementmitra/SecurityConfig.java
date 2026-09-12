@@ -298,6 +298,13 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/templates/*")
                     .permitAll()
+                    // Eligible jurisdictions (jurisdiction-checkout-gating) -- which states can be
+                    // stamped/eSigned, so the SPA can mark the rest draft-and-download only before
+                    // a customer fills in a whole agreement. Public, static, and carries no
+                    // agreement data: it is disclosure, never the control (the four server-side
+                    // gates are). Exact path only, so no future sub-path is opened by accident.
+                    .requestMatchers(HttpMethod.GET, "/api/jurisdictions")
+                    .permitAll()
                     // Google login handshake (google-oauth-login CR) -- reachable without a session
                     // (there is none yet during login). Exact method+path only so no other
                     // /api/auth sub-path is opened by accident. The callback + exchange are safe to

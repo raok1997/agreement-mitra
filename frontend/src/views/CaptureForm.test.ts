@@ -6,6 +6,7 @@ import * as agreements from "../api/agreements";
 import * as documentPreview from "../api/documentPreview";
 import * as payments from "../api/payments";
 import * as templateForm from "../api/templateForm";
+import * as jurisdictions from "../api/jurisdictions";
 import type { FormSchema } from "../api/templateForm";
 import ContactConfirmation, {
   type PartyContact,
@@ -45,6 +46,7 @@ vi.mock("../api/payments", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/payments")>();
   return { ...actual, payForAgreement: vi.fn(), getPaymentProgress: vi.fn() };
 });
+vi.mock("../api/jurisdictions", () => ({ fetchEligibleOrNone: vi.fn() }));
 
 const mockedCreate = vi.mocked(client.createAgreement);
 const mockedGenerate = vi.mocked(client.generateAgreementDocument);
@@ -55,6 +57,11 @@ const mockedGetAgreement = vi.mocked(agreements.getAgreement);
 const mockedUpdateContacts = vi.mocked(agreements.updateAgreementContacts);
 const mockedFinalise = vi.mocked(agreements.finaliseAgreement);
 const mockedPay = vi.mocked(payments.payForAgreement);
+// Defaulted to ["TG"] in every beforeEach so a test that does not care about the jurisdiction
+// banner still runs with a KNOWN eligibility list. Without that the on-mount fetch stays unresolved
+// and the banner is absent for the wrong reason -- "we never found out" rather than "eligible" --
+// which would let a regression that mislabels an eligible jurisdiction pass unnoticed.
+const mockedEligible = vi.mocked(jurisdictions.fetchEligibleOrNone);
 
 // A small reference-shaped schema exercising every widget: text, money, checkbox, select, textarea,
 // date, number. Section ids are slugged titles: parties / financial-terms / property / term.
@@ -328,6 +335,8 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     mockedPreviewHtml.mockReset();
     mockedPreviewPdf.mockReset();
     mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedEligible.mockResolvedValue(["TG"]);
     mockedGetAgreement.mockReset();
     mockedUpdateContacts.mockReset();
     mockedFinalise.mockReset();
@@ -680,6 +689,8 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     mockedPreviewHtml.mockReset();
     mockedPreviewPdf.mockReset();
     mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedEligible.mockResolvedValue(["TG"]);
     mockedGetForm.mockResolvedValue(schemaWithOptional());
     mockedPreviewHtml.mockResolvedValue("<html><body>preview</body></html>");
     mockedPreviewPdf.mockResolvedValue(
@@ -804,6 +815,8 @@ describe("CaptureForm: capture-state persistence (M5)", () => {
     mockedPreviewHtml.mockReset();
     mockedPreviewPdf.mockReset();
     mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedEligible.mockResolvedValue(["TG"]);
     mockedGetForm.mockResolvedValue(schemaWithOptional());
     mockedPreviewHtml.mockResolvedValue("<html><body>preview</body></html>");
     mockedPreviewPdf.mockResolvedValue(
@@ -872,5 +885,109 @@ describe("CaptureForm: capture-state persistence (M5)", () => {
           .element as HTMLInputElement
       ).value,
     ).toBe("One indoor cat");
+  });
+
+  it("carries the not-legal-advice notice on the review screen, linking to the terms", async () => {
+    // Before this, the only disclaimer on the service was at the foot of the marketing FAQ: the
+    // copy was disclaimed and the product was not (docs/LEGAL-POSTURE.md item 2). This is the
+    // screen where the customer is looking at the document they are about to commit to.
+    const wrapper = mount(CaptureForm, {
+      props: { state: "IN", type: "residential" },
+    });
+    await flushPromises();
+
+    const notice = wrapper.get('[data-testid="legal-disclaimer"]');
+    expect(notice.text()).toContain("not a law firm");
+    expect(notice.text()).toContain("not legal advice");
+    expect(
+      wrapper
+        .get('[data-testid="legal-disclaimer-terms-link"]')
+        .attributes("href"),
+    ).toBe("/terms");
+  });
+
+  // --- the draft-only jurisdiction disclosure --------------------------------
+  //
+  // The banner has to be RIGHT, not merely present. It is the one piece of this flow that makes a
+  // customer-facing claim about what we can sell them, and a wrong one costs a sale we could have
+  // served -- which is why the spec prefers marking nothing to marking wrongly.
+
+  it("marks a draft-only jurisdiction on the capture screen", async () => {
+    const wrapper = mount(CaptureForm, {
+      props: { state: "IN", type: "residential" },
+    });
+    await flushPromises();
+
+    const banner = wrapper.get('[data-testid="draft-only-jurisdiction"]');
+    expect(banner.text()).toContain("Draft and download only");
+    // Honest about what it CAN still do: the template is usable, just not stampable.
+    expect(banner.text()).toContain("download it free of charge");
+  });
+
+  it("leaves an eligible jurisdiction unmarked on the capture screen", async () => {
+    const wrapper = mount(CaptureForm, {
+      props: { state: "TG", type: "residential" },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="draft-only-jurisdiction"]').exists(),
+    ).toBe(false);
+  });
+
+  it("does not mislabel a REOPENED eligible agreement as draft-only", async () => {
+    // The regression this guards. props.state falls back to DEFAULT_STATE ("IN"), so before the
+    // agreement's own dimensions were carried on AgreementView and passed through by App.vue,
+    // every reopened agreement -- a recovery link, a resumed draft, an edit -- rendered this
+    // banner, including a perfectly stampable Telangana one.
+    const wrapper = mount(CaptureForm, {
+      props: {
+        agreementId: "agr-1",
+        initialAgreement: {
+          ...fakeAgreement(),
+          state: "TG",
+          type: "residential",
+        },
+        // Deliberately NO state prop, which is exactly how App.vue's edit branch mounted this
+        // before the fix: the prop then falls back to DEFAULT_STATE ("IN") and the agreement's
+        // real jurisdiction has to come from the agreement itself.
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="draft-only-jurisdiction"]').exists(),
+    ).toBe(false);
+  });
+
+  it("still marks a reopened agreement whose own jurisdiction is draft-only", async () => {
+    const wrapper = mount(CaptureForm, {
+      props: {
+        agreementId: "agr-1",
+        initialAgreement: {
+          ...fakeAgreement(),
+          state: "IN",
+          type: "residential",
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="draft-only-jurisdiction"]').text(),
+    ).toContain("Draft and download only");
+  });
+
+  it("marks nothing when eligibility cannot be fetched, rather than warning wrongly", async () => {
+    mockedEligible.mockResolvedValue(null);
+
+    const wrapper = mount(CaptureForm, {
+      props: { state: "IN", type: "residential" },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="draft-only-jurisdiction"]').exists(),
+    ).toBe(false);
   });
 });

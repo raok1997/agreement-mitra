@@ -204,12 +204,17 @@ class SigningRequestPersistence {
             request -> {
               Map<UUID, InviteeStatus> bySigner = new LinkedHashMap<>();
               request.invitees().forEach(i -> bySigner.put(i.signerId(), i.status()));
-              return new Progress(request.status(), bySigner);
+              return new Progress(request.status(), bySigner, request.signedPdfKey() != null);
             });
   }
 
-  /** The aggregate signing state plus per-signer sub-states. Carries no PII and no signing URL. */
-  record Progress(SignatureStatus status, Map<UUID, InviteeStatus> statusBySignerId) {}
+  /**
+   * The aggregate signing state plus per-signer sub-states, and whether the signed PDF has landed
+   * (the row goes {@code SIGNED} before the artifacts are fetched). Carries no PII, no signing URL,
+   * and no storage key -- only the fact that one exists.
+   */
+  record Progress(
+      SignatureStatus status, Map<UUID, InviteeStatus> statusBySignerId, boolean signedPdfStored) {}
 
   /**
    * The provider transaction id of the agreement's request, <b>only while it is still pending</b>

@@ -3,6 +3,16 @@
 # throwaway Testcontainers Postgres, with JPA ddl-auto: validate — matching prod. This makes tests
 # exercise the real migration path; a broken migration fails here, not in prod.
 spring:
+  # A SINGLE Postgres container is shared by every Spring context in the suite (see
+  # HarnessTestConfig), and the test context cache never closes a context — so every context's pool
+  # stays open for the whole run. At Hikari's default of 10 that is ~240 connections for ~24
+  # contexts, which overran Postgres and failed the suite with "FATAL: sorry, too many clients
+  # already". Four is ample for a single-threaded test class. Paired with max_connections=500 on
+  # the container; neither is load-bearing alone.
+  datasource:
+    hikari:
+      maximum-pool-size: 4
+      minimum-idle: 0
   jpa:
     hibernate:
       ddl-auto: validate

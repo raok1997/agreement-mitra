@@ -27,6 +27,8 @@ import ContactConfirmation, {
   type PartyContact,
 } from "./ContactConfirmation.vue";
 import PaymentConfirmation from "./PaymentConfirmation.vue";
+import LegalDisclaimer from "../components/LegalDisclaimer.vue";
+import { fetchEligibleOrNone } from "../api/jurisdictions";
 import {
   formatMinorUnits,
   getPaymentProgress,
@@ -57,6 +59,40 @@ import {
 } from "./formModel";
 
 // ---------------------------------------------------------------------------
+// Whether this agreement's jurisdiction can actually be stamped and eSigned, or is draft-only.
+// null = "we could not find out", which discloses NOTHING rather than warning wrongly: enforcement
+// is server-side either way, and telling an eligible customer they cannot be stamped would be worse
+// than staying quiet. Fetched here as well as in the picker because a customer can arrive at this
+// shell directly (a recovery link, a resumed draft) without passing the picker.
+const eligibleStates = ref<string[] | null>(null);
+
+/**
+ * Whether this agreement can be paid for and signed here, or only drafted and downloaded.
+ *
+ * The jurisdiction is taken from the REOPENED AGREEMENT first and only then from the prop. That
+ * order is the whole point: `state` has a default, so on the edit path the prop is not the
+ * agreement's jurisdiction at all -- it is DEFAULT_STATE. Reading it alone labelled every reopened
+ * agreement draft-only, including a perfectly stampable Telangana one, which is the one outcome
+ * the disclosure must never produce: mislabelling an eligible jurisdiction deters a customer we
+ * could in fact have served. `AgreementView.state` is resolved server-side from the pinned
+ * template, so it is the same value the server's gate refuses on.
+ *
+ * An agreement with no resolvable pinned template reports no state and falls back to the default:
+ * correct here rather than merely convenient, because the server refuses that agreement as an
+ * unknown jurisdiction too.
+ */
+const jurisdictionOfThisAgreement = computed(
+  () => props.initialAgreement?.state ?? props.state,
+);
+
+const isDraftOnlyJurisdiction = computed(() => {
+  if (eligibleStates.value === null) return false;
+  const eligible = eligibleStates.value.map((c) => c.trim().toUpperCase());
+  return !eligible.includes(
+    (jurisdictionOfThisAgreement.value ?? "").trim().toUpperCase(),
+  );
+});
+
 // Selected dimensions. The State x Type picker (App.vue view-switch) passes the chosen (state, type)
 // as props; they default to the seeded reference pair so the shell still resolves a template when
 // mounted standalone.
@@ -833,10 +869,17 @@ async function finaliseAndPay(): Promise<void> {
       paymentConfirmed.value = true;
     }
   } catch (e) {
-    payError.value =
-      e instanceof Error && e.message
-        ? e.message
-        : "Could not start payment. Please try again.";
+    if (e instanceof AgreementHttpError && e.jurisdictionUnsupported) {
+      // A retry can never succeed, so do not invite one: say what this agreement CAN still do.
+      payError.value =
+        "Stamping and eSign are not yet available for this agreement's jurisdiction. You can " +
+        "still preview and download the draft free of charge.";
+    } else {
+      payError.value =
+        e instanceof Error && e.message
+          ? e.message
+          : "Could not start payment. Please try again.";
+    }
   } finally {
     paying.value = false;
   }
@@ -901,6 +944,9 @@ onMounted(() => {
   document.addEventListener("keydown", onKeydown);
   purgeLegacyGlobalDraft();
   void loadSchema();
+  void fetchEligibleOrNone().then((eligible) => {
+    eligibleStates.value = eligible;
+  });
 });
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown);
@@ -1314,6 +1360,21 @@ onBeforeUnmount(() => {
     >
       {{ claimError }}
     </p>
+    <!-- Said here, not only in the picker: a customer can reach this shell directly through a
+         recovery link or a resumed draft, and the whole point is that nobody fills in an entire
+         agreement before learning it cannot be stamped. -->
+    <p
+      v-if="isDraftOnlyJurisdiction"
+      class="border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+      data-testid="draft-only-jurisdiction"
+    >
+      <strong>Draft and download only.</strong> Stamping and eSign are not yet
+      available for this jurisdiction, so this agreement cannot be paid for or
+      signed here. You can still preview it and download it free of charge.
+    </p>
+    <!-- The review screen. This is where the customer is looking at the document they are about to
+         commit to, so it is where the notice has to be -- not on the marketing page. -->
+    <LegalDisclaimer variant="bar" />
   </div>
 
   <!-- Section modal (focus-trapped; full-screen bottom sheet on phone) -->

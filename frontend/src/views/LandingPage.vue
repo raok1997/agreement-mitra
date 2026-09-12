@@ -12,7 +12,7 @@ import wordmark from "../assets/logo-wordmark.svg";
 
 const emit = defineEmits<{ (e: "start"): void }>();
 
-const CONTACT_EMAIL = "hello@agreementmitra.com";
+const CONTACT_EMAIL = "support@agreementmitra.com";
 
 const steps = [
   {
@@ -377,12 +377,20 @@ function start(): void {
           &copy; 2026 AgreementMitra. Online rental agreements for India,
           starting in Hyderabad.
         </p>
-        <a
-          class="font-medium text-ink-600 hover:text-brand-700"
-          :href="`mailto:${CONTACT_EMAIL}`"
-        >
-          {{ CONTACT_EMAIL }}
-        </a>
+        <div class="flex items-center gap-4">
+          <a
+            class="font-medium text-ink-600 hover:text-brand-700"
+            href="/terms"
+          >
+            Terms of service
+          </a>
+          <a
+            class="font-medium text-ink-600 hover:text-brand-700"
+            :href="`mailto:${CONTACT_EMAIL}`"
+          >
+            {{ CONTACT_EMAIL }}
+          </a>
+        </div>
       </div>
     </footer>
   </div>

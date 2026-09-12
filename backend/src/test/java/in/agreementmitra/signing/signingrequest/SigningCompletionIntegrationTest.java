@@ -1,7 +1,9 @@
 package in.agreementmitra.signing.signingrequest;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -91,6 +93,19 @@ class SigningCompletionIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private BlobStore blobStore;
   @Autowired private SigningReconciliationJob reconciliationJob;
   @Autowired private in.agreementmitra.identity.IdentityService identityService;
@@ -116,6 +131,8 @@ class SigningCompletionIntegrationTest {
   private UUID createAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -390,6 +407,53 @@ class SigningCompletionIntegrationTest {
             jdbc.queryForObject(
                 "SELECT status FROM signing_request WHERE id = ?", String.class, orphanId))
         .isEqualTo("PDF_GENERATED");
+  }
+
+  @Test
+  void reconciliationDoesNotDeliverPreExistingSignedAgreementsThatAlreadyHoldTheirArtifacts() {
+    // THE DEPLOY HAZARD, PINNED (signed-delivery-and-closure, Migration Plan step 3). V18 adds
+    // delivery deliberately WITHOUT a backfill, so agreements that completed before delivery
+    // existed must stay open and silent. The claim rests entirely on the reconciliation scan's
+    // selection: it takes SIGNED rows only while `signed_pdf_key IS NULL`, so a pre-existing SIGNED
+    // agreement that already downloaded its artifacts is never re-entered, never grows delivery
+    // records, and therefore cannot be emailed. Were that predicate ever widened, this deploy would
+    // emit a burst of legal documents to real parties - which is why it is a test and not a
+    // sentence in a document.
+    UUID agreementId = createAgreement();
+    UUID requestId = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO signing_request (id, agreement_id, provider_document_id, status,"
+            + " signed_pdf_key, audit_trail_key, version, created_at)"
+            + " VALUES (?, ?, 'DOC-PRE-EXISTING', 'SIGNED', ?, ?, 0, ?)",
+        requestId,
+        agreementId,
+        "signed/" + requestId + ".pdf",
+        "audit/" + requestId + ".bin",
+        Timestamp.from(Instant.now().minusSeconds(3600)));
+    // Stub Details as available, so a selected row would complete rather than die on a missing
+    // stub. The assertion below is on NON-SELECTION: zero calls to Details means the scan never
+    // picked this row up, which is the actual claim. Asserting only "no delivery rows appeared"
+    // would pass vacuously, since a pre-existing agreement has no invitee rows to deliver to.
+    stubDetailsSignedWithArtifacts(true);
+
+    reconciliationJob.reconcile();
+
+    // Scoped to THIS document id: reconcile() sweeps globally, so rows left by sibling tests in
+    // this class legitimately reach Details and an unscoped count would be order-dependent.
+    WIREMOCK.verify(
+        0,
+        getRequestedFor(urlPathEqualTo("/api/v3.3/document/details"))
+            .withQueryParam("documentId", equalTo("DOC-PRE-EXISTING")));
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM signed_document_delivery WHERE agreement_id = ?",
+                Integer.class,
+                agreementId))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT closure_state FROM agreement WHERE id = ?", String.class, agreementId))
+        .isEqualTo("OPEN");
   }
 
   @Test

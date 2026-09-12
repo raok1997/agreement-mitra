@@ -180,7 +180,9 @@ describe("StaffConsole", () => {
     });
 
     const wrapper = await filledForm();
-    await wrapper.find('[data-testid="field-initiate-signing"]').setValue(false);
+    await wrapper
+      .find('[data-testid="field-initiate-signing"]')
+      .setValue(false);
 
     mockedList.mockResolvedValue([]);
     await wrapper.find('[data-testid="queue-form-ag-1"]').trigger("submit");
@@ -236,7 +238,10 @@ describe("StaffConsole", () => {
     });
     const input = wrapper.find('[data-testid="field-scan"]')
       .element as HTMLInputElement;
-    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    Object.defineProperty(input, "files", {
+      value: [file],
+      configurable: true,
+    });
     await wrapper.find('[data-testid="field-scan"]').trigger("change");
     return wrapper;
   }

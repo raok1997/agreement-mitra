@@ -77,6 +77,19 @@ class SigningRequestApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private in.agreementmitra.signing.BlobStore blobStore;
   @Autowired private in.agreementmitra.identity.IdentityService identityService;
   @Autowired private in.agreementmitra.identity.oauth.HandoffService handoffService;
@@ -171,6 +184,8 @@ class SigningRequestApiIntegrationTest {
   private UUID createBareAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -372,11 +387,15 @@ class SigningRequestApiIntegrationTest {
     assertThat(row.get("stamped_pdf_key")).isEqualTo("stamped/" + agreementId + ".pdf");
 
     // The stamped PDF is the one the provider received: scan page prepended (1 + 1 draft page = 2)
-    // with the certificate-number overlay on the document page. Nothing is re-composited here.
+    // and NOTHING stamped onto the document page -- the certificate number is persisted (asserted
+    // above) but deliberately never printed, so the instrument cannot assert a stamp it could not
+    // vouch for. See PdfStampComposer#compose. Nothing is re-composited here.
     byte[] stamped = blobStore.get("stamped/" + agreementId + ".pdf");
     try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(stamped)) {
       assertThat(doc.getNumberOfPages()).isEqualTo(2);
-      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(certificate);
+      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc))
+          .doesNotContain(certificate)
+          .doesNotContain("e-Stamp Certificate No.");
     }
 
     // FSM: PDF_GENERATED -> STAMPED (staff upload) -> SIGN_REQUESTED (this call).

@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import TemplatePicker from "./TemplatePicker.vue";
 import * as catalog from "../api/templateCatalog";
+import * as jurisdictions from "../api/jurisdictions";
 import type { TemplateSummary } from "../api/templateCatalog";
 
 vi.mock("../api/templateCatalog", () => ({ listTemplates: vi.fn() }));
+vi.mock("../api/jurisdictions", () => ({ fetchEligibleOrNone: vi.fn() }));
 const mockedList = vi.mocked(catalog.listTemplates);
+const mockedEligible = vi.mocked(jurisdictions.fetchEligibleOrNone);
 
 function rows(): TemplateSummary[] {
   return [
@@ -58,6 +61,54 @@ describe("TemplatePicker", () => {
   beforeEach(() => {
     mockedList.mockReset();
     mockedList.mockResolvedValue(rows());
+    mockedEligible.mockReset();
+    mockedEligible.mockResolvedValue(["TG"]);
+  });
+
+  it("marks a jurisdiction the server cannot stamp as draft-and-download only", async () => {
+    const w = mount(TemplatePicker);
+    await flushPromises();
+
+    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(true);
+    expect(w.find('[data-testid="draft-only-note-in-res"]').text()).toContain(
+      "Stamping and eSign are not yet available",
+    );
+    // The wording must not imply the template is unusable: it can still be drafted.
+    expect(w.find('[data-testid="select-in-res"]').text()).toBe(
+      "Draft this template",
+    );
+  });
+
+  it("leaves an eligible jurisdiction unmarked", async () => {
+    const w = mount(TemplatePicker);
+    await flushPromises();
+
+    expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
+    expect(w.find('[data-testid="select-tg-res"]').text()).toBe(
+      "Use this template",
+    );
+  });
+
+  it("marks NOTHING when eligibility cannot be fetched, rather than marking everything", async () => {
+    // Enforcement is server-side either way. Falsely telling an eligible customer they cannot be
+    // stamped would turn a transient network error into a lost sale.
+    mockedEligible.mockResolvedValue(null);
+
+    const w = mount(TemplatePicker);
+    await flushPromises();
+
+    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(false);
+    expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
+  });
+
+  it("joins on the state code regardless of case", async () => {
+    mockedEligible.mockResolvedValue(["tg"]);
+
+    const w = mount(TemplatePicker);
+    await flushPromises();
+
+    expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
+    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(true);
   });
 
   it("lists published templates from the catalog", async () => {

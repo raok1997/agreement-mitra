@@ -47,8 +47,14 @@ class TemplateCatalogRegistryIntegrationTest {
     assertThat(published)
         .allSatisfy(e -> assertThat(e.status()).isEqualTo(TemplateStatus.PUBLISHED));
     assertThat(published).extracting(TemplateCatalogEntry::state).contains("IN", "TG");
-    // Seed version derives from the reference base definition's meta (no drift).
-    assertThat(published).allSatisfy(e -> assertThat(e.version()).isEqualTo(1));
+    // Seed version derives from the base definition's meta (no drift): rental/base.yaml is v2
+    // (the "(Leave & Licence)" label removal), commercial/base.yaml is still v1.
+    assertThat(published)
+        .filteredOn(e -> e.type().equals("residential"))
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(2));
+    assertThat(published)
+        .filteredOn(e -> e.type().equals("commercial"))
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(1));
   }
 
   @Test

@@ -49,15 +49,16 @@ steps, and neither depends on the site being deployed.
 
    Add it in Cloudflare (section 2 explains where), then come back and click
    **Verify**.
-4. Create the first mailbox. Use **`hello@agreementmitra.com`** -- it is the
-   address already published on the website and in the site's structured data
-   (`frontend/src/views/LandingPage.vue`, `frontend/index.html`). If you change
-   it, change it in both of those files too; a test asserts the page only ever
-   links one address.
+4. Create the first mailbox. Use **`support@agreementmitra.com`** -- it is the
+   address published on the website, in the site's structured data and in the
+   terms of service (`frontend/src/views/LandingPage.vue`, `frontend/index.html`,
+   `frontend/src/content/termsOfService.ts` -> clause 19). If you change it,
+   change it in all three; a test asserts the page only ever links one address,
+   and the terms doc is regenerated with `npm run terms:doc`.
 5. Once the domain is verified, add aliases rather than burning user seats. On the
    free plan each **user** is one of your five, but **aliases are free and
-   unlimited**. Suggested: `support@`, `legal@`, `noreply@`, and `dmarc@` all as
-   aliases on the `hello@` mailbox.
+   unlimited**. Suggested: `hello@`, `legal@`, `noreply@`, and `dmarc@` all as
+   aliases on the `support@` mailbox.
 
 ---
 
@@ -179,7 +180,7 @@ dig +short TXT  zmail._domainkey.agreementmitra.com
 dig +short TXT  _dmarc.agreementmitra.com
 ```
 
-Then send a real message **from** `hello@agreementmitra.com` **to** a Gmail
+Then send a real message **from** `support@agreementmitra.com` **to** a Gmail
 address. In Gmail, open the message -> **Show original**. You want
 `SPF: PASS`, `DKIM: PASS`, `DMARC: PASS`. Anything less and mail to Gmail and
 Outlook will land in spam, which for identity/legal infra is worse than useless.
@@ -228,7 +229,10 @@ State it plainly, because the failure is silent and reputational:
 - **No bounce reporting.** Plain SMTP tells us the provider *accepted* a message,
   never that it *arrived*. A hard bounce is invisible, so `SENT` in our records
   means "handed to the provider" and nothing stronger. ZeptoMail's **bounce
-  webhook** closes this in production; it is additive and not built yet.
+  webhook** closes this in production. It is **not built, and not additive**: the
+  email seam returns nothing and a delivery record holds no provider message id,
+  so there is no correlation key to join a bounce back to a recipient. See the
+  `zeptomail-bounce-webhook` row in `docs/ROADMAP.md`'s follow-up register.
 - **Sending real user mail from it would put the human mailbox's reputation
   behind bulk delivery** -- which is the same argument as the transactional
   subdomain follow-up below.

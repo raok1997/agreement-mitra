@@ -55,9 +55,9 @@ recomputed server-side from the validated selection rather than from anything th
 
 ### Requirement: Selecting at or above the statutory duty needs no warning
 
-Selecting the denomination that satisfies the statutory duty, or any higher denomination in the
-master, SHALL be accepted without a warning or an acknowledgement. Over-stamping is lawful and is a
-legitimate customer choice.
+Selecting the denomination that satisfies the statutory duty SHALL be accepted without a
+warning or an acknowledgement, as SHALL any higher denomination in the master. Over-stamping is
+lawful and is a legitimate customer choice.
 
 #### Scenario: A higher denomination is accepted plainly
 

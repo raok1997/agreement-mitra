@@ -83,6 +83,19 @@ class SigningProgressApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
@@ -117,6 +130,8 @@ class SigningProgressApiIntegrationTest {
   private UUID createSignRequestedAgreement(String documentId) {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -350,5 +365,53 @@ class SigningProgressApiIntegrationTest {
 
     assertThat(body).contains("\"status\":\"IN_PROGRESS\"");
     assertThat(body).doesNotContain("\"status\":\"SIGNED\"");
+  }
+
+  // --- fulfilment stage (agreement-status-link-page) -------------------------
+
+  /**
+   * One pipeline run, then the row is rewound and advanced directly: the fixture is the expensive
+   * part (PDF render, raster stamp, MinIO round-trips), and what these assertions pin is the
+   * projection, not the path -- {@code PDF_GENERATED} is not even reachable through the API once a
+   * stamp exists.
+   */
+  @Test
+  void stageTerminalAndDocumentReadinessFollowTheRow() {
+    UUID agreementId = createSignRequestedAgreement("DOC-PROG-6");
+
+    String outForSignature = progress(agreementId, null).getBody();
+    assertThat(outForSignature).contains("\"stage\":\"OUT_FOR_SIGNATURE\"");
+    assertThat(outForSignature).contains("\"terminal\":false");
+    assertThat(outForSignature).contains("\"signedDocumentReady\":false");
+    // The aggregate the list consumes is unchanged by the finer stage.
+    assertThat(outForSignature).contains("\"status\":\"IN_PROGRESS\"");
+
+    jdbc.update(
+        "UPDATE signing_request SET status = 'PDF_GENERATED' WHERE agreement_id = ?", agreementId);
+    String awaitingStamp = progress(agreementId, null).getBody();
+    assertThat(awaitingStamp).contains("\"stage\":\"AWAITING_STAMP\"");
+    assertThat(awaitingStamp).contains("\"terminal\":false");
+    assertThat(awaitingStamp).contains("\"status\":\"IN_PROGRESS\"");
+
+    // The owner's read of a claimed agreement carries the same fields.
+    claim(agreementId, ownerToken);
+    // The row goes SIGNED before the artifacts are fetched; until the key lands the download
+    // route would 404, so the view must not say the document is ready.
+    jdbc.update(
+        "UPDATE signing_request SET status = 'SIGNED', signed_pdf_key = NULL WHERE agreement_id = ?",
+        agreementId);
+    String notYetStored = progress(agreementId, ownerToken).getBody();
+    assertThat(notYetStored).contains("\"stage\":\"SIGNED\"");
+    assertThat(notYetStored).contains("\"terminal\":true");
+    assertThat(notYetStored).contains("\"signedDocumentReady\":false");
+
+    jdbc.update(
+        "UPDATE signing_request SET signed_pdf_key = ? WHERE agreement_id = ?",
+        "signed/" + agreementId + ".pdf",
+        agreementId);
+    String stored = progress(agreementId, ownerToken).getBody();
+    assertThat(stored).contains("\"signedDocumentReady\":true");
+    // The key itself never crosses the wire -- only the fact that one exists.
+    assertThat(stored).doesNotContain("signed/" + agreementId);
   }
 }

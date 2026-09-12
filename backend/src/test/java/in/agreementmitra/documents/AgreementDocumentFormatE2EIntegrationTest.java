@@ -8,11 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.PageFurniture;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,13 +29,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -65,28 +60,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, GotenbergTestConfig.class})
 @ActiveProfiles({"test", "sandbox"})
 @Testcontainers(disabledWithoutDocker = true)
 class AgreementDocumentFormatE2EIntegrationTest {
 
   private static final String FORM = "/api/templates/form";
   private static final String PREVIEW = "/api/templates/document/preview";
-
-  @Container
-  static final GenericContainer<?> gotenberg =
-      new GenericContainer<>(
-              new ImageFromDockerfile().withFileFromPath(".", Path.of("..", "docker", "gotenberg")))
-          .withExposedPorts(3000)
-          .withEnv("CHROMIUM_DENY_PUBLIC_IPS", "true")
-          .withEnv("CHROMIUM_DENY_PRIVATE_IPS", "true");
-
-  @DynamicPropertySource
-  static void gotenbergUrl(DynamicPropertyRegistry registry) {
-    registry.add(
-        "gotenberg.url",
-        () -> "http://" + gotenberg.getHost() + ":" + gotenberg.getMappedPort(3000));
-  }
 
   @Autowired private MockMvc mockMvc;
   private final ObjectMapper mapper = new ObjectMapper();
@@ -172,7 +152,10 @@ class AgreementDocumentFormatE2EIntegrationTest {
     assertThat(section(sections, "Financial").get("optional").asBoolean()).isFalse();
     assertThat(section(sections, "Charges & Utilities").get("optional").asBoolean()).isTrue();
     assertThat(section(sections, "Occupancy & Use").get("optional").asBoolean()).isTrue();
-    assertThat(section(sections, "Statutory (Telangana)").get("optional").asBoolean()).isTrue();
+    // MANDATORY since 2026-09-07: the TG residential layer drops the national
+    // stampRegistrationClause from the witnesseth list, so an opt-in statutory section left a
+    // Telangana deed with no stamp/registration clause at all. See state-TG.patch.yaml.
+    assertThat(section(sections, "Statutory (Telangana)").get("optional").asBoolean()).isFalse();
     assertThat(section(sections, "Witnesses").get("optional").asBoolean()).isTrue();
 
     // Render kinds (M0 declaration surfaced by M3, lowercase opaque token).
@@ -189,10 +172,12 @@ class AgreementDocumentFormatE2EIntegrationTest {
   void previewRendersTheArtifactLayoutHeaderPartyCardsWitnessSectionAndMargins() throws Exception {
     String html = previewHtml(telanganaData(), List.of());
 
-    // meta.document header (title/subtitle/execution line). The ampersand in the subtitle is
-    // escaped.
+    // meta.document header (title/subtitle/execution line). Header escaping is covered as a unit
+    // in TemplateCompilerTest.headerTextContainingMarkupRendersAsLiteralText -- the production
+    // subtitle no longer carries an ampersand since base.yaml v2 dropped "(Leave & Licence)".
     assertThat(html).contains("<h1 class=\"doc-title\">Rental Agreement</h1>");
-    assertThat(html).contains("Residential Tenancy (Leave &amp; Licence)");
+    assertThat(html).contains("Residential Tenancy");
+    assertThat(html).doesNotContain("Licence");
     assertThat(html).contains("This Agreement is executed on");
 
     // Owner + Tenant render as party cards (render: parties).
@@ -209,26 +194,32 @@ class AgreementDocumentFormatE2EIntegrationTest {
     assertThat(html).contains("@page { margin:");
   }
 
-  // --- Statutory (Telangana) is opt-in; the execution / signature block is mandatory (eSign CR)
-  // ----
+  // --- Statutory (Telangana) and the execution / signature block are BOTH mandatory --------------
 
   @Test
-  void statutoryIsOptInButSignatureBlockIsMandatoryForTelangana() throws Exception {
-    // Default preview: the statutory overlay is absent (opt-in), but the MANDATORY signature block
-    // renders with its per-signer eSign anchors -- the draft is signable.
+  void statutoryAndSignatureBlockAreBothMandatoryForTelangana() throws Exception {
+    // With NO add-ons selected, a Telangana deed must still carry the statutory overlay. This
+    // reverses the 2026-07-13 opt-in decision (see state-TG.patch.yaml): the TG residential layer
+    // re-authors the witnesseth list WITHOUT the national stampRegistrationClause, so while the
+    // statutory section was opt-in a default TG deed carried NO stamp/registration clause at all --
+    // strictly worse than the national template, which always carries one.
     String without = previewHtml(telanganaData(), List.of());
     assertThat(without)
-        .doesNotContain("<h2>Statutory (Telangana)</h2>")
+        .contains("<h2>Statutory (Telangana)</h2>")
+        // The clause the whole flag exists for.
+        .contains("compulsorily registered before the jurisdictional Sub-Registrar")
+        // The TG-specific statute, not merely "laws of India".
+        .contains("Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960")
+        // The tenant protection: no cutting water/electricity during the tenancy.
+        .contains("withhold or disconnect essential supplies")
+        // The signature block stays mandatory too -- the draft must be signable.
         .contains("<h2>In Witness Whereof</h2>")
         .contains("esign:owner")
         .contains("esign:tenant");
 
-    // Adding the statutory overlay surfaces its clauses alongside the always-on signature block.
-    String withStatutory = previewHtml(telanganaData(), List.of("Statutory (Telangana)"));
-    assertThat(withStatutory)
-        .contains("<h2>Statutory (Telangana)</h2>")
-        .contains("Telangana Buildings") // a statutory-overlay clause
-        .contains("<h2>In Witness Whereof</h2>");
+    // The stamp-amount clause stays gated on an entered amount, so a deed with no amount captured
+    // renders the overlay without an empty "stamp duty paid is INR" sentence.
+    assertThat(without).doesNotContain("The stamp duty paid on this Agreement is INR");
   }
 
   // --- M2 + M5: optional sections are opt-in -- absent until added to activeSections

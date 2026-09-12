@@ -14,9 +14,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * Composites the staff-uploaded e-stamp certificate onto a draft PDF with Apache PDFBox: prepends
- * the <b>scanned certificate image</b> as page 1, then overlays a per-page header carrying the
- * <b>certificate number</b> onto each draft page. The result has {@code 1 + draftPages} pages; the
- * input draft bytes and the input scan bytes are never mutated.
+ * the <b>scanned certificate image</b> as page 1 and leaves the draft's own pages untouched. The
+ * result has {@code 1 + draftPages} pages; the input draft bytes and the input scan bytes are never
+ * mutated.
+ *
+ * <p><b>Nothing is drawn onto the agreement pages</b> - in particular no certificate-number header.
+ * See {@link #compose} for why that was removed and what still carries the tie between the
+ * certificate page and the body.
  *
  * <p>The scan is fitted inside the page's printable area with its <b>aspect ratio preserved</b> and
  * is never <b>upscaled beyond its native resolution</b> (its pixel dimensions read as points at 72
@@ -29,20 +33,12 @@ import org.springframework.stereotype.Component;
  * {@link StampFailedException} (never an unmapped error, hang, or OOM). Both inputs' byte sizes are
  * already bounded by their upload ceilings, so an in-memory parse cannot exhaust the heap on a
  * large-but-legal file.
- *
- * <p>Overlay text uses a Standard-14 font (the certificate number is ASCII, so no bundled font is
- * needed) and is positioned relative to each page's own media box, respecting page rotation, so it
- * stays in-frame for any size or orientation.
  */
 @Component
 class PdfStampComposer {
 
-  private static final float MARGIN = 24f;
-
   /** Printable inset for the prepended certificate page, in points. */
   private static final float SCAN_PAGE_MARGIN = 28f;
-
-  /** Prefix of the per-page overlay. Kept ASCII so a Standard-14 font can render it. */
 
   /**
    * Compose the stamped PDF: {@code certificateScan} becomes page 1, the draft's pages follow, each

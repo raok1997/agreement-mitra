@@ -73,12 +73,17 @@ class ProductionRentalLayerSetTest {
           "Witnesses");
 
   // The declared mandatory (always-render) sections for the NATIONAL (IN) set; every other section
-  // is optional (opt-in). In the Telangana set "Statutory (Telangana)" is additionally optional
-  // (opt-in, per the 2026-07-13 decision), but the "In Witness Whereof" execution block is
-  // MANDATORY
-  // in both sets (agreement-execution-block CR -- a generated draft must carry the signature zones
-  // +
-  // eSign anchors to be signable). The optional "Witnesses" add-on is off by default in both.
+  // is optional (opt-in). This set is asserted against the IN resolution only.
+  //
+  // In the Telangana set "Statutory (Telangana)" is ALSO mandatory as of 2026-09-07 (reversing the
+  // 2026-07-13 opt-in decision): the TG residential layer re-authors the witnesseth list without
+  // the
+  // national `stampRegistrationClause`, so while the statutory section was opt-in a Telangana deed
+  // rendered with no stamp/registration clause at all -- strictly worse than the national template.
+  //
+  // The "In Witness Whereof" execution block is MANDATORY in both sets (agreement-execution-block
+  // CR -- a generated draft must carry the signature zones + eSign anchors to be signable). The
+  // optional "Witnesses" add-on is off by default in both.
   private static final Set<String> MANDATORY_SECTIONS =
       Set.of(
           "Owner",
@@ -160,7 +165,11 @@ class ProductionRentalLayerSetTest {
     DocumentMeta document = eff.template().meta().document();
     assertThat(document).isNotNull();
     assertThat(document.title()).isEqualTo("Rental Agreement");
-    assertThat(document.subtitle()).isEqualTo("Residential Tenancy (Leave & Licence)");
+    // Neutral subtitle: the "(Leave & Licence)" label was removed in base.yaml v2 -- it is the
+    // Maharashtra form, and every other signal in this deed (the "lets" verb, Owner/Tenant, the
+    // no-subletting covenant, the TG 1960 LEASE Act, Article 30 stamping) says lease.
+    assertThat(document.subtitle()).isEqualTo("Residential Tenancy");
+    assertThat(document.subtitle()).doesNotContain("Licence");
     assertThat(document.executionLine())
         .contains("{{agreementDate}}")
         .contains("in respect of the property in the Schedule below");
@@ -239,15 +248,25 @@ class ProductionRentalLayerSetTest {
     TemplateCompiler compiler = new TemplateCompiler();
 
     // Empty active set: mandatory sections render, optional add-ons do not. For Telangana the
-    // statutory overlay is opt-in (absent by default), but the signature block is MANDATORY, so it
-    // renders by default with the per-signer eSign anchors -- the draft is signable.
+    // statutory overlay is MANDATORY (2026-09-07), so it renders with no add-ons selected -- that
+    // is
+    // what guarantees a TG deed always carries a stamp/registration clause, since the TG layer
+    // removes the national one. The signature block is MANDATORY too, so it renders by default with
+    // the per-signer eSign anchors -- the draft is signable.
     String withoutAddOns = compiler.compile(eff, coerced);
     assertThat(withoutAddOns)
         .contains("made between Asha Owner") // mandatory recital (witnesseth)
         .contains("In Witness Whereof") // mandatory signature block renders by default
         .contains("esign:owner")
         .contains("esign:tenant") // ...with both eSign anchors
-        .doesNotContain("Statutory (Telangana)") // optional TG statutory overlay gated out
+        .contains("Statutory (Telangana)") // mandatory TG statutory overlay renders by default
+        // The clause the whole flag exists for: TG drops the national stampRegistrationClause, so
+        // this is the only stamp/registration wording a Telangana deed can carry.
+        .contains("compulsorily registered before the jurisdictional Sub-Registrar")
+        // tgEssentialServices: the owner may not cut water/electricity during the tenancy.
+        .contains("withhold or disconnect essential supplies")
+        // tgGoverningLaw: the TG-specific statute, not just "laws of India".
+        .contains("Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960")
         .doesNotContain("shall not keep any pets") // optional Occupancy & Use add-on gated out
         .doesNotContain(
             "Society and building maintenance"); // optional Charges & Utilities gated out
@@ -355,6 +374,50 @@ class ProductionRentalLayerSetTest {
           .contains("constitutes the entire agreement") // entire agreement / amendment
           .contains("Any notice required or permitted"); // service of notice
     }
+  }
+
+  @Test
+  void theAlwaysOnJurisdictionCovenantIsUnfilledOutsideTelangana() {
+    // KNOWN GAP, pinned deliberately -- see the follow-up register in docs/ROADMAP.md.
+    //
+    // disputeClause/disputeAlternativeClause sit in the MANDATORY witnesseth list, gated only on
+    // disputeResolution (base default "courts"), so one of them renders on EVERY deed. The city it
+    // names, jurisdictionCity, is declared required:false with NO national default and lives in the
+    // OPTIONAL "Dispute Resolution" section. TG patches the default to "Hyderabad"; nothing patches
+    // the base. So a deed generated without that optional section renders an operative
+    // exclusive-jurisdiction covenant naming a placeholder instead of a court:
+    //
+    //     "...exclusive jurisdiction of the courts at [ Jurisdiction city ]."
+    //
+    // That reaches KARNATAKA, not just a hypothetical "IN" deed: KA matches no state patch, so a
+    // Karnataka agreement resolves to this base alone.
+    //
+    // This test asserts the CURRENT behaviour so the gap is visible and cannot regress silently. It
+    // is expected to be rewritten by the CR that fixes it (the likely fix is a fallback clause
+    // reading "courts of competent jurisdiction" when no city is set -- a drafting decision).
+    EffectiveTemplate national = resolve("IN", "residential");
+    String nationalHtml =
+        new TemplateCompiler()
+            .compile(
+                national,
+                SubmittedDataValidator.validateAndCoerce(
+                    national, aggregateBackedData(), ProjectionMode.GENERATE));
+    assertThat(nationalHtml)
+        .as("national deed leaves the jurisdiction covenant unfilled")
+        .contains("exclusive jurisdiction of the courts at [ Jurisdiction city ]");
+
+    // Telangana is unaffected: the state+type layer defaults the city.
+    EffectiveTemplate telangana = resolve("TG", "residential");
+    String telanganaHtml =
+        new TemplateCompiler()
+            .compile(
+                telangana,
+                SubmittedDataValidator.validateAndCoerce(
+                    telangana, aggregateBackedData(), ProjectionMode.GENERATE));
+    assertThat(telanganaHtml)
+        .as("Telangana names a court")
+        .contains("exclusive jurisdiction of the courts at Hyderabad.")
+        .doesNotContain("[ Jurisdiction city ]");
   }
 
   @Test
