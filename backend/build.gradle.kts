@@ -323,8 +323,9 @@ val osvScan =
         // Fail-closed: a missing scanner must break the build, not silently pass.
         doFirst {
             val onPath =
-                System.getenv("PATH").orEmpty().split(File.pathSeparator).any {
-                    File(it, "osv-scanner").canExecute()
+                System.getenv("PATH").orEmpty().split(File.pathSeparator).any { dir ->
+                    // Windows binaries carry an .exe suffix; Exec resolves either form.
+                    listOf("osv-scanner", "osv-scanner.exe").any { File(dir, it).canExecute() }
                 }
             if (!onPath) {
                 throw GradleException(

@@ -2,6 +2,7 @@ package in.agreementmitra.signing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.TemplateCatalogFixture;
@@ -44,7 +45,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * drafting</b>. The gate restricts paid fulfilment only.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import({HarnessTestConfig.class, MailTestConfig.class})
+@Import({HarnessTestConfig.class, GotenbergTestConfig.class, MailTestConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class JurisdictionGateIntegrationTest {
