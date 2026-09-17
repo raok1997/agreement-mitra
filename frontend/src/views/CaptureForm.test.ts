@@ -8,6 +8,7 @@ import * as payments from "../api/payments";
 import * as templateForm from "../api/templateForm";
 import * as jurisdictions from "../api/jurisdictions";
 import type { FormSchema } from "../api/templateForm";
+import StampQuoteStep from "./StampQuoteStep.vue";
 import ContactConfirmation, {
   type PartyContact,
 } from "./ContactConfirmation.vue";
@@ -47,6 +48,10 @@ vi.mock("../api/payments", async (importOriginal) => {
   return { ...actual, payForAgreement: vi.fn(), getPaymentProgress: vi.fn() };
 });
 vi.mock("../api/jurisdictions", () => ({ fetchEligibleOrNone: vi.fn() }));
+vi.mock("../api/stampQuote", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/stampQuote")>();
+  return { ...actual, getStampQuote: vi.fn(() => new Promise(() => {})) };
+});
 
 const mockedCreate = vi.mocked(client.createAgreement);
 const mockedGenerate = vi.mocked(client.generateAgreementDocument);
@@ -608,9 +613,19 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
 
     // No pointless PATCH: it would meet the freeze and strand the customer short of payment.
     expect(mockedUpdateContacts).not.toHaveBeenCalled();
+    // Next comes the stamp duty step; payment waits for the customer's stamp choice.
+    const stampStep = wrapper.findComponent(StampQuoteStep);
+    expect(stampStep.exists()).toBe(true);
+    expect(mockedPay).not.toHaveBeenCalled();
+    stampStep.vm.$emit("confirm", { stampValueMinorUnits: 130000 });
+    await flushPromises();
     // ...and the retry actually happens. Finalise is idempotent, so this places no second order.
     expect(mockedFinalise).toHaveBeenCalledWith("agr-1");
     expect(mockedPay).toHaveBeenCalledOnce();
+    expect(mockedPay).toHaveBeenCalledWith(
+      "agr-1",
+      expect.objectContaining({ selection: { stampValueMinorUnits: 130000 } }),
+    );
   });
 
   it("says a paid agreement's contacts are frozen instead of 'please try again'", async () => {

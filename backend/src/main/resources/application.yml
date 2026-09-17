@@ -208,29 +208,32 @@ esign:
 #
 # The webhook endpoint must be publicly reachable (cloudflared/ngrok in local dev) or the callback
 # never arrives - the same requirement the eSign webhook already has.
-# Which jurisdictions may reach PAID FULFILMENT: order placement, payment, e-stamp purchase and
-# eSign initiation. An ALLOWLIST, not a denylist - a state is ineligible until deliberately admitted,
-# because stamp duty is state law and a state nobody has assessed has no computable duty and no
-# defined place to buy a certificate.
+# Stamp duty rules (rules module). Per-state duty rules live in rules/stamp-duty/<STATE>/*.yaml and
+# stamp paper catalogs in rules/stamp-paper/<STATE>.yaml; both are validated at startup. They are also
+# the ONLY source of which jurisdictions may reach PAID FULFILMENT (order placement, payment, e-stamp
+# purchase, eSign initiation): a state is eligible when it has a rule in effect that may be charged.
 #
-# EMPTY OR ABSENT REFUSES EVERYTHING. That is the intended failure direction for legal infra: a
-# misconfigured deployment stops paid fulfilment rather than opening it. The resolved list is logged
-# once at startup, so an operator can see what the running instance admits.
+# A rule may be charged when it carries a counsel review matching its content hash. ALLOW-UNREVIEWED
+# lets customers be charged on rules WITHOUT one -- sandbox and founding-team beta only. Default false:
+# with the shipped (unreviewed) Telangana rules, checkout is refused until either counsel review is
+# recorded or this is set deliberately. When true, startup logs a WARN naming every unreviewed rule.
 #
-# Codes are case-insensitive here (normalized on binding), but the national dimension "IN" can NEVER
-# be admitted - there is no national stamp-duty rate, so adding it has no effect by design.
-#
-# Drafting, preview and download are NOT restricted by this list; only the four gated steps are.
-jurisdiction:
-  eligible: ${ELIGIBLE_JURISDICTIONS:TG}
+# The national dimension "IN" can never be a duty jurisdiction (no national rate). Drafting, preview
+# and download are not restricted; only the four gated steps are.
+rules:
+  stamp-duty:
+    allow-unreviewed: ${RULES_STAMP_DUTY_ALLOW_UNREVIEWED:false}
 
 payment:
   mode: ${PAYMENT_MODE:REQUIRED}
-  # The flat price, as INTEGER MINOR UNITS (paise) plus an explicit currency. Never a float: the
-  # provider requires paise and rejects floats. Today this is a configured constant; the pricing
-  # operation exists so state-and-rent-dependent stamp duty later changes the calculation only.
-  amount:
-    minor-units: ${PAYMENT_AMOUNT_MINOR_UNITS:49900}
+  # The published pricing rule (TERMS-OF-SERVICE section 7), as INTEGER MINOR UNITS (paise):
+  #   total = base + max(0, chosen stamp value - included stamp value)
+  # i.e. INR 499 plus the amount by which the stamp value exceeds INR 100. Never a float: the
+  # provider requires paise and rejects floats. The stamp value is the customer's choice among the
+  # server-computed stamp options (state-stamp-duty-quoting), never an amount the client sends.
+  fee:
+    base-minor-units: ${PAYMENT_FEE_BASE_MINOR_UNITS:49900}
+    included-stamp-value-minor-units: ${PAYMENT_FEE_INCLUDED_STAMP_VALUE_MINOR_UNITS:10000}
     currency: ${PAYMENT_CURRENCY:INR}
   order:
     # How long an outstanding order stays reusable. A reload during checkout resumes it rather than

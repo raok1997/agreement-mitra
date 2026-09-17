@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { formatMinorUnits } from "../api/payments";
 import {
   listStampQueue,
   uploadStampForEntry,
@@ -365,6 +366,17 @@ onMounted(load);
             :data-testid="`queue-payment-${entry.agreementId}`"
           >
             {{ entry.paymentState === "WAIVED" ? "Payment waived" : "Paid" }}
+          </span>
+          <!-- What to buy: the certificate must carry at least the stamp value paid for. -->
+          <span
+            v-if="entry.paidStampValueMinorUnits != null"
+            class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700"
+            :data-testid="`queue-stamp-value-${entry.agreementId}`"
+          >
+            Stamp {{ formatMinorUnits(entry.paidStampValueMinorUnits, "INR") }}
+            <template v-if="entry.belowDutyChosen">
+              · below duty (customer's choice)</template
+            >
           </span>
           <button
             type="button"

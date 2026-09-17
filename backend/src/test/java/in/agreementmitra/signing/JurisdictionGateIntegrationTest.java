@@ -56,8 +56,9 @@ class JurisdictionGateIntegrationTest {
   static void properties(DynamicPropertyRegistry registry) {
     registry.add("delivery.public-base-url", () -> "https://app.example.test");
     registry.add("delivery.channels.email.enabled", () -> "true");
-    // The shipped default, stated explicitly so this test does not depend on application.yml.
-    registry.add("jurisdiction.eligible", () -> "TG");
+    // TG ships unreviewed; allowing it is how local/beta run, stated so this test does not depend
+    // on the test profile.
+    registry.add("rules.stamp-duty.allow-unreviewed", () -> "true");
   }
 
   @Autowired private TestRestTemplate rest;

@@ -165,6 +165,8 @@ support. An entry SHALL carry:
   with their **full name** and their **father's name**;
 - the property **city**, the agreement date, how long it has been waiting, and its payment
   state where the payment gate is in use.
+- where the order was paid for with a frozen stamp quote, the **paid-for stamp value**, and whether
+  the customer **chose it below the legal duty**.
 
 The **state** SHALL be the state dimension of the template the agreement is pinned to, NOT a
 value derived from the property address: stamp duty follows the state whose law the instrument
@@ -203,6 +205,13 @@ assembled, and party names SHALL NOT appear in any log line.
   agreement date, and waiting time
 - **AND** each entry shows every party with their full name and father's name, identified as
   first party or second party
+
+#### Scenario: The paid-for stamp value and a below-duty choice are shown
+
+- **GIVEN** an agreement paid for with a frozen stamp value of INR 100 against a legal duty of INR 440
+- **WHEN** the entry is listed
+- **THEN** the entry shows the paid-for stamp value INR 100
+- **AND** marks it as chosen below the legal duty
 
 #### Scenario: The state comes from the pinned template, not the address
 
@@ -353,3 +362,31 @@ step.
 - **WHEN** staff submit an e-stamp certificate for an agreement whose duty jurisdiction is
   eligible and which satisfies every existing precondition
 - **THEN** intake proceeds exactly as before this change
+
+### Requirement: A certificate below the paid-for stamp value is refused
+
+Stamp intake SHALL refuse a certificate whose duty amount is below the stamp value frozen with the agreement's paid order, before the certificate is stored or attached.
+
+The refusal SHALL use its own distinct error kind so staff can tell it apart from the other intake
+refusals. An agreement whose payment was waived and which has no frozen stamp quote SHALL be checked
+against the legal duty recomputed at intake instead. A certificate at or above the reference value
+SHALL be accepted as before.
+
+#### Scenario: Certificate below the paid-for value
+
+- **GIVEN** an agreement paid for with a frozen stamp value of INR 440
+- **WHEN** staff submit a certificate with a duty amount of INR 100
+- **THEN** the response is `409` with the stamp-value-below-paid problem type
+- **AND** no certificate blob is stored and no stamp is attached
+
+#### Scenario: Certificate at the paid-for value
+
+- **GIVEN** an agreement paid for with a frozen stamp value of INR 440
+- **WHEN** staff submit a certificate with a duty amount of INR 440 that satisfies every other precondition
+- **THEN** intake proceeds exactly as before this change
+
+#### Scenario: A customer's below-duty choice is honoured, not overridden
+
+- **GIVEN** an agreement paid for with an acknowledged below-duty stamp value of INR 100
+- **WHEN** staff submit a certificate with a duty amount of INR 100
+- **THEN** intake proceeds

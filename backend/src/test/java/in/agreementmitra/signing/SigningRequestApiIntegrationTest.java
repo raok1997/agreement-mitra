@@ -169,7 +169,9 @@ class SigningRequestApiIntegrationTest {
     form.add("agreementReference", reference);
     form.add("certificateNumber", certificate);
     form.add("issueDate", "2026-01-15");
-    form.add("dutyAmount", "500.00");
+    form.add(
+        "dutyAmount",
+        "10000.00"); // covers the recomputed stamp duty of any fixture (state-stamp-duty-quoting)
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);

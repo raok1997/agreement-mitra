@@ -1,0 +1,30 @@
+# FICTIONAL test fixture bound to ZzTestExtension (id zz-test): exercises precheck refusal, an
+# extension-provided quantity (EXCESS_DEPOSIT) and a duty adjustment. Inherits base surcharges
+# (none), counterpart duty (0), rounding and registration.
+extends: base
+id: ZZ-lease-commercial
+state: ZZ
+instrumentKind: LEASE
+usage: COMMERCIAL
+effectiveFrom: "2024-04-01"
+legalReference: "Fictional Stamp Act, Article 100 (test fixture)"
+extension: zz-test
+params: { depositMonthsCap: "3" }
+slabs:
+  - { minMonths: 1, maxMonths: 60, consideration: [TOTAL_RENT, EXCESS_DEPOSIT], ratePercent: "1" }
+cases:
+  - name: "1-month boundary"
+    basis: { termMonths: 1, monthlyRent: "20000" }
+    expect: { outcome: QUOTED, amountPaise: 22500, plans: { physical: 25000, e-stamp: 22500 } }
+  - name: "60-month boundary"
+    basis: { termMonths: 60, monthlyRent: "1000" }
+    expect: { outcome: QUOTED, amountPaise: 62500, plans: { physical: 65000 } }
+  - name: "deposit above the cap counts as consideration"
+    basis: { termMonths: 11, monthlyRent: "20000", refundableDeposit: "100000" }
+    expect: { outcome: QUOTED, amountPaise: 262500, plans: { physical: 300000, e-stamp: 262500 } }
+  - name: "non-refundable deposit needs adjudication"
+    basis: { termMonths: 11, monthlyRent: "20000", nonRefundableDeposit: "5000" }
+    expect: { outcome: NEEDS_ADJUDICATION }
+  - name: "term beyond the slab"
+    basis: { termMonths: 61, monthlyRent: "20000" }
+    expect: { outcome: UNSUPPORTED }

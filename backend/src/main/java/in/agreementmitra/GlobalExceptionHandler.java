@@ -64,7 +64,11 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       "urn:agreementmitra:problem:payment-reference-already-used";
   private static final String TYPE_AGREEMENT_CLOSED = "urn:agreementmitra:problem:agreement-closed";
   private static final String TYPE_CONTACTS_FROZEN = "urn:agreementmitra:problem:contacts-frozen";
+  private static final String TYPE_STAMP_VALUE_BELOW_PAID =
+      "urn:agreementmitra:problem:stamp-value-below-paid";
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
+  private static final String TYPE_STAMP_CHOICE_INVALID =
+      "urn:agreementmitra:problem:stamp-choice-invalid";
   private static final String TYPE_PAYLOAD_TOO_LARGE =
       "urn:agreementmitra:problem:payload-too-large";
   private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
@@ -210,7 +214,34 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               TYPE_CONTACTS_FROZEN,
               "Contacts frozen",
               "Contact details cannot be changed once payment for this agreement is settled.");
+      // Its own type so staff can tell it apart from every other intake refusal: the certificate
+      // was bought for too little, which a different action fixes than a bad scan or a spent one.
+      case STAMP_VALUE_BELOW_PAID ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_STAMP_VALUE_BELOW_PAID,
+              "Stamp value below paid",
+              "The certificate's stamp duty is below the stamp value this agreement was paid for.");
     };
+  }
+
+  /**
+   * The checkout's stamp choice is missing, not an offered option, or a below-duty choice without
+   * an acknowledgement of the current warning. The body carries a fixed reason code and the public
+   * warning version only -- never an amount or anything else the client sent.
+   */
+  @ExceptionHandler(StampChoiceInvalidException.class)
+  ProblemDetail handleStampChoiceInvalid(StampChoiceInvalidException ex) {
+    ProblemDetail body =
+        problem(
+            HttpStatus.BAD_REQUEST,
+            TYPE_STAMP_CHOICE_INVALID,
+            "Stamp choice invalid",
+            "Choose one of the offered stamp options, acknowledging the warning for a value below"
+                + " the stamp duty.");
+    body.setProperty("reason", ex.reason().name());
+    body.setProperty("warningVersion", ex.currentWarningVersion());
+    return body;
   }
 
   @ExceptionHandler(InvalidUploadException.class)

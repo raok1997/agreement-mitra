@@ -55,13 +55,18 @@ public class PaymentCheckoutController {
    *
    * <p>Idempotent: reloading the payment page resumes the outstanding order rather than
    * accumulating a new one for every refresh.
+   *
+   * <p>The body carries the customer's <b>stamp choice</b> (never an amount). It is required to
+   * place a new order and ignored when an order already exists, whose choice is frozen.
    */
   @PostMapping("/order")
   public CheckoutSessionResponse startCheckout(
       @PathVariable UUID agreementId,
+      @RequestBody(required = false) CheckoutRequest request,
       @AuthenticationPrincipal UUID identityId,
       Authentication authentication) {
-    return paymentOrderService.startCheckout(agreementId, identityId, isStaff(authentication));
+    return paymentOrderService.startCheckout(
+        agreementId, identityId, isStaff(authentication), request);
   }
 
   /** Where payment stands. Polled by the SPA once the checkout modal closes. */

@@ -16,6 +16,39 @@ vi.mock("../api/payments", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/payments")>();
   return { ...actual, getPaymentProgress: vi.fn(), payForAgreement: vi.fn() };
 });
+// "Complete payment" reads the stamp quote first. These cases resume an existing order, so the quote
+// is the one frozen with it and payment starts straight away with that choice.
+vi.mock("../api/stampQuote", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/stampQuote")>();
+  return {
+    ...actual,
+    getStampQuote: vi.fn(async (agreementId: string) => ({
+      agreementId,
+      available: true,
+      status: "QUOTABLE",
+      frozen: true,
+      dutyMinorUnits: 130000,
+      currency: "INR",
+      breakdown: [],
+      registrationRequired: true,
+      rule: {
+        id: "TG-lease-residential",
+        legalReference: null,
+        reviewed: false,
+      },
+      warningVersion: "under-stamp-v1",
+      options: [
+        {
+          stampValueMinorUnits: 130000,
+          belowDuty: false,
+          recommended: true,
+          totalMinorUnits: 169900,
+          medium: "challan",
+        },
+      ],
+    })),
+  };
+});
 vi.mock("../api/signingProgress", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../api/signingProgress")>();
@@ -384,7 +417,10 @@ describe("AgreementStatus — payment is the server's word", () => {
     await wrapper.get('[data-testid="status-pay"]').trigger("click");
     await flushPromises();
 
-    expect(mockedPay).toHaveBeenCalledWith("ag-1", expect.anything());
+    expect(mockedPay).toHaveBeenCalledWith(
+      "ag-1",
+      expect.objectContaining({ selection: { stampValueMinorUnits: 130000 } }),
+    );
     expect(condition(wrapper, "paid")).toBe("current");
   });
 

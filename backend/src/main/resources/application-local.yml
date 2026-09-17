@@ -18,3 +18,9 @@ auth:
   google:
     client-id: ${GOOGLE_OAUTH_CLIENT_ID:local-dummy}
     client-secret: ${GOOGLE_OAUTH_SECRET:dummy}
+
+# Local dev charges on the shipped Telangana stamp duty rules even though they carry no counsel review
+# yet (state-stamp-duty-quoting). Startup logs a WARN naming them. Never copy this to a real deployment.
+rules:
+  stamp-duty:
+    allow-unreviewed: ${RULES_STAMP_DUTY_ALLOW_UNREVIEWED:true}

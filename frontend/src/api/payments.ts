@@ -15,6 +15,7 @@
 // checkout. They never pass through our code, so nothing here can accept, proxy, store, or log one.
 
 import { authHeader } from "./authStore";
+import type { StampSelection } from "./stampQuote";
 
 const BASE = "/api";
 
@@ -32,6 +33,10 @@ export interface CheckoutSession {
   currency: string;
   orderStatus: string;
   paymentState: string;
+  /** The legal stamp duty frozen with the order, in paise; null for an order without a quote. */
+  dutyMinorUnits?: number | null;
+  /** The stamp value the customer chose, frozen with the order, in paise. */
+  stampValueMinorUnits?: number | null;
 }
 
 /** Where payment stands, as the server sees it. The only thing the UI is allowed to trust. */
@@ -41,6 +46,8 @@ export interface PaymentProgress {
   orderStatus: string | null;
   amountMinorUnits: number | null;
   currency: string | null;
+  dutyMinorUnits?: number | null;
+  stampValueMinorUnits?: number | null;
 }
 
 /** An Error carrying the HTTP status so callers can distinguish 404 (not yours) from the rest. */
@@ -54,13 +61,21 @@ export class PaymentHttpError extends Error {
 /**
  * Place (or resume) the order. Idempotent server-side: reloading the payment page returns the same
  * outstanding order rather than accumulating a new one for every refresh.
+ *
+ * `selection` is the customer's stamp choice from the stamp quote. The server requires it to place
+ * a new order and ignores it when resuming one, whose choice is frozen. It is a choice, never an
+ * amount: the server computes the total.
  */
 export async function startCheckout(
   agreementId: string,
+  selection?: StampSelection,
 ): Promise<CheckoutSession> {
   const res = await fetch(`${BASE}/agreements/${agreementId}/payment/order`, {
     method: "POST",
-    headers: { ...authHeader() },
+    headers: selection
+      ? { "Content-Type": "application/json", ...authHeader() }
+      : { ...authHeader() },
+    ...(selection ? { body: JSON.stringify(selection) } : {}),
   });
   if (!res.ok) throw new PaymentHttpError(res.status);
   return res.json();
@@ -177,6 +192,8 @@ export interface PayOptions {
   pollIntervalMs?: number;
   /** Injectable for tests, so no test ever waits on a real timer. */
   wait?: (ms: number) => Promise<void>;
+  /** The customer's stamp choice; required by the server to place a new order. */
+  selection?: StampSelection;
 }
 
 const DEFAULT_POLL_ATTEMPTS = 6;
@@ -197,7 +214,7 @@ export async function payForAgreement(
   agreementId: string,
   options: PayOptions = {},
 ): Promise<PaymentOutcome> {
-  const session = await startCheckout(agreementId);
+  const session = await startCheckout(agreementId, options.selection);
   if (session.paymentState === "PAID") return "PAID";
 
   const Razorpay = await loadCheckoutScript();

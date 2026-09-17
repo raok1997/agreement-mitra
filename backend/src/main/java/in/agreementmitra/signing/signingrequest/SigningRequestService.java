@@ -131,7 +131,7 @@ public class SigningRequestService {
     // signature is a billable vendor transaction, and we must not incur one for an agreement whose
     // duty jurisdiction has no defined stamping path. Checked before the provider call, so a
     // refusal costs nothing.
-    jurisdiction.require(agreementId);
+    jurisdiction.requireForFulfilment(agreementId);
 
     // An attached e-stamp is a PRECONDITION, not something this flow can create. Distinct 409 kind
     // (stamp-required) so an operator can tell it apart from a missing draft or an uncontactable

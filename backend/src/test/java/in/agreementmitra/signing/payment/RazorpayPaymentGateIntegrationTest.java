@@ -169,6 +169,10 @@ class RazorpayPaymentGateIntegrationTest {
   }
 
   private ResponseEntity<String> uploadStamp(UUID agreementId) {
+    return uploadStamp(agreementId, "10000.00");
+  }
+
+  private ResponseEntity<String> uploadStamp(UUID agreementId, String dutyAmount) {
     String reference =
         jdbc.queryForObject(
             "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, agreementId);
@@ -186,7 +190,7 @@ class RazorpayPaymentGateIntegrationTest {
         "certificateNumber",
         "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase());
     form.add("issueDate", "2026-01-15");
-    form.add("dutyAmount", "500.00");
+    form.add("dutyAmount", dutyAmount);
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -205,7 +209,9 @@ class RazorpayPaymentGateIntegrationTest {
                         + "\",\"status\":\"created\",\"amount\":49900,\"currency\":\"INR\"}")));
     assertThat(
             rest.postForEntity(
-                    "/api/agreements/" + agreementId + "/payment/order", null, String.class)
+                    "/api/agreements/" + agreementId + "/payment/order",
+                    in.agreementmitra.support.StampChoices.checkoutEntity(rest, agreementId, null),
+                    String.class)
                 .getStatusCode())
         .isEqualTo(HttpStatus.OK);
 
@@ -223,6 +229,79 @@ class RazorpayPaymentGateIntegrationTest {
                     "/api/webhooks/razorpay", new HttpEntity<>(webhookBody, headers), String.class)
                 .getStatusCode())
         .isEqualTo(HttpStatus.ACCEPTED);
+  }
+
+  /**
+   * The stamp-duty happy path end to end (state-stamp-duty-quoting): quote, recommended choice,
+   * order at the published total, webhook confirmation, and intake reconciled against the frozen
+   * stamp value. TG residential, 11 months at INR 25,000 + INR 50,000 deposit: duty INR 1,300; the
+   * TG offer is a single INR 100 paper (below duty, acknowledged), total INR 499.
+   */
+  @Test
+  void aQuotedStampChoiceIsChargedFrozenAndReconciledAtIntake() throws Exception {
+    UUID agreementId = createFinalisedAgreement();
+    com.fasterxml.jackson.databind.ObjectMapper json =
+        new com.fasterxml.jackson.databind.ObjectMapper();
+
+    com.fasterxml.jackson.databind.JsonNode quote =
+        json.readTree(
+            rest.getForEntity("/api/agreements/" + agreementId + "/stamp-quote", String.class)
+                .getBody());
+    com.fasterxml.jackson.databind.JsonNode recommended = quote.path("options").get(0);
+    assertThat(quote.path("dutyMinorUnits").asLong()).isEqualTo(130_000L);
+    assertThat(recommended.path("recommended").asBoolean()).isTrue();
+    assertThat(recommended.path("belowDuty").asBoolean()).isTrue();
+    assertThat(recommended.path("totalMinorUnits").asLong()).isEqualTo(49_900L);
+
+    WIREMOCK.stubFor(
+        post(urlEqualTo(ORDERS_URL))
+            .willReturn(
+                okJson(
+                    "{\"id\":\"order_DUTY1\",\"status\":\"created\",\"amount\":49900,"
+                        + "\"currency\":\"INR\"}")));
+    ResponseEntity<String> session =
+        rest.postForEntity(
+            "/api/agreements/" + agreementId + "/payment/order",
+            Map.of(
+                "stampValueMinorUnits",
+                recommended.path("stampValueMinorUnits").asLong(),
+                "underStampAcknowledgement",
+                Map.of("warningVersion", quote.path("warningVersion").asText())),
+            String.class);
+    assertThat(session.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(json.readTree(session.getBody()).path("amountMinorUnits").asLong())
+        .isEqualTo(49_900L);
+
+    String webhookBody =
+        "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":"
+            + "\"pay_DUTY1\",\"order_id\":\"order_DUTY1\",\"amount\":49900,"
+            + "\"currency\":\"INR\",\"status\":\"captured\"}}}}";
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    headers.set("X-Razorpay-Signature", RazorpaySignatures.hmacSha256Hex(webhookBody, WEBHOOK_KEY));
+    assertThat(
+            rest.postForEntity(
+                    "/api/webhooks/razorpay", new HttpEntity<>(webhookBody, headers), String.class)
+                .getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT payment_state FROM agreement WHERE id = ?", String.class, agreementId))
+        .isEqualTo("PAID");
+
+    // A certificate bought for less than the paid-for stamp value is refused, nothing stamped...
+    ResponseEntity<String> underBought = uploadStamp(agreementId, "50.00");
+    assertThat(underBought.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(underBought.getBody()).contains("stamp-value-below-paid");
+
+    // ...and one at the paid-for value stamps the agreement.
+    assertThat(uploadStamp(agreementId, "100.00").getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM signing_request WHERE agreement_id = ?",
+                String.class,
+                agreementId))
+        .isEqualTo("STAMPED");
   }
 
   @Test

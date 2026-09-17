@@ -1,0 +1,11 @@
+# Deliberately malformed (slab gap at 12 months): proves bad rule data fails context startup.
+extends: base
+id: ZZ-invalid
+state: ZZ
+instrumentKind: LEASE
+usage: RESIDENTIAL
+effectiveFrom: "2024-01-01"
+legalReference: "test"
+slabs:
+  - { minMonths: 1, maxMonths: 11, consideration: [TOTAL_RENT], ratePercent: "0.5" }
+  - { minMonths: 13, maxMonths: 60, consideration: [TOTAL_RENT], ratePercent: "0.5" }

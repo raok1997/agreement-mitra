@@ -35,6 +35,11 @@ class SigningModuleSliceTest {
   // bean is mocked too -- same isolation idiom as DocumentProjectionApi above.
   @MockitoBean private TemplateCatalogApi templateCatalog;
 
+  // Stamp quoting (state-stamp-duty-quoting) consumes the rules module's StampDutyCalculator; that
+  // module is not loaded in a standalone slice either, so its public interface is mocked the same
+  // way.
+  @MockitoBean private in.agreementmitra.rules.StampDutyCalculator stampDutyCalculator;
+
   @Test
   void signingModuleBootsInIsolation() {
     // Context start = the slice mechanism is wired (documents' DocumentProjectionApi mocked).

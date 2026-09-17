@@ -1,16 +1,15 @@
 package in.agreementmitra.signing.payment;
 
-import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
  * The <b>pricing operation</b>: what an agreement costs, as integer minor units plus an explicit
  * currency.
  *
- * <p>It returns a single configured flat price today, and it is a named, testable operation anyway
- * (design D7). That is the whole point: when state-and-rent-dependent stamp duty arrives, it
- * changes <em>this calculation</em> and nothing else - not the order-creation flow, not the API
- * shape, not the stored record. The cost today is one indirection.
+ * <p>Implements the published rule (TERMS-OF-SERVICE section 7, state-stamp-duty-quoting design
+ * D6): <b>total = base fee + max(0, chosen stamp value - included stamp value)</b> -- INR 499 plus
+ * the amount by which the stamp value exceeds INR 100. The stamp value is the option the customer
+ * chose from the server-recomputed stamp options, never a client-supplied amount.
  *
  * <p>The amount is <b>never</b> taken from the client. No request DTO on the payment surface has an
  * amount, currency, or discount field, so there is nothing to ignore: a tampered client cannot
@@ -26,14 +25,20 @@ class PaymentPricing {
   }
 
   /**
-   * The payable amount for one agreement.
+   * The payable total for a chosen stamp value.
    *
-   * <p>The agreement id is taken deliberately even though today's flat price ignores it: the
-   * signature is the seam. A duty calculation that needs the state, the rent, and the term will
-   * read them here, and every caller already passes the only thing it needs to.
+   * @param stampValueMinorUnits a value already validated as one of the agreement's stamp options
    */
-  Money priceFor(UUID agreementId) {
-    PaymentProperties.Amount amount = properties.amount();
-    return new Money(amount.minorUnits(), amount.currency());
+  Money price(long stampValueMinorUnits) {
+    if (stampValueMinorUnits < 0) {
+      throw new IllegalArgumentException("stamp value must not be negative");
+    }
+    PaymentProperties.Fee fee = properties.fee();
+    long excess = Math.max(0L, stampValueMinorUnits - fee.includedStampValueMinorUnits());
+    return new Money(Math.addExact(fee.baseMinorUnits(), excess), fee.currency());
+  }
+
+  String currency() {
+    return properties.fee().currency();
   }
 }

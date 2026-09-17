@@ -13,6 +13,9 @@ import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
 import in.agreementmitra.signing.agreement.StampInfo;
+import in.agreementmitra.signing.agreement.StampQuoteRecord;
+import in.agreementmitra.signing.agreement.StampQuoteRecordRepository;
+import in.agreementmitra.signing.agreement.StampValueReference;
 import in.agreementmitra.signing.api.StampIntakeResponse;
 import in.agreementmitra.signing.api.StampQueueEntry;
 import in.agreementmitra.signing.payment.PaymentGate;
@@ -78,6 +81,7 @@ public class StampIntakeService {
   private static final String OUTCOME_PAYMENT_REQUIRED = "REJECTED_PAYMENT_REQUIRED";
   private static final String OUTCOME_JURISDICTION_UNSUPPORTED =
       "REJECTED_JURISDICTION_UNSUPPORTED";
+  private static final String OUTCOME_STAMP_VALUE_BELOW_PAID = "REFUSED_STAMP_VALUE";
   private static final String OUTCOME_COMPOSITION_FAILED = "REJECTED_COMPOSITION_FAILED";
   private static final String OUTCOME_ERROR = "REJECTED_ERROR";
 
@@ -89,6 +93,8 @@ public class StampIntakeService {
   private final StampIntakeAuditor auditor;
   private final PaymentGate paymentGate;
   private final JurisdictionEligibility jurisdiction;
+  private final StampValueReference stampValueReference;
+  private final StampQuoteRecordRepository frozenQuotes;
 
   /**
    * The signing flow, used ONLY for the optional kick-off after a stamp is attached. Intake still
@@ -106,7 +112,11 @@ public class StampIntakeService {
       StampIntakeAuditor auditor,
       PaymentGate paymentGate,
       JurisdictionEligibility jurisdiction,
+      StampValueReference stampValueReference,
+      StampQuoteRecordRepository frozenQuotes,
       SigningRequestService signingRequestService) {
+    this.stampValueReference = stampValueReference;
+    this.frozenQuotes = frozenQuotes;
     this.agreementService = agreementService;
     this.stampProvider = stampProvider;
     this.scanValidator = scanValidator;
@@ -196,7 +206,13 @@ public class StampIntakeService {
     // duty is state law, so an agreement without an eligible duty jurisdiction has no state whose
     // duty could have been paid and no defined place this certificate could have been bought.
     // Checked before the scan is stored and before any state changes, so a refusal writes nothing.
-    jurisdiction.require(agreementId);
+    jurisdiction.requireForFulfilment(agreementId);
+
+    // (1c) STAMP VALUE (state-stamp-duty-quoting, design D8). The certificate must carry at least
+    // the stamp value the customer paid for -- or, with no frozen quote (a waiver, or an order from
+    // before stamp quoting), the legal duty recomputed now. A customer's acknowledged below-duty
+    // choice is honoured, not overridden. Checked before the scan is stored or anything changes.
+    requireStampValueCovered(agreementId, command.dutyAmount());
 
     // (2) The scan is untrusted input: magic bytes, byte ceiling, and DECODED pixel bounds. Rejects
     // with 400 having written nothing and changed no state -- the request stays in PDF_GENERATED
@@ -372,6 +388,12 @@ public class StampIntakeService {
     // as well as by construction (a closed order is normally in some non-PDF_GENERATED state
     // anyway), so closure alone is sufficient to take dead work off an operator's screen.
     Map<UUID, ClosureState> closures = agreementService.closureStatesByAgreementId(agreementIds);
+    // The paid-for stamp value per row, from the frozen quote only -- never rent or deposit.
+    Map<UUID, StampQuoteRecord> quotes = new java.util.HashMap<>();
+    for (StampQuoteRecord quote : frozenQuotes.findByAgreementIdIn(agreementIds)) {
+      quotes.merge(
+          quote.agreementId(), quote, (a, b) -> a.createdAt().isAfter(b.createdAt()) ? a : b);
+    }
     Instant now = Instant.now();
     List<StampQueueEntry> entries = new ArrayList<>(waiting.size());
     for (SigningRequestPersistence.AwaitingStamp row : waiting) {
@@ -398,9 +420,20 @@ public class StampIntakeService {
               view.agreementStartDate(),
               row.awaitingSince(),
               Math.max(0L, Duration.between(row.awaitingSince(), now).toSeconds()),
-              payments.getOrDefault(row.agreementId(), PaymentState.UNPAID).name()));
+              payments.getOrDefault(row.agreementId(), PaymentState.UNPAID).name(),
+              paidStampValue(quotes.get(row.agreementId()), payments.get(row.agreementId())),
+              belowDutyChosen(quotes.get(row.agreementId()), payments.get(row.agreementId()))));
     }
     return entries;
+  }
+
+  /** The frozen stamp value, shown only once that order is actually paid. */
+  private static Long paidStampValue(StampQuoteRecord quote, PaymentState payment) {
+    return quote == null || payment != PaymentState.PAID ? null : quote.stampValueMinorUnits();
+  }
+
+  private static Boolean belowDutyChosen(StampQuoteRecord quote, PaymentState payment) {
+    return quote == null || payment != PaymentState.PAID ? null : quote.belowDuty();
   }
 
   /**
@@ -426,6 +459,18 @@ public class StampIntakeService {
     return value == null || value.isBlank() ? null : value.trim();
   }
 
+  private void requireStampValueCovered(UUID agreementId, java.math.BigDecimal dutyAmount) {
+    long certificateMinorUnits =
+        dutyAmount.movePointRight(2).setScale(0, java.math.RoundingMode.DOWN).longValueExact();
+    stampValueReference
+        .forAgreement(agreementId)
+        .filter(reference -> certificateMinorUnits < reference.minorUnits())
+        .ifPresent(
+            reference -> {
+              throw ConflictException.stampValueBelowPaid();
+            });
+  }
+
   private static String outcomeFor(ConflictException e) {
     return switch (e.kind()) {
       case STAMP_ALREADY_ATTACHED -> OUTCOME_ALREADY_STAMPED;
@@ -438,6 +483,8 @@ public class StampIntakeService {
       // would therefore have swallowed this case silently: an operator reading the trail must see
       // that the jurisdiction gate stopped this upload, not "some error".
       case JURISDICTION_UNSUPPORTED -> OUTCOME_JURISDICTION_UNSUPPORTED;
+      // A certificate bought for too little: its own trail entry, not "some error".
+      case STAMP_VALUE_BELOW_PAID -> OUTCOME_STAMP_VALUE_BELOW_PAID;
       default -> OUTCOME_ERROR;
     };
   }

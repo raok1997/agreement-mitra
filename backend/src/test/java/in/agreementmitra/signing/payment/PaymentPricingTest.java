@@ -8,58 +8,68 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
  * Pricing and the money representation.
  *
- * <p>Two things are pinned here. First, that the amount is a <b>configured</b> value reached
- * through a named operation, so introducing stamp duty later changes the calculation and nothing
- * else. Second, that money is <b>integer minor units</b> everywhere - the reflective check at the
- * bottom is deliberately blunt, because a {@code double} slipping into a monetary field is the kind
- * of mistake that produces off-by-one-paise failures nobody can reproduce.
+ * <p>Two things are pinned here. First, that the amount follows the <b>published pricing rule</b>
+ * (base fee plus the stamp value above the included amount) from configured figures. Second, that
+ * money is <b>integer minor units</b> everywhere - the reflective check at the bottom is
+ * deliberately blunt, because a {@code double} slipping into a monetary field is the kind of
+ * mistake that produces off-by-one-paise failures nobody can reproduce.
  */
 class PaymentPricingTest {
 
-  private static PaymentPricing pricingAt(long minorUnits, String currency) {
+  private static PaymentPricing pricing(Long base, Long included, String currency) {
     return new PaymentPricing(
         new PaymentProperties(
             PaymentGateMode.OPTIONAL,
-            new PaymentProperties.Amount(minorUnits, currency),
+            new PaymentProperties.Fee(base, included, currency),
             null,
             null));
   }
 
-  @Test
-  void pricingReturnsTheConfiguredMinorUnitsAndCurrency() {
-    Money price = pricingAt(49_900L, "INR").priceFor(UUID.randomUUID());
+  private static final PaymentPricing PUBLISHED = pricing(49_900L, 10_000L, "INR");
 
-    assertThat(price.minorUnits()).isEqualTo(49_900L);
-    assertThat(price.currency()).isEqualTo("INR");
+  @Test
+  void stampValueWithinTheIncludedAmountCostsTheBaseFee() {
+    // TERMS-OF-SERVICE section 7: INR 499 where the stamp value is INR 100 or less.
+    assertThat(PUBLISHED.price(10_000L).minorUnits()).isEqualTo(49_900L);
+    assertThat(PUBLISHED.price(4_000L).minorUnits()).isEqualTo(49_900L);
+    assertThat(PUBLISHED.price(0L).minorUnits()).isEqualTo(49_900L);
+    assertThat(PUBLISHED.price(10_000L).currency()).isEqualTo("INR");
   }
 
   @Test
-  void changingTheConfiguredPriceChangesTheAmountChargedWithNoOtherChange() {
-    // The whole point of the seam: the price is data, not code.
-    assertThat(pricingAt(120_000L, "INR").priceFor(UUID.randomUUID()).minorUnits())
-        .isEqualTo(120_000L);
-    assertThat(pricingAt(1L, "INR").priceFor(UUID.randomUUID()).minorUnits()).isEqualTo(1L);
+  void stampValueAboveTheIncludedAmountAddsTheExcess() {
+    // INR 840 stamp value: 499 + (840 - 100) = INR 1,239.
+    assertThat(PUBLISHED.price(84_000L).minorUnits()).isEqualTo(123_900L);
+    assertThat(PUBLISHED.price(10_001L).minorUnits()).isEqualTo(49_901L);
   }
 
   @Test
-  void anUnsetPriceFallsBackToTheSandboxDefaultRatherThanZero() {
-    // A zero or negative price would place an order the provider rejects, at the worst possible
-    // moment. Fall back to a sane positive value instead.
-    Money price = pricingAt(0L, null).priceFor(UUID.randomUUID());
+  void theRuleIsConfigurationNotCode() {
+    assertThat(pricing(60_000L, 0L, "INR").price(10_000L).minorUnits()).isEqualTo(70_000L);
+  }
 
-    assertThat(price.minorUnits()).isPositive();
-    assertThat(price.currency()).isEqualTo("INR");
+  @Test
+  void unsetFiguresFallBackToThePublishedRuleRatherThanZero() {
+    // A zero or negative base would place an order the provider rejects, at the worst moment.
+    PaymentPricing unset = pricing(0L, null, null);
+
+    assertThat(unset.price(84_000L).minorUnits()).isEqualTo(123_900L);
+    assertThat(unset.price(84_000L).currency()).isEqualTo("INR");
+  }
+
+  @Test
+  void aNegativeStampValueIsRefused() {
+    assertThatThrownBy(() -> PUBLISHED.price(-1L)).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void currencyIsNormalisedToUpperCase() {
-    assertThat(pricingAt(500L, "inr").priceFor(UUID.randomUUID()).currency()).isEqualTo("INR");
+    assertThat(pricing(500L, 0L, "inr").price(0L).currency()).isEqualTo("INR");
   }
 
   // --- money representation --------------------------------------------------

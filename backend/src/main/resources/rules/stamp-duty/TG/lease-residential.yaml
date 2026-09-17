@@ -1,0 +1,71 @@
+# TELANGANA -- residential lease stamp duty (change state-stamp-duty-quoting, design D2).
+#
+# *** EVERY FIGURE BELOW IS UNVERIFIED. Do not record a counselReview until counsel has checked each
+# *** one against a primary source. Charging on this rule is refused unless
+# *** rules.stamp-duty.allow-unreviewed=true (sandbox / founding-team beta only).
+#
+# Sources (researched 2026-09-16):
+#   [S1] Indian Stamp Act 1899 (Telangana), Schedule I-A Art. 31 -- legal publisher copy, undated:
+#        https://www.legitquest.com/act/indian-stamp-act-1899-telangana-amendment/A7B0   (SECONDARY)
+#   [S2] CAG Audit Report, Andhra Pradesh, Report 1 of 2015, ch. 4 (Art. 31 cited)       (SECONDARY)
+#   [S3] G.O.Ms.No.120 (2015), Art. 22 counterpart duty:
+#        https://naredcotelangana.com/pdf/Go/2015REV_MS120.pdf                             (PRIMARY copy)
+#   [S4] Registration (AP Amendment) Act 4 of 1999, s.17(1)(d) "leases of immovable property":
+#        https://indiankanoon.org/doc/181182830/                                            (PRIMARY copy)
+#   [S5] Registration fee revision in force 2021-09-02 (latest dated department revision found):
+#        https://registration.telangana.gov.in/FeesRevision.htm                             (PRIMARY)
+#
+# The Government Order that set the current Art. 31 rates was NOT found; effectiveFrom is the latest
+# dated department revision we could confirm [S5], not the Art. 31 order itself.
+# Instrument kind LEASE follows the rental base template's own reading; pending the counsel ruling
+# tracked as rental-deed-lease-vs-licence.
+extends: base
+id: TG-lease-residential
+state: TG
+instrumentKind: LEASE
+usage: RESIDENTIAL
+effectiveFrom: "2021-09-02"
+effectiveTo: null
+legalReference: "Indian Stamp Act 1899 (Telangana) Sch. I-A Art. 31 -- UNVERIFIED, secondary source [S1]"
+counselReview: null
+slabs:
+  # Term under one year: 0.4% of total rent [S1] MEDIUM.
+  #   CONFLICT: a secondary site (NoBrokerHood, 2026-02-25) states 0.5%.
+  #   CONFLICT (deposit): sources disagree whether a refundable security deposit is "money advanced".
+  #   It is INCLUDED here as the conservative reading (over-collection is refundable, an under-stamped
+  #   instrument is inadmissible). LOW.
+  - { minMonths: 1, maxMonths: 11, consideration: [TOTAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "0.4" }
+  # One to five years: 0.5% of average annual rent, residential [S1] MEDIUM. Deposit as above, LOW.
+  # Residential stops at 60 months, the rental template maximum. Longer terms are Unsupported.
+  - { minMonths: 12, maxMonths: 60, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "0.5" }
+# No minimum or maximum appears in the Art. 31 text [S1] MEDIUM.
+minimumAmount: null
+maximumAmount: null
+# Statute rounds in paise; whole-rupee UP is a deliberate conservative choice (never under-stamps). LOW.
+rounding: { mode: UP, unitRupees: 1 }
+# Art. 22 counterpart / duplicate: INR 50 [S3] MEDIUM (table read from extracted text).
+counterpartDuty: "50"
+# Every lease compulsorily registrable [S4] MEDIUM; carry-over into Telangana unconfirmed, LOW.
+registration: { requiredWhenTermMonthsOver: 0 }
+cases:
+  - name: "1-month boundary"
+    basis: { termMonths: 1, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 4000, plans: { stamp-paper: 4000, challan: 4000 } }
+  - name: "11-month boundary with deposit (spec scenario)"
+    basis: { termMonths: 11, monthlyRent: "15000", refundableDeposit: "45000" }
+    expect: { outcome: QUOTED, amountPaise: 84000, plans: { stamp-paper: UNPLANNABLE, challan: 84000 } }
+  - name: "11 months payable on paper (spec scenario)"
+    basis: { termMonths: 11, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 44000, plans: { stamp-paper: 45000, challan: 44000 } }
+  - name: "counterpart copy adds INR 50"
+    basis: { termMonths: 11, monthlyRent: "10000", counterparts: 2 }
+    expect: { outcome: QUOTED, amountPaise: 49000, plans: { stamp-paper: 50000, challan: 49000 } }
+  - name: "12-month boundary switches to average annual rent"
+    basis: { termMonths: 12, monthlyRent: "15000", refundableDeposit: "45000" }
+    expect: { outcome: QUOTED, amountPaise: 112500 }
+  - name: "60-month boundary with 5% annual escalation"
+    basis: { termMonths: 60, monthlyRent: "10000", refundableDeposit: "30000", escalationPercent: "5", escalationEveryMonths: 12 }
+    expect: { outcome: QUOTED, amountPaise: 81400 }
+  - name: "beyond the rental template range"
+    basis: { termMonths: 61, monthlyRent: "10000" }
+    expect: { outcome: UNSUPPORTED }

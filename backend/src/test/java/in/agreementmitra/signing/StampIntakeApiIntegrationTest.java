@@ -195,7 +195,9 @@ class StampIntakeApiIntegrationTest {
     form.add("agreementReference", reference);
     form.add("certificateNumber", certificateNumber);
     form.add("issueDate", "2026-01-15");
-    form.add("dutyAmount", "500.00");
+    form.add(
+        "dutyAmount",
+        "10000.00"); // covers the recomputed stamp duty of any fixture (state-stamp-duty-quoting)
     form.add("jurisdiction", "KA");
     form.add("descriptionOfDocument", "Rental agreement");
     form.add("purchasedBy", "AgreementMitra Operations");
@@ -640,6 +642,88 @@ class StampIntakeApiIntegrationTest {
 
     assertThat(second).isEqualTo(first);
     assertThat(signingRequestCount()).isEqualTo(afterFirst);
+  }
+
+  // --- stamp value reconciliation (state-stamp-duty-quoting) ------------------
+
+  /** Finalised, then PAID with a frozen stamp quote instead of the file's usual waiver. */
+  private UUID paidAgreementWithFrozenQuote(long dutyMinorUnits, long stampValueMinorUnits) {
+    UUID agreementId = agreementWithDraft();
+    Payments.reset(jdbc, agreementId);
+    in.agreementmitra.support.StampQuotes.freezePaid(
+        jdbc, agreementId, dutyMinorUnits, stampValueMinorUnits);
+    return agreementId;
+  }
+
+  private MultiValueMap<String, Object> intakeFormWithDuty(UUID agreementId, String dutyAmount) {
+    MultiValueMap<String, Object> form =
+        intakeForm(staffReferenceOf(agreementId), uniqueCertificate());
+    form.set("dutyAmount", dutyAmount);
+    return form;
+  }
+
+  @Test
+  void aCertificateBelowThePaidStampValueIsRefusedAndNothingIsStored() {
+    // Paid for a stamp value of INR 20,000; the certificate carries INR 10,000.
+    UUID agreementId = paidAgreementWithFrozenQuote(2_000_000L, 2_000_000L);
+
+    ResponseEntity<String> resp =
+        postIntake(staffToken, intakeFormWithDuty(agreementId, "10000.00"));
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(resp.getBody()).contains("stamp-value-below-paid");
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("PDF_GENERATED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT stamp_certificate_number FROM agreement WHERE id = ?",
+                String.class,
+                agreementId))
+        .isNull();
+  }
+
+  @Test
+  void aCertificateAtThePaidStampValueIsAccepted() {
+    UUID agreementId = paidAgreementWithFrozenQuote(2_000_000L, 2_000_000L);
+
+    ResponseEntity<String> resp =
+        postIntake(staffToken, intakeFormWithDuty(agreementId, "20000.00"));
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("STAMPED");
+  }
+
+  @Test
+  void anAcknowledgedBelowDutyChoiceIsHonouredNotOverridden() {
+    // Legal duty INR 1,300, but the customer chose and acknowledged a single INR 100 paper.
+    UUID agreementId = paidAgreementWithFrozenQuote(130_000L, 10_000L);
+
+    ResponseEntity<String> resp = postIntake(staffToken, intakeFormWithDuty(agreementId, "100.00"));
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+  }
+
+  @Test
+  void theQueueShowsThePaidStampValueAndABelowDutyChoiceButNoRentOrDeposit() {
+    UUID agreementId = paidAgreementWithFrozenQuote(130_000L, 10_000L);
+    String reference = staffReferenceOf(agreementId);
+
+    ResponseEntity<List> resp =
+        rest.exchange(
+            INTAKE_PATH + "/queue",
+            HttpMethod.GET,
+            new HttpEntity<>(bearer(staffToken)),
+            List.class);
+
+    Map<?, ?> row =
+        ((List<?>) resp.getBody())
+            .stream()
+                .map(r -> (Map<?, ?>) r)
+                .filter(r -> reference.equals(r.get("trackingReference")))
+                .findFirst()
+                .orElseThrow();
+    assertThat(((Number) row.get("paidStampValueMinorUnits")).longValue()).isEqualTo(10_000L);
+    assertThat(row.get("belowDutyChosen")).isEqualTo(true);
+    assertThat(row.toString()).doesNotContain("25000").doesNotContain("50000");
   }
 
   // --- staff console queue ----------------------------------------------------

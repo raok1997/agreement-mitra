@@ -27,6 +27,8 @@ import ContactConfirmation, {
   type PartyContact,
 } from "./ContactConfirmation.vue";
 import PaymentConfirmation from "./PaymentConfirmation.vue";
+import StampQuoteStep from "./StampQuoteStep.vue";
+import type { StampSelection } from "../api/stampQuote";
 import LegalDisclaimer from "../components/LegalDisclaimer.vue";
 import { fetchEligibleOrNone } from "../api/jurisdictions";
 import {
@@ -745,6 +747,9 @@ const payMessage = computed(() => {
 // it.
 
 const contactStep = ref(false);
+// The stamp duty step (state-stamp-duty-quoting): after contacts are confirmed and before checkout,
+// the customer sees the server's stamp quote and chooses a stamp value. Checkout needs that choice.
+const stampStep = ref(false);
 const contactParties = ref<PartyContact[]>([]);
 const contactSaving = ref(false);
 const contactError = ref<string | null>(null);
@@ -822,9 +827,8 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
       contactParties.value = parties.map((p) => ({ ...p }));
     }
     contactStep.value = false;
-    // Never throws - it reports its own failures through payError - so a payment problem can never
-    // be mislabelled here as a contact problem.
-    await finaliseAndPay();
+    // Next: the stamp duty step. Payment starts only once the customer has chosen a stamp value.
+    stampStep.value = true;
   } catch (e) {
     // The contacts freeze is keyed on PAYMENT, not on the order existing, so this is reachable only
     // once the money is settled. "Please try again" would be a lie there: the freeze is permanent
@@ -838,7 +842,14 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
   }
 }
 
-async function finaliseAndPay(): Promise<void> {
+/** The customer chose a stamp value: continue into finalise + payment with that choice. */
+async function onStampChosen(selection: StampSelection): Promise<void> {
+  stampStep.value = false;
+  // Never throws - it reports its own failures through payError.
+  await finaliseAndPay(selection);
+}
+
+async function finaliseAndPay(selection: StampSelection): Promise<void> {
   if (!savedId.value) return;
   paying.value = true;
   payError.value = null;
@@ -850,6 +861,7 @@ async function finaliseAndPay(): Promise<void> {
     const outcome = await payForAgreement(savedId.value, {
       name: "AgreementMitra",
       description: "Rental agreement",
+      selection,
     });
     payOutcome.value = outcome;
     if (outcome === "PAID") {
@@ -966,6 +978,13 @@ onBeforeUnmount(() => {
     :error="contactError"
     @confirm="confirmContacts"
     @cancel="contactStep = false"
+  />
+  <!-- The stamp duty step: the server's quote and the customer's stamp choice, before checkout. -->
+  <StampQuoteStep
+    v-else-if="stampStep && savedId"
+    :agreement-id="savedId"
+    @confirm="onStampChosen"
+    @cancel="stampStep = false"
   />
   <!-- Reached only from the server-confirmed PAID branch. This is the customer's last screen and
        the one place the reference and the recovery link are put in front of them. -->

@@ -1,0 +1,59 @@
+# TELANGANA -- commercial ("other than residential") lease stamp duty (state-stamp-duty-quoting, D2).
+#
+# *** EVERY FIGURE BELOW IS UNVERIFIED. See lease-residential.yaml for the source list [S1]-[S5] and
+# *** the counsel gate. Only the rate differences from residential are annotated here.
+extends: base
+id: TG-lease-commercial
+state: TG
+instrumentKind: LEASE
+usage: COMMERCIAL
+effectiveFrom: "2021-09-02"
+effectiveTo: null
+legalReference: "Indian Stamp Act 1899 (Telangana) Sch. I-A Art. 31 -- UNVERIFIED, secondary source [S1]"
+counselReview: null
+slabs:
+  # Under one year: 0.4% of total rent, no residential split [S1] MEDIUM. Deposit INCLUDED, LOW.
+  - { minMonths: 1, maxMonths: 11, consideration: [TOTAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "0.4" }
+  # One to five years, other than residential: 1% of AAR [S1] MEDIUM.
+  - { minMonths: 12, maxMonths: 60, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "1" }
+  # Five to ten years, other than residential: 2% of AAR [S1] MEDIUM.
+  - { minMonths: 61, maxMonths: 120, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "2" }
+  # Ten to twenty years: 6% of AAR [S1] MEDIUM. Stops at 240 months, the commercial template maximum;
+  # 20-30 years (15%) and over 30 years (3% of market value) are not reachable from the template.
+  - { minMonths: 121, maxMonths: 240, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "6" }
+minimumAmount: null
+maximumAmount: null
+rounding: { mode: UP, unitRupees: 1 }
+counterpartDuty: "50"
+registration: { requiredWhenTermMonthsOver: 0 }
+cases:
+  - name: "1-month boundary"
+    basis: { termMonths: 1, monthlyRent: "50000" }
+    expect: { outcome: QUOTED, amountPaise: 20000, plans: { stamp-paper: 20000, challan: 20000 } }
+  - name: "11-month boundary"
+    basis: { termMonths: 11, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 340000, plans: { stamp-paper: UNPLANNABLE, challan: 340000 } }
+  - name: "12-month boundary"
+    basis: { termMonths: 12, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 900000 }
+  - name: "36 months (spec scenario)"
+    basis: { termMonths: 36, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 900000 }
+  - name: "60-month boundary"
+    basis: { termMonths: 60, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 900000 }
+  - name: "61-month boundary"
+    basis: { termMonths: 61, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 1800000 }
+  - name: "120-month boundary"
+    basis: { termMonths: 120, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 1800000 }
+  - name: "121-month boundary"
+    basis: { termMonths: 121, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 5400000 }
+  - name: "240-month boundary"
+    basis: { termMonths: 240, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 5400000 }
+  - name: "beyond the commercial template range"
+    basis: { termMonths: 241, monthlyRent: "50000" }
+    expect: { outcome: UNSUPPORTED }

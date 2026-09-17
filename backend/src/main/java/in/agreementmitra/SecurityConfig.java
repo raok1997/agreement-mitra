@@ -268,6 +268,12 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/payment")
                     .permitAll()
+                    // Stamp quote before payment (state-stamp-duty-quoting). Same posture as the
+                    // payment progress read above: permitted here, owner-scoped in the handler
+                    // with the same 404 for "not yours" and "unknown", so no amount is disclosed to
+                    // a caller who may not see the payment. Read-only; carries no party data.
+                    .requestMatchers(HttpMethod.GET, "/api/agreements/*/stamp-quote")
+                    .permitAll()
                     // Draft upload - scoped to the exact sub-path (NOT /api/agreements/**) so the
                     // posture stays fail-closed. Unauthenticated today; ownership authorization +
                     // rate-limiting on upload/overwrite are deferred to the signing-auth change.

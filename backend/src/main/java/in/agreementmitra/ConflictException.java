@@ -63,7 +63,12 @@ public class ConflictException extends RuntimeException {
      * A contacts change was attempted on an agreement whose payment is already settled (paid or
      * waived), so the details are frozen.
      */
-    CONTACTS_FROZEN
+    CONTACTS_FROZEN,
+    /**
+     * An e-stamp certificate's duty amount is below the stamp value the agreement was paid for (or,
+     * without a frozen quote, below its legal duty). Refused at intake before anything is stored.
+     */
+    STAMP_VALUE_BELOW_PAID
   }
 
   private final Kind kind;
@@ -267,6 +272,15 @@ public class ConflictException extends RuntimeException {
   public static ConflictException contactsFrozen() {
     return new ConflictException(
         Kind.CONTACTS_FROZEN, "contacts frozen: payment already settled for this agreement");
+  }
+
+  /**
+   * The certificate carries less stamp value than the agreement was paid for. The message names no
+   * amount; the operator already holds both figures.
+   */
+  public static ConflictException stampValueBelowPaid() {
+    return new ConflictException(
+        Kind.STAMP_VALUE_BELOW_PAID, "certificate duty amount is below the paid-for stamp value");
   }
 
   public Kind kind() {

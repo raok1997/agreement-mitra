@@ -157,7 +157,9 @@ class ContactGateIntegrationTest {
 
   private ResponseEntity<String> startCheckout(UUID agreementId) {
     return rest.postForEntity(
-        "/api/agreements/" + agreementId + "/payment/order", null, String.class);
+        "/api/agreements/" + agreementId + "/payment/order",
+        in.agreementmitra.support.StampChoices.checkoutEntity(rest, agreementId, null),
+        String.class);
   }
 
   @SuppressWarnings("unchecked")

@@ -95,3 +95,10 @@ auth:
   google:
     client-id: "test-client"
     client-secret: "dummy"
+
+# The shipped Telangana stamp duty rules carry no counsel review yet. Fulfilment-path fixtures need TG
+# to stay chargeable, exactly as local/beta deployments run; the refusal when this is false is covered
+# explicitly by the jurisdiction gate tests, which override it.
+rules:
+  stamp-duty:
+    allow-unreviewed: true

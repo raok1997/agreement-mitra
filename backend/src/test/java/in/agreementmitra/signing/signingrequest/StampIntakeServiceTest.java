@@ -24,6 +24,8 @@ import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
 import in.agreementmitra.signing.agreement.StaffPartyView;
 import in.agreementmitra.signing.agreement.StampInfo;
+import in.agreementmitra.signing.agreement.StampQuoteRecordRepository;
+import in.agreementmitra.signing.agreement.StampValueReference;
 import in.agreementmitra.signing.api.StampIntakeResponse;
 import in.agreementmitra.signing.api.StampQueueEntry;
 import in.agreementmitra.signing.payment.PaymentGate;
@@ -79,6 +81,11 @@ class StampIntakeServiceTest {
 
   @Mock private SigningRequestService signingRequestService;
 
+  // Empty by default (Mockito returns Optional.empty()): no reference value, so the stamp-value
+  // check is inert for the tests about other preconditions.
+  @Mock private StampValueReference stampValueReference;
+  @Mock private StampQuoteRecordRepository frozenQuotes;
+
   private final CertificateScanValidator scanValidator = new CertificateScanValidator();
 
   private StampIntakeService service() {
@@ -91,6 +98,8 @@ class StampIntakeServiceTest {
         auditor,
         paymentGate,
         jurisdiction,
+        stampValueReference,
+        frozenQuotes,
         signingRequestService);
   }
 
@@ -174,6 +183,45 @@ class StampIntakeServiceTest {
     assertThat(response.trackingReference()).isEqualTo(REFERENCE);
     assertThat(response.propertyCity()).isEqualTo("Bengaluru");
     assertThat(response.certificateNumberRedacted()).isEqualTo("***234X").doesNotContain("IN-KA");
+  }
+
+  // --- stamp value reconciliation (state-stamp-duty-quoting, design D8) --------
+
+  @Test
+  void aCertificateBelowThePaidStampValueIsRefusedBeforeAnythingIsWritten() {
+    UUID agreementId = UUID.randomUUID();
+    UUID staffId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    stubAwaitingStamp(agreementId);
+    // Paid for INR 840; the certificate in command() carries INR 500.
+    when(stampValueReference.forAgreement(agreementId))
+        .thenReturn(Optional.of(new StampValueReference.Reference(84_000L, true)));
+
+    assertThatThrownBy(() -> service().attach(staffId, command(TestImages.certificateScan())))
+        .isInstanceOf(ConflictException.class)
+        .extracting(e -> ((ConflictException) e).kind())
+        .isEqualTo(ConflictException.Kind.STAMP_VALUE_BELOW_PAID);
+
+    verifyNoInteractions(stampProvider);
+    verify(blobStore, Mockito.never()).put(any(), any(), any());
+    verify(persistence, Mockito.never()).markStamped(any(), any(), any());
+    verify(auditor).record(staffId, agreementId, REFERENCE, "REFUSED_STAMP_VALUE");
+  }
+
+  @Test
+  void aCertificateAtThePaidStampValueProceeds() {
+    UUID agreementId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    UUID signingRequestId = stubAwaitingStamp(agreementId);
+    stubDraft(agreementId);
+    when(stampProvider.attach(any(), any(), any())).thenReturn(successfulAttach());
+    // An acknowledged below-duty choice of INR 500 is honoured, not overridden by the legal duty.
+    when(stampValueReference.forAgreement(agreementId))
+        .thenReturn(Optional.of(new StampValueReference.Reference(50_000L, true)));
+
+    service().attach(UUID.randomUUID(), command(TestImages.certificateScan()));
+
+    verify(persistence).markStamped(eq(signingRequestId), eq(agreementId), any());
   }
 
   // --- optional signing kick-off ---------------------------------------------

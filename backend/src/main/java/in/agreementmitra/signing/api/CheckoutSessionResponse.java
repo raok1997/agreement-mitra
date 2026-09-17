@@ -26,6 +26,9 @@ import java.util.UUID;
  * @param orderStatus our order status: {@code CREATED} / {@code PAID} / {@code FAILED} / {@code
  *     EXPIRED}
  * @param paymentState the agreement's payment state: {@code UNPAID} / {@code PAID} / {@code WAIVED}
+ * @param dutyMinorUnits the legal stamp duty frozen with the order, or null for an order placed
+ *     before stamp quoting existed
+ * @param stampValueMinorUnits the stamp value the customer chose, frozen with the order, or null
  */
 public record CheckoutSessionResponse(
     UUID agreementId,
@@ -34,4 +37,6 @@ public record CheckoutSessionResponse(
     long amountMinorUnits,
     String currency,
     String orderStatus,
-    String paymentState) {}
+    String paymentState,
+    Long dutyMinorUnits,
+    Long stampValueMinorUnits) {}

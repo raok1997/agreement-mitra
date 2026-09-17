@@ -18,10 +18,14 @@ import java.util.UUID;
  * @param orderStatus the latest order's status, or null when payment was never started
  * @param amountMinorUnits the latest order's amount in paise, or null when there is no order
  * @param currency ISO-4217 code, or null when there is no order
+ * @param dutyMinorUnits the latest order's frozen legal stamp duty, or null when it has none
+ * @param stampValueMinorUnits the latest order's frozen chosen stamp value, or null
  */
 public record PaymentProgressResponse(
     UUID agreementId,
     String paymentState,
     String orderStatus,
     Long amountMinorUnits,
-    String currency) {}
+    String currency,
+    Long dutyMinorUnits,
+    Long stampValueMinorUnits) {}

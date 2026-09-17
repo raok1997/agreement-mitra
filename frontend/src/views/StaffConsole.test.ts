@@ -447,6 +447,28 @@ describe("StaffConsole and the payment gate", () => {
     ).toBeUndefined();
   });
 
+  it("shows the paid-for stamp value and marks a customer's below-duty choice", async () => {
+    const wrapper = await mountWith([
+      entry({
+        paymentState: "PAID",
+        paidStampValueMinorUnits: 10000,
+        belowDutyChosen: true,
+      }),
+    ]);
+
+    const badge = wrapper.get('[data-testid="queue-stamp-value-ag-1"]').text();
+    expect(badge).toContain("INR 100.00");
+    expect(badge).toContain("below duty");
+  });
+
+  it("shows no stamp value when there is no paid frozen quote", async () => {
+    const wrapper = await mountWith([entry({ paymentState: "WAIVED" })]);
+
+    expect(
+      wrapper.find('[data-testid="queue-stamp-value-ag-1"]').exists(),
+    ).toBe(false);
+  });
+
   it("treats a staff waiver as good as paid - it is the operational escape hatch", async () => {
     const wrapper = await mountWith([entry({ paymentState: "WAIVED" })]);
 

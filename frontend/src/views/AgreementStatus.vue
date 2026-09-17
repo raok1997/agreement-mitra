@@ -17,6 +17,12 @@ import {
   type SigningProgress,
 } from "../api/signingProgress";
 import { usePolling, type PollVerdict } from "../composables/usePolling";
+import {
+  getStampQuote,
+  selectionFor,
+  type StampSelection,
+} from "../api/stampQuote";
+import StampQuoteStep from "./StampQuoteStep.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
 
 // The landing behind the emailed link. It answers "where has my agreement got to?" from three
@@ -238,13 +244,42 @@ onMounted(async () => {
 
 const paying = ref(false);
 const payError = ref<string | null>(null);
+// Shown when there is no order to resume, so the customer must choose a stamp value first.
+const stampStep = ref(false);
+
+/**
+ * "Complete payment". An order that already exists carries its frozen stamp choice, so it resumes
+ * straight away; without one, the customer chooses a stamp value in the stamp duty step first.
+ */
 async function pay(): Promise<void> {
+  payError.value = null;
+  try {
+    const quote = await getStampQuote(props.agreement.id);
+    const frozen = quote.frozen ? quote.options[0] : undefined;
+    if (!frozen) {
+      stampStep.value = true;
+      return;
+    }
+    await payWith(selectionFor(quote, frozen));
+  } catch {
+    payError.value =
+      "Payment cannot be started yet. Contact support quoting your reference.";
+  }
+}
+
+async function onStampChosen(selection: StampSelection): Promise<void> {
+  stampStep.value = false;
+  await payWith(selection);
+}
+
+async function payWith(selection: StampSelection): Promise<void> {
   paying.value = true;
   payError.value = null;
   try {
     await payForAgreement(props.agreement.id, {
       name: "AgreementMitra",
       description: `Agreement ${props.agreement.trackingNumber}`,
+      selection,
     });
   } catch {
     payError.value =
@@ -423,6 +458,14 @@ const CONDITION_MARK: Record<Condition, string> = {
             <p v-if="payError" class="mt-1 text-xs text-red-600">
               {{ payError }}
             </p>
+            <StampQuoteStep
+              v-if="stampStep"
+              class="mt-3"
+              :agreement-id="agreement.id"
+              :busy="paying"
+              @confirm="onStampChosen"
+              @cancel="stampStep = false"
+            />
           </template>
           <template v-if="m.key === 'completed' && m.condition === 'done'">
             <button

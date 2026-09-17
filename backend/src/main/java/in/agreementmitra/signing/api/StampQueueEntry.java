@@ -31,6 +31,11 @@ import java.util.UUID;
  *
  * <p>{@code paymentState} is {@code null} until a payment module exists (design D8) - the field is
  * present so the console does not need reshaping when the payment gate lands.
+ *
+ * <p>{@code paidStampValueMinorUnits} / {@code belowDutyChosen} come from the stamp quote frozen
+ * with a <b>paid</b> order (state-stamp-duty-quoting): the certificate staff buy must carry at
+ * least that value, and a below-duty value was the customer's acknowledged choice. Both are {@code
+ * null} when there is no paid order with a frozen quote. Neither discloses rent or deposit.
  */
 public record StampQueueEntry(
     UUID agreementId,
@@ -42,7 +47,9 @@ public record StampQueueEntry(
     LocalDate agreementStartDate,
     Instant awaitingSince,
     long waitingSeconds,
-    String paymentState) {
+    String paymentState,
+    Long paidStampValueMinorUnits,
+    Boolean belowDutyChosen) {
 
   /** Defensive copy: the party list is personal data and the row must stay immutable. */
   public StampQueueEntry {

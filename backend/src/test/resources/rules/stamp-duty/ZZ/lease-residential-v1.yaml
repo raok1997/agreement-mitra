@@ -1,0 +1,38 @@
+# FICTIONAL test fixture: the earlier version of ZZ-lease-residential (lower slab-1 rate), so
+# selection by execution date is observable.
+extends: base
+id: ZZ-lease-residential-v1
+state: ZZ
+instrumentKind: LEASE
+usage: RESIDENTIAL
+effectiveFrom: "2024-04-01"
+effectiveTo: "2025-03-31"
+legalReference: "Fictional Stamp Act, Article 99 (test fixture, pre-amendment)"
+params: { depositInterestRatePercent: "10" }
+slabs:
+  - { minMonths: 1, maxMonths: 12, consideration: [TOTAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "0.3" }
+  - { minMonths: 13, maxMonths: 60, consideration: [AVERAGE_ANNUAL_RENT, DEPOSIT_NOTIONAL_INTEREST, PREMIUM], ratePercent: "0.5" }
+  - { minMonths: 61, maxMonths: 120, fixedAmount: "5000" }
+minimumAmount: "100"
+maximumAmount: "20000"
+surcharges: [ { name: "ZZ infrastructure cess", percentOfDuty: "10" } ]
+counterpartDuty: "50"
+cases:
+  - name: "1-month boundary"
+    basis: { termMonths: 1, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 11000 }
+  - name: "12-month boundary at the pre-amendment rate"
+    basis: { termMonths: 12, monthlyRent: "10000", refundableDeposit: "30000", executionDate: "2025-01-10" }
+    expect: { outcome: QUOTED, amountPaise: 49500, plans: { physical: 50000, e-stamp: 49500 } }
+  - name: "13-month boundary"
+    basis: { termMonths: 13, monthlyRent: "10000", refundableDeposit: "50000" }
+    expect: { outcome: QUOTED, amountPaise: 69000 }
+  - name: "60-month boundary"
+    basis: { termMonths: 60, monthlyRent: "10000", escalationPercent: "10", escalationEveryMonths: 12 }
+    expect: { outcome: QUOTED, amountPaise: 80600 }
+  - name: "61-month boundary"
+    basis: { termMonths: 61, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 550000 }
+  - name: "120-month boundary"
+    basis: { termMonths: 120, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 550000 }

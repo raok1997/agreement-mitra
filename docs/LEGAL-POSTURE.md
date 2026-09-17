@@ -153,11 +153,30 @@ can read the state, rent and term from it later.
    This is what lets step 2 be an estimate at all — the terms guarantee no second bill, so an
    under-estimate has to be absorbed and an over-estimate has to come back.
 
-Step 0 has landed. Step 1 is worth doing regardless, being the difference between a
-constant and a stated rule. Steps 2 and 3 must land before the first external customer, since
-until they do we absorb every rupee of duty above INR 100 on every order.
+Steps 0-2 have landed for Telangana through `state-stamp-duty-quoting` (with the calculator from
+`stamp-duty-base-calculator`); the shape differs slightly from the sketch above:
 
-_Status: not started._
+- **Pricing** is `payment.fee.base-minor-units` (49900) + max(0, **chosen stamp value** -
+  `payment.fee.included-stamp-value-minor-units` (10000)). The input is the stamp value the
+  customer chose from the server-computed options, not the raw legal duty: the recommended option
+  is the cheapest purchasable value at or above the duty, and a customer may choose a single stamp
+  paper below the duty after an audited acknowledgement of the under-stamping consequence.
+- **The quote is shown before payment** (`GET /api/agreements/{id}/stamp-quote` and the checkout
+  stamp step) and **frozen with the order** (`stamp_quote`).
+- **The allowlist is gone.** Eligibility comes from the duty rules. A rule may be charged only with
+  a counsel review bound to its content hash, or when `rules.stamp-duty.allow-unreviewed=true`
+  (sandbox/beta only, logged as a WARN naming every unreviewed rule).
+- **The Telangana figures are UNVERIFIED.** The Art. 31 rates come from a secondary copy of the
+  Schedule, the treatment of the security deposit is an open conflict (included, conservatively),
+  and registration is reported as compulsory for every term. Each is marked in the rule file; none
+  may be charged to an external customer until counsel review is recorded.
+- The free-text `stampDutyAmount` retirement remains with `stamp-duty-amount-from-certificate`.
+
+Step 3 is **partly** done: intake refuses a certificate below the paid-for stamp value (or, without a
+frozen quote, below the recomputed duty). The refund/absorb half -- when the certificate costs less
+or more than what was charged -- is still open and must land before the first external customer.
+
+_Status: steps 0-2 implemented for TG (pending counsel review of the figures); step 3 partial._
 
 ### 2. Put the disclaimer where the product is, and write terms of service
 

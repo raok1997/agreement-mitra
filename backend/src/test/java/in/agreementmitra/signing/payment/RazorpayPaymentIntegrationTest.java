@@ -216,7 +216,7 @@ class RazorpayPaymentIntegrationTest {
     return rest.exchange(
         "/api/agreements/" + agreementId + "/payment/order",
         HttpMethod.POST,
-        new HttpEntity<>(headers),
+        in.agreementmitra.support.StampChoices.checkoutEntity(rest, agreementId, headers),
         String.class);
   }
 

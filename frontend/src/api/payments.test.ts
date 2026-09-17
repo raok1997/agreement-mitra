@@ -119,6 +119,23 @@ describe("payment API client", () => {
     expect(init.body).toBeUndefined();
   });
 
+  it("sends only the stamp choice, never an amount, when one is given", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(SESSION));
+
+    await startCheckout(AGREEMENT_ID, {
+      stampValueMinorUnits: 10000,
+      underStampAcknowledgement: { warningVersion: "under-stamp-v1" },
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(String(init.body));
+    expect(Object.keys(body).sort()).toEqual([
+      "stampValueMinorUnits",
+      "underStampAcknowledgement",
+    ]);
+    expect(JSON.stringify(body)).not.toMatch(/amount|total|currency|discount/i);
+  });
+
   it("surfaces the HTTP status so a 404 can be told apart from a server error", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({}, 404));
 

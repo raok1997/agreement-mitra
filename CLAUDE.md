@@ -56,7 +56,11 @@ not.
 - `documents` — template → PDF rendering (headless Chromium via **Gotenberg**, an
   HTTP service; the app ships no browser binary).
 - `identity` — KYC / DigiLocker (future feature; stub for now).
-- `rules` — multi-state legal-logic rules engine (future; Drools, JVM-native).
+- `rules` — multi-state legal logic: the stamp duty calculator (typed evaluator over per-state
+  YAML rules + stamp paper catalogs, not Drools — `stamp-duty-base-calculator` D1). It is also
+  the **only source of paid-fulfilment eligibility** (no allowlist): a state is chargeable when its
+  rule carries a counsel review matching its hash, or `rules.stamp-duty.allow-unreviewed=true`
+  (default false; local/test profiles set it for the unreviewed TG rules).
 
 ## Conventions
 
