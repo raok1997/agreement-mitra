@@ -170,7 +170,9 @@ Steps 0-2 have landed for Telangana through `state-stamp-duty-quoting` (with the
   Schedule, the treatment of the security deposit is an open conflict (included, conservatively),
   and registration is reported as compulsory for every term. Each is marked in the rule file; none
   may be charged to an external customer until counsel review is recorded.
-- The free-text `stampDutyAmount` retirement remains with `stamp-duty-amount-from-certificate`.
+- The free-text `stampDutyAmount` is retired by `stamp-duty-amount-from-certificate`: the customer is
+  no longer asked for it, a submitted value is discarded, and the stamped instrument states the
+  attached certificate's duty amount instead.
 
 Step 3 is **partly** done: intake refuses a certificate below the paid-for stamp value (or, without a
 frozen quote, below the recomputed duty). The refund/absorb half -- when the certificate costs less

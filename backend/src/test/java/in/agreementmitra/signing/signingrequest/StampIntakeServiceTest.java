@@ -15,9 +15,11 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampFailedException;
+import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
+import in.agreementmitra.signing.agreement.AgreementDocumentService;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
@@ -86,6 +88,10 @@ class StampIntakeServiceTest {
   @Mock private StampValueReference stampValueReference;
   @Mock private StampQuoteRecordRepository frozenQuotes;
 
+  // Empty by default (Mockito returns Optional.empty()): no re-render, so the stored draft is
+  // stamped exactly as before. The re-render path has its own tests below.
+  @Mock private AgreementDocumentService agreementDocuments;
+
   private final CertificateScanValidator scanValidator = new CertificateScanValidator();
 
   private StampIntakeService service() {
@@ -100,6 +106,7 @@ class StampIntakeServiceTest {
         jurisdiction,
         stampValueReference,
         frozenQuotes,
+        agreementDocuments,
         signingRequestService);
   }
 
@@ -222,6 +229,52 @@ class StampIntakeServiceTest {
     service().attach(UUID.randomUUID(), command(TestImages.certificateScan()));
 
     verify(persistence).markStamped(eq(signingRequestId), eq(agreementId), any());
+  }
+
+  // --- the instrument states the certificate's duty (stamp-duty-amount-from-certificate) ----
+
+  @Test
+  void aReRenderedInstrumentIsWhatGetsStampedInsteadOfTheStoredDraft() {
+    UUID agreementId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    UUID signingRequestId = stubAwaitingStamp(agreementId);
+    when(agreementService.draftPdfKey(agreementId))
+        .thenReturn(Optional.of("drafts/" + agreementId + ".pdf"));
+    byte[] reRendered = "%PDF-1.4 re-rendered with duty".getBytes();
+    // The certificate's own duty amount (command() carries INR 500.00) is what the deed states.
+    when(agreementDocuments.renderForStamp(agreementId, new BigDecimal("500.00")))
+        .thenReturn(Optional.of(reRendered));
+    when(stampProvider.attach(any(), any(), any())).thenReturn(successfulAttach());
+
+    service().attach(UUID.randomUUID(), command(TestImages.certificateScan()));
+
+    verify(stampProvider).attach(eq(reRendered), any(), any());
+    verify(blobStore, never()).get("drafts/" + agreementId + ".pdf");
+    verify(persistence).markStamped(eq(signingRequestId), eq(agreementId), any());
+  }
+
+  @Test
+  void aRendererOutageIsRetryableAndSpendsNothing() {
+    UUID agreementId = UUID.randomUUID();
+    UUID staffId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    stubAwaitingStamp(agreementId);
+    when(agreementService.draftPdfKey(agreementId))
+        .thenReturn(Optional.of("drafts/" + agreementId + ".pdf"));
+    when(agreementDocuments.renderForStamp(eq(agreementId), any()))
+        .thenThrow(new StampRenderUnavailableException("renderer down", null));
+
+    assertThatThrownBy(() -> service().attach(staffId, command(TestImages.certificateScan())))
+        .isInstanceOf(StampRenderUnavailableException.class);
+
+    // NOT the terminal STAMP_FAILED branch: nothing composited, stored, transitioned, or closed, so
+    // the same certificate can be uploaded again once the renderer is back.
+    verifyNoInteractions(stampProvider);
+    verify(blobStore, never()).put(any(), any(), any());
+    verify(persistence, never()).markStamped(any(), any(), any());
+    verify(persistence, never()).markStampFailed(any());
+    verify(agreementService, never()).close(any(), any());
+    verify(auditor).record(staffId, agreementId, REFERENCE, "REJECTED_RENDER_UNAVAILABLE");
   }
 
   // --- optional signing kick-off ---------------------------------------------

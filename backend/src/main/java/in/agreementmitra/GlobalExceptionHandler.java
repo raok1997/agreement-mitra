@@ -72,6 +72,8 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_PAYLOAD_TOO_LARGE =
       "urn:agreementmitra:problem:payload-too-large";
   private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
+  private static final String TYPE_STAMP_RENDER_UNAVAILABLE =
+      "urn:agreementmitra:problem:stamp-render-unavailable";
   private static final String TYPE_DOCUMENT_DATA_INVALID =
       "urn:agreementmitra:problem:document-data-invalid";
 
@@ -263,6 +265,21 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         TYPE_STAMP_FAILED,
         "Stamping failed",
         "The uploaded draft could not be stamped.");
+  }
+
+  @ExceptionHandler(StampRenderUnavailableException.class)
+  ProblemDetail handleStampRenderUnavailable(StampRenderUnavailableException ex) {
+    // 503: the renderer was unavailable while re-rendering the instrument at stamp intake. Nothing
+    // was
+    // written and the certificate is unused, so the same upload can simply be retried. Its own
+    // type,
+    // not stamp-failed: that one is terminal and this one is not. Constant detail, never the cause.
+    return problem(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        TYPE_STAMP_RENDER_UNAVAILABLE,
+        "Document renderer unavailable",
+        "The agreement could not be prepared for stamping right now. Nothing was saved; retry the"
+            + " upload with the same certificate.");
   }
 
   @ExceptionHandler(DocumentDataInvalidException.class)

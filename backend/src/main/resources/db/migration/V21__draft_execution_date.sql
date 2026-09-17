@@ -1,0 +1,14 @@
+-- V21: the execution date the stored draft printed (change stamp-duty-amount-from-certificate, D4).
+--
+-- WHY. Stamp intake re-renders the deed with the attached certificate's duty amount, so the executed
+-- instrument states it instead of "[ Stamp duty paid (INR) ]". A re-render must not move anything
+-- else, and when agreementDate was left blank the draft printed the date it was rendered - which a
+-- later render would silently replace with the intake date. Recording the printed date fixes that.
+--
+-- MEANING. Set together with the template pin at generate-as-draft; cleared whenever a draft is
+-- stored (so an uploaded draft leaves it NULL) and when the pin is cleared. Non-NULL therefore means
+-- "the stored draft is a render, and this is its execution date". Existing rows stay NULL and are
+-- stamped exactly as before (composite onto the stored draft).
+--
+-- NO PERSONAL DATA. A date only.
+ALTER TABLE agreement ADD COLUMN draft_execution_date DATE;

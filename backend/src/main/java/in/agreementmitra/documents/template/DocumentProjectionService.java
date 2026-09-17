@@ -11,6 +11,7 @@ import in.agreementmitra.documents.api.EffectiveTemplateIdentity;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -120,21 +121,40 @@ class DocumentProjectionService implements DocumentProjectionApi {
    */
   @Override
   public DocumentProjectionResult generate(DocumentProjectionRequest request) {
+    return generate(request, Map.of());
+  }
+
+  /**
+   * Generate with server-supplied values for the system-sourced fields. The result reports the
+   * execution date the document printed, so a caller can re-render the same document later without
+   * the date moving (stamp intake does exactly that).
+   */
+  @Override
+  public DocumentProjectionResult generate(
+      DocumentProjectionRequest request, Map<String, Object> systemValues) {
     EffectiveTemplate effective = resolve(request.dimensions());
     // The tracking number (request.documentReference) + platform URL render as the screen-only body
     // provenance line (for the on-screen preview) AND as the per-page PDF footer furniture. Both
     // are
     // system-owned, so the effective-template identity (reproducibility pin) is unaffected.
     String reference = referenceFor(request);
-    String html =
-        compile(
+    Map<String, Object> coerced =
+        SubmittedDataValidator.validateAndCoerce(
             effective,
-            request.data(),
-            request.activeSections(),
-            reference,
+            withSystemValues(effective, request.data(), systemValues),
             ProjectionMode.GENERATE);
+    String executionDate = resolveExecutionDate(coerced);
+    String html =
+        compiler.compile(
+            effective,
+            coerced,
+            executionDate,
+            activeSet(request.activeSections()),
+            reference,
+            platformUrl,
+            screenNotice);
     byte[] pdf = htmlPdfRenderer.toPdf(html, reference);
-    return new DocumentProjectionResult(pdf, identityOf(effective));
+    return new DocumentProjectionResult(pdf, identityOf(effective), executionDate);
   }
 
   /**
@@ -158,7 +178,9 @@ class DocumentProjectionService implements DocumentProjectionApi {
       List<String> activeSections,
       String reference,
       ProjectionMode mode) {
-    Map<String, Object> coerced = SubmittedDataValidator.validateAndCoerce(effective, data, mode);
+    Map<String, Object> coerced =
+        SubmittedDataValidator.validateAndCoerce(
+            effective, withSystemValues(effective, data, Map.of()), mode);
     // Resolve the execution date once here (design D3) and pass the concrete value into the pure
     // compiler; preview, previewPdf, and generate all funnel through this path, so they share the
     // same resolved date and stay in parity.
@@ -166,11 +188,44 @@ class DocumentProjectionService implements DocumentProjectionApi {
     // The active set gates optional sections in the one compiler both faces share (parity by
     // construction). A null list is tolerated (treated as empty); titles matching no section are
     // ignored by the compiler.
-    Set<String> active = activeSections == null ? Set.of() : new HashSet<>(activeSections);
     // The provenance line (reference + platform URL) is compiled body content shared by both faces,
     // so preview and PDF stay byte-for-byte in parity.
     return compiler.compile(
-        effective, coerced, executionDate, active, reference, platformUrl, screenNotice);
+        effective,
+        coerced,
+        executionDate,
+        activeSet(activeSections),
+        reference,
+        platformUrl,
+        screenNotice);
+  }
+
+  private static Set<String> activeSet(List<String> activeSections) {
+    return activeSections == null ? Set.of() : new HashSet<>(activeSections);
+  }
+
+  /**
+   * The data map the validator sees: the submitted map with every <b>system-sourced</b> key removed
+   * (a client can never put a value there, not even an invalid one that would raise an error), then
+   * the server-supplied {@code systemValues} for those keys only. Everything else is left as
+   * submitted.
+   */
+  static Map<String, Object> withSystemValues(
+      EffectiveTemplate effective,
+      Map<String, Object> submitted,
+      Map<String, Object> systemValues) {
+    Map<String, Object> data =
+        submitted == null ? new LinkedHashMap<>() : new LinkedHashMap<>(submitted);
+    for (Field field : effective.template().fields()) {
+      if (!field.systemSourced()) {
+        continue;
+      }
+      data.remove(field.key());
+      if (systemValues != null && systemValues.get(field.key()) != null) {
+        data.put(field.key(), systemValues.get(field.key()));
+      }
+    }
+    return data;
   }
 
   /**

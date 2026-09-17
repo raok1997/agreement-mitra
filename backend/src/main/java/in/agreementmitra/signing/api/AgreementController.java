@@ -200,7 +200,7 @@ public class AgreementController {
         agreementDocumentService.renderForDraft(id); // 404 if the agreement is unknown
     draftService.attachDraft(id, result.pdf()); // validate -> freeze-check (409) -> store -> attach
     agreementDocumentService.pinEffectiveTemplate(
-        id, result.identity()); // pin after a stored draft
+        id, result.identity(), result.executionDate()); // pin after a stored draft
     return ResponseEntity.ok(Map.of("agreementId", id));
   }
 

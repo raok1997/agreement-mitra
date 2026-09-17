@@ -9,11 +9,20 @@ meta:
   # already generated pin `state:TG: 1` and were rendered from the OPT-IN content; leaving the
   # version at 1 would make two materially different Telangana deeds report the same authored
   # version, and the pin (Agreement.pinEffectiveTemplate) exists precisely to keep that answerable.
-  version: 2
+  # v3 (2026-09-17): stampDutyAmount became system-sourced (filled from the attached e-stamp
+  # certificate at stamp intake). A v2 deed could print the blank amount row; a v3 deed cannot.
+  version: 3
 
 ops:
+  # SYSTEM-SOURCED (2026-09-17, stamp-duty-amount-from-certificate). The customer cannot know the
+  # duty -- it is fixed by the certificate staff buy after payment -- and a typed amount could
+  # contradict the certificate bound into the same file. So the capture form never shows it, a
+  # submitted value is discarded, and stamp intake re-renders the deed with the certificate's
+  # duty amount. Until then the draft the parties review (emailed before payment) shows the row
+  # with a visible provision, "[ Provision for stamp duty ]"; tgStampAmount stays out until stamped.
   - { op: addField,
-      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false } }
+      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false,
+               source: system, placeholder: "Provision for stamp duty" } }
   - { op: addField,
       field: { key: registrationChargesBorneBy, label: "Registration charges borne by", type: enum,
                required: false, default: tenant, options: [ owner, tenant, shared ] } }
@@ -47,8 +56,10 @@ ops:
   # default template. Making the section mandatory restores the clause and, with it, the TG tenancy
   # law reference (tgGoverningLaw) and the essential-services protection (tgEssentialServices).
   #
-  # Costs the user no input: both fields are `required: false`, and tgStampAmount is gated
-  # `showWhen: stampDutyAmount > 0`, so no empty amount ever renders. Render kind is unset, which
+  # Costs the user no input: registrationChargesBorneBy has a default, and stampDutyAmount is
+  # system-sourced -- its row shows "[ Provision for stamp duty ]" until stamp intake supplies the
+  # certificate's amount, and tgStampAmount is gated `showWhen: stampDutyAmount > 0`. (Before v3 only the clause was gated, so
+  # the ROW printed "[ Stamp duty paid (INR) ]" on every deed -- AMPSFTXU5KV.) Render kind is unset, which
   # defaults to KEYVALUE -- verified safe for this section's mixed entries: TemplateCompiler's
   # appendKeyValueBody emits a <table class="kv"> for the two fields and switches to
   # <ol class="clauses"> for the four clauses.

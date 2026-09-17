@@ -1,15 +1,23 @@
 package in.agreementmitra.signing.agreement;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import in.agreementmitra.StampRenderUnavailableException;
+import in.agreementmitra.documents.DocumentRenderException;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
 import in.agreementmitra.documents.api.DocumentProjectionResult;
 import in.agreementmitra.documents.api.EffectiveTemplateIdentity;
+import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.documents.api.TemplateFormApi;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -37,6 +45,7 @@ class AgreementDocumentServiceTest {
   @Mock private AgreementRepository repository;
   @Mock private in.agreementmitra.documents.api.DocumentProjectionApi documentProjection;
   @Mock private TemplateCatalogApi templateCatalog;
+  @Mock private TemplateFormApi templateForms;
 
   @InjectMocks private AgreementDocumentService service;
 
@@ -164,5 +173,152 @@ class AgreementDocumentServiceTest {
     org.mockito.Mockito.verify(documentProjection).generate(req.capture());
     assertThat(req.getValue().dimensions()).isNull();
     verifyNoInteractions(templateCatalog);
+  }
+
+  // --- stamp intake re-render (stamp-duty-amount-from-certificate, design D4/D5) ---
+
+  private static final String PINNED_HASH = "pinned-hash";
+
+  /** A TG agreement whose stored draft is a recorded render of the pinned template. */
+  private Agreement renderedTgDraft(UUID id, String capturedAgreementDate) {
+    UUID templateId = UUID.randomUUID();
+    Agreement agreement = draft();
+    agreement.selectTemplate(templateId);
+    Map<String, String> capture = new java.util.HashMap<>();
+    capture.put("stampDutyAmount", "5000"); // a client-submitted value; documents discards it
+    if (capturedAgreementDate != null) {
+      capture.put("agreementDate", capturedAgreementDate);
+    }
+    agreement.replaceCaptureState(capture, List.of());
+    agreement.attachDraft("drafts/" + id + ".pdf");
+    agreement.pinEffectiveTemplate(
+        PINNED_HASH, Map.of("base", 2, "state:TG", 3), LocalDate.parse("2026-09-10"));
+    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    org.mockito.Mockito.lenient()
+        .when(templateCatalog.detail(templateId.toString()))
+        .thenReturn(
+            new TemplateDetail(
+                templateId.toString(),
+                "TG Residential",
+                "desc",
+                new TemplateDetail.Dimensions("TG", "residential", "en"),
+                1));
+    return agreement;
+  }
+
+  private void currentTemplateHash(String hash) {
+    when(templateForms.formFor("TG", "residential"))
+        .thenReturn(
+            new FormSchema(
+                new FormSchema.Dimensions("TG", "residential"), "rental", 1, hash, List.of()));
+  }
+
+  private static DocumentProjectionResult resultWithHash(String hash) {
+    return new DocumentProjectionResult(
+        "%PDF-re-rendered".getBytes(),
+        new EffectiveTemplateIdentity("rental", hash, Map.of("base", 2)),
+        "2026-09-10");
+  }
+
+  @Test
+  void reRendersWithTheCertificateDutyAndTheDraftExecutionDate() {
+    UUID id = UUID.randomUUID();
+    // agreementDate left blank, so the draft printed the date it was rendered on.
+    Agreement agreement = renderedTgDraft(id, null);
+    currentTemplateHash(PINNED_HASH);
+    when(documentProjection.generate(any(), anyMap())).thenReturn(resultWithHash(PINNED_HASH));
+
+    Optional<byte[]> instrument = service.renderForStamp(id, new BigDecimal("100.00"));
+
+    assertThat(instrument).contains("%PDF-re-rendered".getBytes());
+    ArgumentCaptor<DocumentProjectionRequest> req =
+        ArgumentCaptor.forClass(DocumentProjectionRequest.class);
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<Map<String, Object>> system = ArgumentCaptor.forClass(Map.class);
+    verify(documentProjection).generate(req.capture(), system.capture());
+    // The certificate amount travels ONLY on the server-side system channel.
+    assertThat(system.getValue()).containsEntry("stampDutyAmount", new BigDecimal("100.00"));
+    // The recorded draft date, never the intake date, and the same tracking reference.
+    assertThat(req.getValue().data()).containsEntry("agreementDate", "2026-09-10");
+    assertThat(req.getValue().documentReference()).isEqualTo(agreement.trackingReference());
+    assertThat(req.getValue().dimensions().state()).isEqualTo("TG");
+  }
+
+  @Test
+  void aCapturedAgreementDateIsKeptAsIs() {
+    UUID id = UUID.randomUUID();
+    renderedTgDraft(id, "2026-09-01");
+    currentTemplateHash(PINNED_HASH);
+    when(documentProjection.generate(any(), anyMap())).thenReturn(resultWithHash(PINNED_HASH));
+
+    service.renderForStamp(id, new BigDecimal("100.00"));
+
+    ArgumentCaptor<DocumentProjectionRequest> req =
+        ArgumentCaptor.forClass(DocumentProjectionRequest.class);
+    verify(documentProjection).generate(req.capture(), anyMap());
+    assertThat(req.getValue().data()).containsEntry("agreementDate", "2026-09-01");
+  }
+
+  @Test
+  void anUploadedDraftIsNotReRendered() {
+    UUID id = UUID.randomUUID();
+    Agreement agreement = renderedTgDraft(id, null);
+    // A later upload replaces the draft but keeps the pin; the cleared date is what tells them
+    // apart.
+    agreement.attachDraft("drafts/" + id + ".pdf");
+
+    assertThat(service.renderForStamp(id, new BigDecimal("100.00"))).isEmpty();
+    verifyNoInteractions(documentProjection, templateForms);
+  }
+
+  @Test
+  void aDriftedTemplateIsNotReRendered() {
+    UUID id = UUID.randomUUID();
+    renderedTgDraft(id, null);
+    currentTemplateHash("a-newer-hash");
+
+    assertThat(service.renderForStamp(id, new BigDecimal("100.00"))).isEmpty();
+    verifyNoInteractions(documentProjection);
+  }
+
+  @Test
+  void aRenderThatResolvedADifferentTemplateIsDiscarded() {
+    UUID id = UUID.randomUUID();
+    renderedTgDraft(id, null);
+    currentTemplateHash(PINNED_HASH);
+    when(documentProjection.generate(any(), anyMap())).thenReturn(resultWithHash("reloaded-hash"));
+
+    assertThat(service.renderForStamp(id, new BigDecimal("100.00"))).isEmpty();
+  }
+
+  @Test
+  void aRendererOutageIsTranslatedToTheRetryableException() {
+    UUID id = UUID.randomUUID();
+    renderedTgDraft(id, null);
+    currentTemplateHash(PINNED_HASH);
+    when(documentProjection.generate(any(), anyMap()))
+        .thenThrow(new DocumentRenderException("Gotenberg render failed"));
+
+    assertThatThrownBy(() -> service.renderForStamp(id, new BigDecimal("100.00")))
+        .isInstanceOf(StampRenderUnavailableException.class);
+  }
+
+  @Test
+  void pinningRecordsTheDraftExecutionDateAndStoringADraftClearsIt() {
+    UUID id = UUID.randomUUID();
+    Agreement agreement = draft();
+    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+
+    service.pinEffectiveTemplate(
+        id, new EffectiveTemplateIdentity("rental", "h", Map.of("base", 1)), "2026-09-10");
+    assertThat(agreement.draftExecutionDate()).isEqualTo(LocalDate.parse("2026-09-10"));
+
+    agreement.attachDraft("drafts/uploaded.pdf");
+    assertThat(agreement.draftExecutionDate()).isNull();
+
+    agreement.pinEffectiveTemplate("h", Map.of("base", 1), LocalDate.parse("2026-09-11"));
+    agreement.clearDraftPin();
+    assertThat(agreement.draftExecutionDate()).isNull();
+    verify(documentProjection, never()).generate(any(), anyMap());
   }
 }

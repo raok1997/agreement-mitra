@@ -408,6 +408,9 @@ final class TemplateCompiler {
     for (String entry : section.entries()) {
       Field field = fieldsByKey.get(entry);
       if (field != null) {
+        if (omitted(field, values)) {
+          continue; // an unset system-sourced field: no row, and the grouping is left untouched
+        }
         if (inList) {
           html.append("</ol>\n");
           inList = false;
@@ -454,8 +457,8 @@ final class TemplateCompiler {
     html.append("<div class=\"party-card\">\n");
     for (String entry : section.entries()) {
       Field field = fieldsByKey.get(entry);
-      if (field == null) {
-        continue; // a party card renders field entries only
+      if (field == null || omitted(field, values)) {
+        continue; // a party card renders field entries only; an unset system field renders nothing
       }
       html.append("<div class=\"party-row\"><span class=\"label\">")
           .append(escape(field.label()))
@@ -503,6 +506,9 @@ final class TemplateCompiler {
     for (String entry : section.entries()) {
       Field field = fieldsByKey.get(entry);
       if (field != null) {
+        if (omitted(field, values)) {
+          continue; // an unset system-sourced field renders nothing
+        }
         html.append("<li>")
             .append(escape(field.label()))
             .append(": ")
@@ -517,6 +523,23 @@ final class TemplateCompiler {
       html.append("<li>").append(renderClauseText(clause, fieldsByKey, values)).append("</li>\n");
     }
     html.append("</ul>\n");
+  }
+
+  /**
+   * True for a <b>system-sourced</b> field with no value yet that declares no {@code placeholder}.
+   * Its row is left out rather than printed as a {@code [ label ]} blank: the customer was never
+   * asked for it, so a blank would read as something they forgot to fill. A system field that DOES
+   * declare a placeholder keeps its row, showing that text as a visible provision (the Telangana
+   * stamp duty reads {@code [ Provision for stamp duty ]} in the draft the parties review). A
+   * clause slot referencing it still gets the placeholder, which is why such clauses are gated with
+   * {@code showWhen}.
+   */
+  private static boolean omitted(Field field, Map<String, Object> values) {
+    if (!field.systemSourced() || field.placeholder() != null) {
+      return false;
+    }
+    Object value = values.get(field.key());
+    return value == null || (value instanceof String s && s.isBlank());
   }
 
   private static void appendKvRow(StringBuilder html, Field field, Map<String, Object> values) {
@@ -587,8 +610,9 @@ final class TemplateCompiler {
    */
   private static String valueOrPlaceholder(Field field, Object value) {
     if (value == null || (value instanceof String s && s.isBlank())) {
-      String label = field != null ? field.label() : null;
-      return "[ " + (label != null && !label.isBlank() ? label : "value") + " ]";
+      String text =
+          field == null ? null : field.placeholder() != null ? field.placeholder() : field.label();
+      return "[ " + (text != null && !text.isBlank() ? text : "value") + " ]";
     }
     return formatForDisplay(field, value);
   }

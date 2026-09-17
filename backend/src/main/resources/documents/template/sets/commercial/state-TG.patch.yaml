@@ -6,11 +6,20 @@
 meta:
   kind: state
   dimensions: { state: TG }
-  version: 1
+  # v2 (2026-09-17): stampDutyAmount became system-sourced (filled from the attached e-stamp
+  # certificate at stamp intake), so a deed never prints its blank row.
+  version: 2
 
 ops:
+  # SYSTEM-SOURCED (2026-09-17, stamp-duty-amount-from-certificate). The customer cannot know the
+  # duty -- it is fixed by the certificate staff buy after payment -- and a typed amount could
+  # contradict the certificate bound into the same file. So the capture form never shows it, a
+  # submitted value is discarded, and stamp intake re-renders the deed with the certificate's
+  # duty amount. Until then the draft the parties review (emailed before payment) shows the row
+  # with a visible provision, "[ Provision for stamp duty ]"; tgStampAmount stays out until stamped.
   - { op: addField,
-      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false } }
+      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false,
+               source: system, placeholder: "Provision for stamp duty" } }
   - { op: addField,
       field: { key: registrationChargesBorneBy, label: "Registration charges borne by", type: enum,
                required: false, default: lessee, options: [ lessor, lessee, shared ] } }

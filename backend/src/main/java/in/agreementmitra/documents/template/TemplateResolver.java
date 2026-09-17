@@ -126,7 +126,9 @@ final class TemplateResolver {
             override.defaultPresent() ? override.defaultValue() : current.defaultValue(),
             override.options() != null ? override.options() : current.options(),
             override.validation() != null ? override.validation() : current.validation(),
-            override.group() != null ? override.group() : current.group());
+            override.group() != null ? override.group() : current.group(),
+            current.source(), // not overridable: a source change is a remove + add
+            current.placeholder());
     fields.set(idx, updated);
   }
 

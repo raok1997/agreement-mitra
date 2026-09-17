@@ -582,8 +582,8 @@ block. The user cannot remove it (see Question 2).
 
 **Section heading: "Statutory (Telangana)"**
 
-The section records the stamp duty paid, and which party bears the registration charges, and
-then contains:
+The section records which party bears the registration charges and, **once a stamp certificate
+has been attached**, the stamp duty paid. It then contains:
 
 1. "This Agreement shall be governed by the laws of India and the tenancy laws applicable in
    the State of Telangana, including the Telangana Buildings (Lease, Rent and Eviction)
@@ -594,8 +594,8 @@ then contains:
    under the Registration Act, 1908. The stamp duty and registration charges shall be borne
    by the [owner / tenant / shared]."
 
-3. *(appears only where a duty amount has been entered)* "The stamp duty paid on this
-   Agreement is INR [amount]."
+3. *(appears only in the stamped instrument)* "The stamp duty paid on this Agreement is INR
+   [amount]."
 
 4. "In accordance with the tenancy law applicable in Telangana, the Owner shall not withhold
    or disconnect essential supplies or services (including water and electricity) to the
@@ -603,6 +603,15 @@ then contains:
 
 In addition, in a Telangana agreement the jurisdiction city at Annexure A, clauses 21 and 22
 defaults to **Hyderabad**.
+
+**Where the amount comes from.** The customer never types the amount. It is the duty shown on
+the e-stamp certificate our staff purchase after payment, and it is filled in when that
+certificate is attached. As a result, the unstamped draft the parties receive by email (before
+they pay) reads "Stamp duty paid (INR) [ Provision for stamp duty ]" and has no clause 3, while
+the stamped instrument they eSign states the amount and includes clause 3. Apart from that line
+and clause, the two are identical, and the certificate itself is bound into the same file
+as its first page. We would like to know whether that difference between the emailed draft and
+the executed instrument needs to be drawn to the parties' attention.
 
 ---
 

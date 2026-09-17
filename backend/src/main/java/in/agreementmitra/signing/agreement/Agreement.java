@@ -126,6 +126,17 @@ class Agreement implements Persistable<UUID> {
   private Map<String, Integer> templateLayerVersions;
 
   /**
+   * The execution date the stored draft <b>printed</b>, recorded with the pin at generate-as-draft;
+   * null when the stored draft was uploaded rather than rendered (every draft store clears it and
+   * only the generate path sets it again) or was rendered before this column existed. Non-null
+   * therefore means: the stored draft is a render, and a re-render passing this date as {@code
+   * agreementDate} prints the same date. Stamp intake relies on that to state the certificate's
+   * duty amount without moving anything else. Server-managed; no party PII.
+   */
+  @Column(name = "draft_execution_date")
+  private LocalDate draftExecutionDate;
+
+  /**
    * The agreement's full <b>capture state</b>: the flat working-set field map plus the added
    * optional-section titles the user entered on the guided form; null until create/edit stores it
    * (and null for legacy rows / API clients that send only the fixed fields). Server-managed
@@ -277,6 +288,8 @@ class Agreement implements Persistable<UUID> {
   /** Attach (or replace) the uploaded draft's object-storage key. Server-managed only. */
   void attachDraft(String draftPdfKey) {
     this.draftPdfKey = draftPdfKey;
+    // Until a pin says otherwise, this draft is not known to be a render (an upload never is).
+    this.draftExecutionDate = null;
   }
 
   /**
@@ -336,6 +349,7 @@ class Agreement implements Persistable<UUID> {
     this.draftPdfKey = null;
     this.templateContentHash = null;
     this.templateLayerVersions = null;
+    this.draftExecutionDate = null;
   }
 
   /** Attach (or replace) the uploaded e-stamp certificate data. Server-managed only. */
@@ -426,8 +440,18 @@ class Agreement implements Persistable<UUID> {
    * module's types. The layer-map is defensively copied.
    */
   void pinEffectiveTemplate(String contentHash, Map<String, Integer> layerVersions) {
+    pinEffectiveTemplate(contentHash, layerVersions, null);
+  }
+
+  /**
+   * Pin the effective template and record the execution date the rendered draft printed ({@code
+   * null} when the renderer did not report one).
+   */
+  void pinEffectiveTemplate(
+      String contentHash, Map<String, Integer> layerVersions, LocalDate draftExecutionDate) {
     this.templateContentHash = contentHash;
     this.templateLayerVersions = layerVersions == null ? null : Map.copyOf(layerVersions);
+    this.draftExecutionDate = draftExecutionDate;
   }
 
   @Override
@@ -497,6 +521,10 @@ class Agreement implements Persistable<UUID> {
 
   String templateContentHash() {
     return templateContentHash;
+  }
+
+  LocalDate draftExecutionDate() {
+    return draftExecutionDate;
   }
 
   Map<String, Integer> templateLayerVersions() {

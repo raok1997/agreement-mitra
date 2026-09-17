@@ -4,11 +4,13 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampFailedException;
+import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
+import in.agreementmitra.signing.agreement.AgreementDocumentService;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
@@ -83,6 +85,7 @@ public class StampIntakeService {
       "REJECTED_JURISDICTION_UNSUPPORTED";
   private static final String OUTCOME_STAMP_VALUE_BELOW_PAID = "REFUSED_STAMP_VALUE";
   private static final String OUTCOME_COMPOSITION_FAILED = "REJECTED_COMPOSITION_FAILED";
+  private static final String OUTCOME_RENDER_UNAVAILABLE = "REJECTED_RENDER_UNAVAILABLE";
   private static final String OUTCOME_ERROR = "REJECTED_ERROR";
 
   private final AgreementService agreementService;
@@ -95,6 +98,9 @@ public class StampIntakeService {
   private final JurisdictionEligibility jurisdiction;
   private final StampValueReference stampValueReference;
   private final StampQuoteRecordRepository frozenQuotes;
+
+  /** Re-renders the instrument so it states the certificate's duty amount (see step 3). */
+  private final AgreementDocumentService agreementDocuments;
 
   /**
    * The signing flow, used ONLY for the optional kick-off after a stamp is attached. Intake still
@@ -114,7 +120,9 @@ public class StampIntakeService {
       JurisdictionEligibility jurisdiction,
       StampValueReference stampValueReference,
       StampQuoteRecordRepository frozenQuotes,
+      AgreementDocumentService agreementDocuments,
       SigningRequestService signingRequestService) {
+    this.agreementDocuments = agreementDocuments;
     this.stampValueReference = stampValueReference;
     this.frozenQuotes = frozenQuotes;
     this.agreementService = agreementService;
@@ -137,6 +145,8 @@ public class StampIntakeService {
    *     certificate number has already been used (409)
    * @throws StampFailedException if composition fails; the request is driven to {@code
    *     STAMP_FAILED} first (422)
+   * @throws StampRenderUnavailableException if the instrument could not be re-rendered because the
+   *     renderer is unavailable; nothing is written and the request stays awaiting a stamp (503)
    */
   public StampIntakeResponse attach(UUID staffIdentityId, StampIntakeCommand command) {
     String reference = command.agreementReference();
@@ -160,6 +170,10 @@ public class StampIntakeService {
     } catch (StampFailedException e) {
       auditor.record(
           staffIdentityId, agreement.agreementId(), reference, OUTCOME_COMPOSITION_FAILED);
+      throw e;
+    } catch (StampRenderUnavailableException e) {
+      auditor.record(
+          staffIdentityId, agreement.agreementId(), reference, OUTCOME_RENDER_UNAVAILABLE);
       throw e;
     } catch (RuntimeException e) {
       auditor.record(staffIdentityId, agreement.agreementId(), reference, OUTCOME_ERROR);
@@ -221,9 +235,24 @@ public class StampIntakeService {
     String scanContentType = scanValidator.validate(command.scan());
 
     // (3) The instrument to stamp. A missing draft is a clean 409 with nothing written.
+    //
+    // Where the stored draft is a recorded render of a still-current template, the instrument is
+    // RE-RENDERED with this certificate's duty amount, so the executed deed states the duty
+    // actually
+    // paid instead of an omitted (or, before v3 of the TG layer, placeholder) stamp duty row.
+    // Otherwise (an uploaded draft, a drifted template) the stored draft is stamped as it always
+    // was.
+    // A renderer outage throws StampRenderUnavailableException HERE - before any blob write or
+    // state
+    // change, and outside the STAMP_FAILED branch below - so it is a retryable 503 that neither
+    // spends
+    // the certificate nor abandons a paid order.
     String draftKey =
         agreementService.draftPdfKey(agreementId).orElseThrow(ConflictException::draftRequired);
-    byte[] draft = blobStore.get(draftKey);
+    byte[] draft =
+        agreementDocuments
+            .renderForStamp(agreementId, command.dutyAmount())
+            .orElseGet(() -> blobStore.get(draftKey));
 
     StampCertificate certificate = certificateFrom(command);
     StampResult result;

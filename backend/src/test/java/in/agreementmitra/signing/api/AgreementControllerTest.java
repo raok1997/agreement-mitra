@@ -55,19 +55,20 @@ class AgreementControllerTest {
     EffectiveTemplateIdentity identity =
         new EffectiveTemplateIdentity("tmpl-1", "sha256:abc123", Map.of("base", 3));
     when(documentService.renderForDraft(id))
-        .thenReturn(new DocumentProjectionResult(pdf, identity));
+        .thenReturn(new DocumentProjectionResult(pdf, identity, "2026-09-10"));
 
     ResponseEntity<Map<String, UUID>> resp = controller.generateDocument(id);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(resp.getBody()).containsEntry("agreementId", id);
 
-    // Render -> store the exact rendered bytes -> pin the rendered identity, strictly in that
+    // Render -> store the exact rendered bytes -> pin the rendered identity (and the execution date
+    // the draft printed), strictly in that
     // order.
     InOrder ordered = inOrder(documentService, draftService);
     ordered.verify(documentService).renderForDraft(id);
     ordered.verify(draftService).attachDraft(id, pdf);
-    ordered.verify(documentService).pinEffectiveTemplate(id, identity);
+    ordered.verify(documentService).pinEffectiveTemplate(id, identity, "2026-09-10");
     ordered.verifyNoMoreInteractions();
   }
 }
