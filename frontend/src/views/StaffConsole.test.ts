@@ -180,7 +180,9 @@ describe("StaffConsole", () => {
     });
 
     const wrapper = await filledForm();
-    await wrapper.find('[data-testid="field-initiate-signing"]').setValue(false);
+    await wrapper
+      .find('[data-testid="field-initiate-signing"]')
+      .setValue(false);
 
     mockedList.mockResolvedValue([]);
     await wrapper.find('[data-testid="queue-form-ag-1"]').trigger("submit");
@@ -236,7 +238,10 @@ describe("StaffConsole", () => {
     });
     const input = wrapper.find('[data-testid="field-scan"]')
       .element as HTMLInputElement;
-    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    Object.defineProperty(input, "files", {
+      value: [file],
+      configurable: true,
+    });
     await wrapper.find('[data-testid="field-scan"]').trigger("change");
     return wrapper;
   }
@@ -440,6 +445,28 @@ describe("StaffConsole and the payment gate", () => {
     expect(
       wrapper.find('[data-testid="queue-upload-ag-1"]').attributes("disabled"),
     ).toBeUndefined();
+  });
+
+  it("shows the paid-for stamp value and marks a customer's below-duty choice", async () => {
+    const wrapper = await mountWith([
+      entry({
+        paymentState: "PAID",
+        paidStampValueMinorUnits: 10000,
+        belowDutyChosen: true,
+      }),
+    ]);
+
+    const badge = wrapper.get('[data-testid="queue-stamp-value-ag-1"]').text();
+    expect(badge).toContain("INR 100.00");
+    expect(badge).toContain("below duty");
+  });
+
+  it("shows no stamp value when there is no paid frozen quote", async () => {
+    const wrapper = await mountWith([entry({ paymentState: "WAIVED" })]);
+
+    expect(
+      wrapper.find('[data-testid="queue-stamp-value-ag-1"]').exists(),
+    ).toBe(false);
   });
 
   it("treats a staff waiver as good as paid - it is the operational escape hatch", async () => {

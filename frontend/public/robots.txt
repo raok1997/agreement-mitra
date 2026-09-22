@@ -1,8 +1,13 @@
 # AgreementMitra -- https://agreementmitra.com
 #
-# The marketing page at "/" is the only thing worth indexing. Everything under
-# /start is the authenticated-or-anonymous agreement builder: it renders nothing
-# useful without a session or a filled form, and its URLs can carry agreement ids.
+# The marketing page at "/" and the terms of service at "/terms" are the public
+# pages, and both are listed in sitemap.xml. Everything under /start is the
+# authenticated-or-anonymous agreement builder: it renders nothing useful without
+# a session or a filled form, and its URLs can carry agreement ids.
+#
+# /terms needs no Allow line -- it matches no Disallow, so it is crawlable by
+# default. It is named here so that the sitemap and this file cannot drift into
+# disagreeing about what is public.
 User-agent: *
 Allow: /$
 Disallow: /start

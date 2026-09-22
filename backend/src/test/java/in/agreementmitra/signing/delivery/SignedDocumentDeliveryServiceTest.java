@@ -301,6 +301,15 @@ class SignedDocumentDeliveryServiceTest {
                 requestId, agreementId, SignatureStatus.EXPIRED, null, List.of()));
     verify(agreementService).close(agreementId, ClosureReason.ABANDONED_SIGNING_EXPIRED);
 
+    // STAMP_FAILED is NOT a rejected signature. It closed as ABANDONED_SIGNING_FAILED until this
+    // case was pinned, which made a stamping failure read as "a party refused to sign" on the one
+    // record whose whole job is to say what went wrong.
+    service()
+        .fulfil(
+            new SigningCompletionView(
+                requestId, agreementId, SignatureStatus.STAMP_FAILED, null, List.of()));
+    verify(agreementService).close(agreementId, ClosureReason.ABANDONED_STAMP_FAILED);
+
     // ...and no email is sent for a signing that never produced a signed agreement.
     verify(emailSender, never()).send(any());
   }

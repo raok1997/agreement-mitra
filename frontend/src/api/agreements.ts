@@ -9,11 +9,7 @@ const BASE = "/api";
 
 /** The derived display status shown in the list (mirrors the backend AgreementDisplayStatus). */
 export type AgreementStatus =
-  | "DRAFT"
-  | "IN_PROGRESS"
-  | "SIGNED"
-  | "EXPIRED"
-  | "ACTION_NEEDED";
+  "DRAFT" | "IN_PROGRESS" | "SIGNED" | "EXPIRED" | "ACTION_NEEDED";
 
 /** A row in "My Agreements": terms-only summary + the derived status and edit-eligibility flag. */
 export interface AgreementSummary {
@@ -49,6 +45,16 @@ export class AgreementHttpError extends Error {
   /** Whether the refusal was the contacts freeze: payment is settled, so a retry is futile. */
   get contactsFrozen(): boolean {
     return !!this.problemType?.endsWith("contacts-frozen");
+  }
+
+  /**
+   * Whether the refusal was the jurisdiction gate: this agreement's state cannot be stamped or
+   * eSigned here. Like the contacts freeze, a retry can never succeed -- but for a different
+   * reason and with a different remedy, so it needs its own message rather than the generic
+   * "could not start payment".
+   */
+  get jurisdictionUnsupported(): boolean {
+    return !!this.problemType?.endsWith("jurisdiction-unsupported");
   }
 }
 

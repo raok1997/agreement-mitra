@@ -139,17 +139,19 @@ final class TemplateCompiler {
       Map<String, Object> data,
       String resolvedExecutionDate,
       Set<String> activeSections) {
-    return compile(effective, data, resolvedExecutionDate, activeSections, null, null);
+    return compile(effective, data, resolvedExecutionDate, activeSections, null, null, null);
   }
 
   /**
    * As {@link #compile(EffectiveTemplate, Map, String, Set)}, additionally emitting a system-owned
    * <b>provenance line at the document foot</b>: the escaped {@code reference} (a tracking number
-   * or a preview marker) and the escaped {@code platformUrl}, each part omitted when blank. Both
-   * are values passed in -- the compiler reads no configuration -- rendered as literal text, so
-   * they appear <b>identically in the preview HTML and the PDF</b> (parity, they are body content)
-   * and cannot inject markup. A {@code null}/blank {@code reference} and {@code platformUrl} emit
-   * no line, so a pre-identifier preview can carry only the URL, or nothing.
+   * or a preview marker) and the escaped {@code platformUrl}, each part omitted when blank, plus an
+   * optional escaped {@code screenNotice} beneath it. All three are values passed in -- the
+   * compiler reads no configuration -- rendered as literal text, so they appear <b>identically in
+   * the preview HTML and the PDF</b> (parity, they are body content) and cannot inject markup. A
+   * {@code null}/blank {@code reference} and {@code platformUrl} emit no provenance line, so a
+   * pre-identifier preview can carry only the URL, or nothing; a blank {@code screenNotice} emits
+   * no notice.
    */
   String compile(
       EffectiveTemplate effective,
@@ -157,7 +159,8 @@ final class TemplateCompiler {
       String resolvedExecutionDate,
       Set<String> activeSections,
       String reference,
-      String platformUrl) {
+      String platformUrl,
+      String screenNotice) {
     Set<String> active = activeSections == null ? Set.of() : activeSections;
     // Bind the resolved execution date under the reserved key on a COPY (the request data is never
     // mutated); the resolved value overrides any submitted agreementDate.
@@ -204,6 +207,7 @@ final class TemplateCompiler {
       html.append(SIGNATURE_BLOCK);
     }
     html.append(provenanceLine(reference, platformUrl));
+    html.append(screenNotice(screenNotice));
     html.append("</body>\n</html>\n");
     return html.toString();
   }
@@ -237,6 +241,28 @@ final class TemplateCompiler {
       line.append("<span>").append(escape(url)).append("</span>");
     }
     return line.append("</div>\n").toString();
+  }
+
+  /**
+   * A system-owned advisory line for the document foot: the escaped {@code notice}, or the empty
+   * string when it is blank. Rendered as literal text (it cannot inject markup) and deliberately
+   * <b>not</b> a link -- the preview iframe is fully sandboxed, so an anchor there could not
+   * navigate; the clickable route to the terms lives on the surrounding app screens.
+   *
+   * <p>Like {@link #provenanceLine}, it is a <b>screen-only</b> body element ({@code
+   * .doc-screen-notice} is {@code display:none} by default, shown only under {@code @media
+   * screen}), so the on-screen preview shows it and the Gotenberg PDF -- print media -- does not.
+   * That is the point rather than a side effect: the notice must reach the reader looking at the
+   * draft and must never be printed inside the executed instrument (counsel brief Q6(d)). Unlike
+   * the provenance line it has <b>no</b> per-page print-footer counterpart, which is why the notice
+   * is absent from a downloaded preview PDF as well.
+   */
+  private static String screenNotice(String notice) {
+    String text = notice == null ? "" : notice.strip();
+    if (text.isEmpty()) {
+      return "";
+    }
+    return "<div class=\"doc-screen-notice\">" + escape(text) + "</div>\n";
   }
 
   /**
@@ -382,6 +408,9 @@ final class TemplateCompiler {
     for (String entry : section.entries()) {
       Field field = fieldsByKey.get(entry);
       if (field != null) {
+        if (omitted(field, values)) {
+          continue; // an unset system-sourced field: no row, and the grouping is left untouched
+        }
         if (inList) {
           html.append("</ol>\n");
           inList = false;
@@ -428,8 +457,8 @@ final class TemplateCompiler {
     html.append("<div class=\"party-card\">\n");
     for (String entry : section.entries()) {
       Field field = fieldsByKey.get(entry);
-      if (field == null) {
-        continue; // a party card renders field entries only
+      if (field == null || omitted(field, values)) {
+        continue; // a party card renders field entries only; an unset system field renders nothing
       }
       html.append("<div class=\"party-row\"><span class=\"label\">")
           .append(escape(field.label()))
@@ -477,6 +506,9 @@ final class TemplateCompiler {
     for (String entry : section.entries()) {
       Field field = fieldsByKey.get(entry);
       if (field != null) {
+        if (omitted(field, values)) {
+          continue; // an unset system-sourced field renders nothing
+        }
         html.append("<li>")
             .append(escape(field.label()))
             .append(": ")
@@ -491,6 +523,23 @@ final class TemplateCompiler {
       html.append("<li>").append(renderClauseText(clause, fieldsByKey, values)).append("</li>\n");
     }
     html.append("</ul>\n");
+  }
+
+  /**
+   * True for a <b>system-sourced</b> field with no value yet that declares no {@code placeholder}.
+   * Its row is left out rather than printed as a {@code [ label ]} blank: the customer was never
+   * asked for it, so a blank would read as something they forgot to fill. A system field that DOES
+   * declare a placeholder keeps its row, showing that text as a visible provision (the Telangana
+   * stamp duty reads {@code [ Provision for stamp duty ]} in the draft the parties review). A
+   * clause slot referencing it still gets the placeholder, which is why such clauses are gated with
+   * {@code showWhen}.
+   */
+  private static boolean omitted(Field field, Map<String, Object> values) {
+    if (!field.systemSourced() || field.placeholder() != null) {
+      return false;
+    }
+    Object value = values.get(field.key());
+    return value == null || (value instanceof String s && s.isBlank());
   }
 
   private static void appendKvRow(StringBuilder html, Field field, Map<String, Object> values) {
@@ -561,8 +610,9 @@ final class TemplateCompiler {
    */
   private static String valueOrPlaceholder(Field field, Object value) {
     if (value == null || (value instanceof String s && s.isBlank())) {
-      String label = field != null ? field.label() : null;
-      return "[ " + (label != null && !label.isBlank() ? label : "value") + " ]";
+      String text =
+          field == null ? null : field.placeholder() != null ? field.placeholder() : field.label();
+      return "[ " + (text != null && !text.isBlank() ? text : "value") + " ]";
     }
     return formatForDisplay(field, value);
   }
@@ -670,7 +720,8 @@ final class TemplateCompiler {
          would drop the glyphs and every signing request would then be refused. */
       .sign-anchor { font-size: 8px; color: #ffffff; letter-spacing: 0.4px; padding-bottom: 2px; }
       .doc-provenance { display: none; margin-top: 18px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 10px; color: #666; text-align: center; }
-      @media screen { .doc-provenance { display: block; } }
+      .doc-screen-notice { display: none; margin-top: 8px; font-size: 10px; line-height: 1.5; color: #666; text-align: center; }
+      @media screen { .doc-provenance, .doc-screen-notice { display: block; } }
       """;
 
   // System-owned closing block: a witness paragraph and blank signature lines. Domain-neutral (the

@@ -70,7 +70,9 @@
               "pattern": { "type": "string" }
             }
           },
-          "group": { "type": "string" }
+          "group": { "type": "string" },
+          "source": { "type": "string", "enum": ["system"] },
+          "placeholder": { "type": "string", "minLength": 1 }
         }
       }
     },

@@ -83,6 +83,16 @@ export interface AgreementView {
    */
   captureData?: Record<string, string> | null;
   activeSections?: string[] | null;
+  /**
+   * The pinned template's dimensions, resolved server-side from the template the agreement is
+   * pinned to -- not echoed from what was sent at create. `state` is the agreement's DUTY
+   * JURISDICTION, the same value the server's jurisdiction gate refuses on, so a reopened
+   * agreement can be marked draft-only truthfully rather than guessed from a default. Both are
+   * absent/null when there is no pinned template, or one that no longer resolves -- which the
+   * server treats as an unknown jurisdiction and refuses.
+   */
+  state?: string | null;
+  type?: string | null;
 }
 
 const BASE = "/api";

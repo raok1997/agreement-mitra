@@ -1,5 +1,5 @@
-# Production layer set (rental) -- BASE layer: the India-standard residential rental agreement
-# (Leave and Licence), a full stand-alone template definition. State/type patches beside this file
+# Production layer set (rental) -- BASE layer: the India-standard residential rental agreement,
+# a full stand-alone template definition. State/type patches beside this file
 # layer over it (type-residential, state-TG, state_type-TG-residential).
 #
 # STRUCTURE (rental-document-content-v2 / M5): reads like the reference Leave-and-Licence deed --
@@ -25,7 +25,28 @@ meta:
   dimensions:
     state: IN
     type: residential
-  version: 1
+  # v2 (2026-09-10): the "(Leave & Licence)" label was removed from the subtitle and the recital.
+  # Leave-and-licence is the MAHARASHTRA residential form (Maharashtra Rent Control Act 1999 s.24 /
+  # s.55; its own stamp article). This set ships KA + TG, where the ordinary residential instrument
+  # is a lease -- and the document's own substance was already a lease throughout: scheduleClause
+  # says the Owner "lets" the premises (the s.105 Transfer of Property Act verb), the parties are
+  # Owner/Tenant, there is a no-subletting covenant, and the TG overlay cites the Telangana
+  # Buildings (LEASE, Rent and Eviction) Control Act, 1960. state-stamp-duty-quoting prices this
+  # under Karnataka Stamp Act 1957 Article 30 -- the LEASE article. The sibling commercial set is
+  # titled "Commercial Lease Agreement" with Lessor/Lessee. So the licence label was the only
+  # licence-shaped thing in the document, and it contradicted everything else.
+  #
+  # Removing it is a de-contradiction, not a ruling: courts read substance over label (Associated
+  # Hotels of India v. R.N. Kapoor, 1959 -- the test is exclusive possession), so this changes what
+  # the deed SAYS IT IS to match what it already DOES. The substantive lease-vs-licence question,
+  # and whether to move to Lessor/Lessee vocabulary, are with counsel -- see the follow-up register
+  # in docs/ROADMAP.md. A future Maharashtra set should carry leave-and-licence in a STATE layer,
+  # not in this national base.
+  #
+  # Bumped 1 -> 2 because agreements already generated pin `base: 1` and rendered the old wording;
+  # leaving it at 1 would make two materially different deeds report one authored version, which is
+  # exactly what Agreement.pinEffectiveTemplate exists to keep answerable.
+  version: 2
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -33,7 +54,7 @@ meta:
   # layers MAY override the subtitle / execution line; the national wording is the default.
   document:
     title: "Rental Agreement"
-    subtitle: "Residential Tenancy (Leave & Licence)"
+    subtitle: "Residential Tenancy"
     executionLine: "This Agreement is executed on {{agreementDate}} in respect of the property in the Schedule below."
 
 fields:
@@ -41,7 +62,7 @@ fields:
   - { key: ownerName,        label: "Owner name",                        type: text,     required: true }
   - { key: ownerFatherName,  label: "Owner father's / spouse's name",    type: text,     required: false }
   - { key: ownerAddress,     label: "Owner current address",             type: longtext, required: false }
-  # --- Tenant (Licensee) ---
+  # --- Tenant ---
   - { key: tenantName,       label: "Tenant name",                       type: text,     required: true }
   - { key: tenantFatherName, label: "Tenant father's / spouse's name",   type: text,     required: false }
   - { key: tenantAddress,    label: "Tenant current address",            type: longtext, required: false }
@@ -115,7 +136,7 @@ fields:
 clauses:
   - id: recital
     text: >-
-      This Residential Rental Agreement (Leave and Licence) is made between {{ownerName}}, son /
+      This Residential Rental Agreement is made between {{ownerName}}, son /
       daughter / spouse of {{ownerFatherName}}, residing at {{ownerAddress}} (the "Owner"), and
       {{tenantName}}, son / daughter / spouse of {{tenantFatherName}}, residing at {{tenantAddress}}
       (the "Tenant").

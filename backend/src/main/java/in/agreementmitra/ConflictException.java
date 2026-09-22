@@ -1,5 +1,6 @@
 package in.agreementmitra;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -40,6 +41,20 @@ public class ConflictException extends RuntimeException {
     ORDER_NOT_PLACED,
     /** A gated step was attempted for an unpaid agreement while the payment gate is REQUIRED. */
     PAYMENT_REQUIRED,
+    /**
+     * A paid-fulfilment step was attempted for an agreement whose <b>duty jurisdiction</b> is not
+     * one we can fulfil. Stamp duty is state law, so such an agreement has no computable duty and
+     * no defined state in which staff could buy the certificate.
+     *
+     * <p>Deliberately <b>not</b> folded into {@link #PAYMENT_REQUIRED}, for the reason {@code
+     * PaymentGate} already gives about its own refusal: a different person fixes each one. An
+     * unpaid order is fixed by the customer paying; an unsupported jurisdiction is fixed by product
+     * deciding to support that state.
+     *
+     * <p>Raised at order placement, checkout, e-stamp intake and eSign initiation - every step that
+     * commits us to something real in a jurisdiction.
+     */
+    JURISDICTION_UNSUPPORTED,
     /** An external payment reference already recorded against some agreement was reused. */
     PAYMENT_REFERENCE_ALREADY_USED,
     /** A fulfilment action was attempted on an agreement that has already been closed. */
@@ -48,7 +63,12 @@ public class ConflictException extends RuntimeException {
      * A contacts change was attempted on an agreement whose payment is already settled (paid or
      * waived), so the details are frozen.
      */
-    CONTACTS_FROZEN
+    CONTACTS_FROZEN,
+    /**
+     * An e-stamp certificate's duty amount is below the stamp value the agreement was paid for (or,
+     * without a frozen quote, below its legal duty). Refused at intake before anything is stored.
+     */
+    STAMP_VALUE_BELOW_PAID
   }
 
   private final Kind kind;
@@ -56,14 +76,34 @@ public class ConflictException extends RuntimeException {
   /** Safe, structured context for the client: role-and-position labels only. Never PII. */
   private final List<String> partyLabels;
 
+  /**
+   * The rejected jurisdiction code, server-derived from the agreement's pinned template; null when
+   * none could be resolved, and for every kind but {@link Kind#JURISDICTION_UNSUPPORTED}.
+   */
+  private final String rejectedJurisdiction;
+
+  /** The jurisdictions that would have been accepted. Public by construction, never PII. */
+  private final List<String> eligibleJurisdictions;
+
   private ConflictException(Kind kind, String message) {
     this(kind, message, List.of());
   }
 
   private ConflictException(Kind kind, String message, List<String> partyLabels) {
+    this(kind, message, partyLabels, null, List.of());
+  }
+
+  private ConflictException(
+      Kind kind,
+      String message,
+      List<String> partyLabels,
+      String rejectedJurisdiction,
+      List<String> eligibleJurisdictions) {
     super(message);
     this.kind = kind;
     this.partyLabels = partyLabels;
+    this.rejectedJurisdiction = rejectedJurisdiction;
+    this.eligibleJurisdictions = eligibleJurisdictions;
   }
 
   public static ConflictException draftFrozen() {
@@ -102,6 +142,47 @@ public class ConflictException extends RuntimeException {
   /** Role-and-position labels for the parties this conflict is about; empty when not applicable. */
   public List<String> partyLabels() {
     return partyLabels;
+  }
+
+  /**
+   * The agreement's duty jurisdiction is not one we can fulfil, so no paid-fulfilment step may
+   * proceed.
+   *
+   * <p><b>Structured context, not a message</b> - the same discipline as {@link
+   * #contactRequired(List)}. Both values are safe by construction because both are
+   * <b>server-derived</b>: the rejected code comes from the agreement's pinned template, never from
+   * the request, and the eligible list is public by construction (the template picker and the
+   * published terms both disclose it). So naming them makes the refusal actionable without
+   * violating the never-echo-input contract.
+   *
+   * @param rejected the agreement's jurisdiction code, or {@code null} where none could be resolved
+   *     at all (no pinned template, or one that no longer resolves)
+   * @param eligible the jurisdictions that would have been accepted
+   */
+  public static ConflictException jurisdictionUnsupported(
+      String rejected, Collection<String> eligible) {
+    return new ConflictException(
+        Kind.JURISDICTION_UNSUPPORTED,
+        "jurisdiction not eligible for paid fulfilment",
+        List.of(),
+        rejected,
+        List.copyOf(eligible));
+  }
+
+  /**
+   * The agreement's jurisdiction code, or {@code null} when none could be resolved. Only meaningful
+   * for {@link Kind#JURISDICTION_UNSUPPORTED}.
+   */
+  public String rejectedJurisdiction() {
+    return rejectedJurisdiction;
+  }
+
+  /**
+   * The jurisdictions that would have been accepted; empty when not applicable. Only meaningful for
+   * {@link Kind#JURISDICTION_UNSUPPORTED}.
+   */
+  public List<String> eligibleJurisdictions() {
+    return eligibleJurisdictions;
   }
 
   public static ConflictException notSignable() {
@@ -191,6 +272,15 @@ public class ConflictException extends RuntimeException {
   public static ConflictException contactsFrozen() {
     return new ConflictException(
         Kind.CONTACTS_FROZEN, "contacts frozen: payment already settled for this agreement");
+  }
+
+  /**
+   * The certificate carries less stamp value than the agreement was paid for. The message names no
+   * amount; the operator already holds both figures.
+   */
+  public static ConflictException stampValueBelowPaid() {
+    return new ConflictException(
+        Kind.STAMP_VALUE_BELOW_PAID, "certificate duty amount is below the paid-for stamp value");
   }
 
   public Kind kind() {

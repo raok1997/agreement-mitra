@@ -7,8 +7,8 @@ import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
 import in.agreementmitra.documents.api.TemplateFormApi;
+import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -23,11 +23,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -48,27 +43,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * needs itself. Skips (not fails) without Docker.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, GotenbergTestConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class AgreementTemplateSelectionGenerateIntegrationTest {
 
   private static final String REF = "documents/template/examples/layers/";
-
-  @Container
-  static final GenericContainer<?> gotenberg =
-      new GenericContainer<>(
-              new ImageFromDockerfile().withFileFromPath(".", Path.of("..", "docker", "gotenberg")))
-          .withExposedPorts(3000)
-          .withEnv("CHROMIUM_DENY_PUBLIC_IPS", "true")
-          .withEnv("CHROMIUM_DENY_PRIVATE_IPS", "true");
-
-  @DynamicPropertySource
-  static void gotenbergUrl(DynamicPropertyRegistry registry) {
-    registry.add(
-        "gotenberg.url",
-        () -> "http://" + gotenberg.getHost() + ":" + gotenberg.getMappedPort(3000));
-  }
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;

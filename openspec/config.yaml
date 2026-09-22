@@ -29,8 +29,11 @@ context: |
   Conventions:
   - Records for DTOs/value objects; constructor injection (no field
     @Autowired); module internals package-private, `public` only on module API.
-  - Signing status FSM: DRAFT → PDF_GENERATED → SIGN_REQUESTED →
-    SIGNED | FAILED | EXPIRED. Transitions go through the state machine.
+  - Signing status FSM (`SignatureStatus`): the active path is
+    PDF_GENERATED → STAMPED → SIGN_REQUESTED → SIGNED | FAILED | EXPIRED,
+    with STAMP_FAILED as a terminal branch off the stamp step. DRAFT is
+    reserved and not yet used. Transitions go through the state machine,
+    never ad-hoc setters.
   - eSign is asynchronous; never block a request thread on a signature.
     Webhook drives completion; scheduled reconciliation is the fallback.
   - Keep `ModularityTests` green on every change.

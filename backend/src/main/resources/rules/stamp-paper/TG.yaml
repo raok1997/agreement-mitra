@@ -1,0 +1,29 @@
+# TELANGANA stamp paper catalog (state-stamp-duty-quoting, design D2).
+#
+# Source: Registration & Stamps Dept FAQ, https://registration.telangana.gov.in/faqsStamps.htm
+#   "Now, in Telangana the Non-Judicial Stamp papers of Rs.10/-, Rs.20/-, Rs.50/-, Rs.100/- - only
+#   are available." Balance above the papers is paid by challan (introduced 2003) or DD/pay order.
+#   Denominations and challan: HIGH (primary, undated page).
+#   maxPapers 5: UNVERIFIED -- no official limit found; the FAQ example uses 5 x Rs.100. LOW.
+#   SHCIL e-stamp does NOT list Telangana (shcilestamp.com, fetched 2026-09-16), so no e-stamp medium.
+state: TG
+effectiveFrom: "2021-09-02"
+effectiveTo: null
+source: "Telangana Registration and Stamps Dept FAQ (stamp papers, challan) -- maxPapers UNVERIFIED"
+# OFFER POLICY (product decision 2026-09-17): offer customers ONLY a single INR 100 stamp paper,
+# pre-selected. No multi-paper plan and no challan is shown, because a single paper is what can
+# actually be bought and attached in practice (challan/franking of an exact amount needs a separate
+# bank or District Registrar step). Where INR 100 is below the legal duty, the customer must still
+# acknowledge the under-stamping warning, which is audited. The legal duty is still computed and shown.
+offer:
+  mode: SINGLE_PAPERS
+  denominations: ["100"]
+  preselect: "100"
+media:
+  - id: stamp-paper
+    kind: DENOMINATIONS
+    denominations: ["10", "20", "50", "100"]
+    maxPapers: 5
+  - id: challan
+    kind: ANY_AMOUNT
+    minimumAmount: "0"

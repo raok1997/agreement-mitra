@@ -83,7 +83,7 @@ describe("LandingPage", () => {
       .map((el) => el.attributes("href"));
     expect(mailtos.length).toBeGreaterThan(0);
     expect(new Set(mailtos)).toEqual(
-      new Set(["mailto:hello@agreementmitra.com"]),
+      new Set(["mailto:support@agreementmitra.com"]),
     );
   });
 });

@@ -49,6 +49,9 @@ final class FormProjector {
           if (field == null) {
             continue; // clause-id entry -- document content, not a form input
           }
+          if (field.systemSourced()) {
+            continue; // the server supplies it; never ask the customer for it
+          }
           fields.add(projectField(field));
         }
       }

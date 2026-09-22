@@ -47,9 +47,13 @@ class DocumentProjectionServiceTest {
       Clock.fixed(
           LocalDate.of(2026, 7, 13).atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC);
 
-  /** The platform URL shown in the provenance line; the module holds no brand literal. */
+  /** The screen-only advisory the projection passes to the compiler beneath the provenance line. */
+  static final String SCREEN_NOTICE =
+      "AgreementMitra is not a law firm and this is not legal advice. See agreementmitra.com/terms.";
+
+  /** The platform URL + notice shown on screen; the module holds no brand literal or legal copy. */
   private static final DocumentFooterProperties FOOTER =
-      new DocumentFooterProperties("agreementmitra.com");
+      new DocumentFooterProperties("agreementmitra.com", SCREEN_NOTICE);
 
   private final CapturingRenderer renderer = new CapturingRenderer();
   private final DocumentProjectionService service =
@@ -191,6 +195,38 @@ class DocumentProjectionServiceTest {
     assertThat(renderer.lastHtml).isEqualTo(html); // body parity: preview HTML == the PDF's source
     assertThat(renderer.lastReference)
         .isEqualTo("PREVIEW - NOT FOR EXECUTION"); // same reference stamped as PDF footer furniture
+  }
+
+  @Test
+  void screenNoticeRendersOnScreenOnlyAndIsHiddenInPrint() {
+    // The "not a law firm / not legal advice" advisory is compiled body content (so preview and PDF
+    // source stay in parity) but is a SCREEN-ONLY element: .doc-screen-notice defaults to
+    // display:none and is shown only under @media screen. The PDF renders as print media, so the
+    // notice never reaches the executed instrument -- the whole point of placing it here
+    // (counsel brief Q6(d)).
+    String html = service.previewHtml(request(fullData()));
+
+    assertThat(html).contains(SCREEN_NOTICE).contains("doc-screen-notice");
+    assertThat(html)
+        .contains(".doc-screen-notice { display: none;")
+        .contains("@media screen { .doc-provenance, .doc-screen-notice { display: block; } }");
+  }
+
+  @Test
+  void aBlankScreenNoticeEmitsNoNoticeElement() {
+    // Blank means "omit": the documents module carries no legal copy of its own, so an unconfigured
+    // deployment renders the document with no advisory rather than a hardcoded one.
+    DocumentProjectionService noNotice =
+        new DocumentProjectionService(
+            new TemplateResolver(new ClasspathLayerSource()),
+            new TemplateCompiler(),
+            renderer,
+            new DocumentFooterProperties("agreementmitra.com", "  "),
+            FIXED_CLOCK);
+
+    assertThat(noNotice.previewHtml(request(fullData())))
+        .doesNotContain("<div class=\"doc-screen-notice\">")
+        .contains("agreementmitra.com"); // the provenance line is unaffected
   }
 
   @Test

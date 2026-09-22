@@ -8,23 +8,11 @@
 
 /** The resolved widget-vocabulary token the client renders (from the field's FieldType). */
 export type Widget =
-  | "text"
-  | "textarea"
-  | "number"
-  | "money"
-  | "date"
-  | "checkbox"
-  | "select";
+  "text" | "textarea" | "number" | "money" | "date" | "checkbox" | "select";
 
 /** The raw field-type token so the client can parse/format. */
 export type FieldType =
-  | "text"
-  | "longtext"
-  | "int"
-  | "money"
-  | "date"
-  | "bool"
-  | "enum";
+  "text" | "longtext" | "int" | "money" | "date" | "bool" | "enum";
 
 /**
  * Declarative validation bounds for client-side checks, projected verbatim from the definition's

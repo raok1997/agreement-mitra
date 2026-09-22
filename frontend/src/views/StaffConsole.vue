@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { formatMinorUnits } from "../api/payments";
 import {
   listStampQueue,
   uploadStampForEntry,
@@ -366,6 +367,17 @@ onMounted(load);
           >
             {{ entry.paymentState === "WAIVED" ? "Payment waived" : "Paid" }}
           </span>
+          <!-- What to buy: the certificate must carry at least the stamp value paid for. -->
+          <span
+            v-if="entry.paidStampValueMinorUnits != null"
+            class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700"
+            :data-testid="`queue-stamp-value-${entry.agreementId}`"
+          >
+            Stamp {{ formatMinorUnits(entry.paidStampValueMinorUnits, "INR") }}
+            <template v-if="entry.belowDutyChosen">
+              · below duty (customer's choice)</template
+            >
+          </span>
           <button
             type="button"
             class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -506,8 +518,8 @@ onMounted(load);
             <span>
               Send for signature after attaching
               <span class="block text-slate-500">
-                Starts the Aadhaar eSign workflow and invites the first party. Untick to attach the
-                stamp only.
+                Starts the Aadhaar eSign workflow and invites the first party.
+                Untick to attach the stamp only.
               </span>
             </span>
           </label>

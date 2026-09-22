@@ -19,7 +19,7 @@ class GotenbergClientFooterTest {
       new GotenbergProperties("http://localhost:3000", 4, Duration.ofSeconds(30));
 
   private static GotenbergClient clientWithFooterUrl(String platformUrl) {
-    return new GotenbergClient(null, GOTENBERG, new DocumentFooterProperties(platformUrl));
+    return new GotenbergClient(null, GOTENBERG, new DocumentFooterProperties(platformUrl, ""));
   }
 
   @Test

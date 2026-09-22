@@ -13,10 +13,10 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,13 +34,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -54,28 +49,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, GotenbergTestConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class DocumentProjectionApiIntegrationTest {
 
   private static final String PREVIEW = "/api/templates/document/preview";
-
-  @Container
-  static final GenericContainer<?> gotenberg =
-      new GenericContainer<>(
-              new ImageFromDockerfile().withFileFromPath(".", Path.of("..", "docker", "gotenberg")))
-          .withExposedPorts(3000)
-          // Deny Chromium's outbound network -- the SSRF/exfil guard (matches docker-compose).
-          .withEnv("CHROMIUM_DENY_PUBLIC_IPS", "true")
-          .withEnv("CHROMIUM_DENY_PRIVATE_IPS", "true");
-
-  @DynamicPropertySource
-  static void gotenbergUrl(DynamicPropertyRegistry registry) {
-    registry.add(
-        "gotenberg.url",
-        () -> "http://" + gotenberg.getHost() + ":" + gotenberg.getMappedPort(3000));
-  }
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcTemplate jdbc;
@@ -260,7 +239,10 @@ class DocumentProjectionApiIntegrationTest {
     assertThat(text)
         .contains("PREVIEW - NOT FOR EXECUTION")
         .contains("agreementmitra.com")
-        .contains("Page 1 of");
+        // "Agreement page X of Y", not a bare "Page X of Y": the count describes the agreement,
+        // which the e-stamp certificate is later bound in front of as page 1. See
+        // GotenbergClient#footerHtml.
+        .contains("Agreement page 1 of");
   }
 
   @Test
@@ -294,7 +276,7 @@ class DocumentProjectionApiIntegrationTest {
     assertThat(text)
         .contains(reference)
         .contains("agreementmitra.com")
-        .contains("Page 1 of " + pages) // the "of Y" total renders
+        .contains("Agreement page 1 of " + pages) // the "of Y" total renders
         .doesNotContain("PREVIEW - NOT FOR EXECUTION");
   }
 

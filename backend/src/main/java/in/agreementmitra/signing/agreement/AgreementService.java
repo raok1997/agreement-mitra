@@ -779,6 +779,18 @@ public class AgreementService {
     CaptureState capture = agreement.captureState();
     Map<String, String> captureData = capture == null ? null : capture.data();
     List<String> activeSections = capture == null ? null : capture.activeSections();
+    // The pinned template's dimensions, so a client reopening an agreement knows its DUTY
+    // JURISDICTION rather than falling back to a default and mislabelling it. Resolved through the
+    // non-throwing find(), the same seam JurisdictionEligibility gates on: an agreement with no
+    // pinned template -- or one that no longer resolves -- reports null here and is refused there,
+    // so the two cannot disagree. Never echoed from the create request; the template id itself
+    // stays inside signing.
+    TemplateDetail pinned =
+        agreement.templateId() == null
+            ? null
+            : templateCatalog.find(agreement.templateId().toString()).orElse(null);
+    String state = pinned == null ? null : pinned.dimensions().state();
+    String type = pinned == null ? null : pinned.dimensions().type();
     return new AgreementResponse(
         agreement.getId(),
         agreement.trackingReference(),
@@ -791,6 +803,8 @@ public class AgreementService {
         agreement.createdAt(),
         signers,
         captureData,
-        activeSections);
+        activeSections,
+        state,
+        type);
   }
 }

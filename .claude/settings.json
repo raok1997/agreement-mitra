@@ -1,15 +1,20 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "remoteControlAtStartup": false,
   "permissions": {
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./**/.env)",
       "Read(./**/.env.*)",
-      "Read(./**/*.pem)",
-      "Read(./**/*.key)",
-      "Read(./**/secrets/**)",
-      "Read(./**/credentials*)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Edit(./**/.env)",
+      "Edit(./**/.env.*)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Write(./**/.env)",
+      "Write(./**/.env.*)",
       "Bash(cat .env*)",
       "Bash(cat *.env)",
       "Bash(head .env*)",
@@ -22,36 +27,23 @@
       "Bash(git switch:*)"
     ],
     "ask": [
-      "Bash(./gradlew bootRun*)",
-      "Bash(npm install*)",
-      "Bash(npm i *)",
-      "Bash(docker compose down*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)"
     ],
     "allow": [
-      "Read(./**)",
+      "Read",
+      "Edit",
+      "Write",
+      "Bash",
       "Grep",
       "Glob",
       "Skill",
-      "Bash(./gradlew test*)",
-      "Bash(./gradlew build*)",
-      "Bash(./gradlew spotlessApply*)",
-      "Bash(npm run *)",
-      "Bash(npm test*)",
-      "Bash(docker compose up*)",
-      "Bash(openspec status:*)",
-      "Bash(openspec instructions:*)",
-      "Bash(openspec validate:*)",
-      "Bash(openspec list:*)",
-      "Bash(openspec show:*)",
-      "Bash(npx openspec:*)",
-      "Bash(git status:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(git show:*)"
-    ]
+      "Agent",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "PreToolUse": [

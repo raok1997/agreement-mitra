@@ -269,12 +269,23 @@ public class SignedDocumentDeliveryService {
     }
   }
 
-  /** Terminal signing failure closes as abandoned, with the reason kept distinguishable. */
+  /**
+   * Terminal signing failure closes as abandoned, with the reason kept distinguishable.
+   *
+   * <p><b>One reason per terminal state.</b> {@code STAMP_FAILED} is not a rejected signature and
+   * must not read as one: {@link ClosureReason#ABANDONED_STAMP_FAILED} exists precisely so a closed
+   * agreement says which thing went wrong. Usually {@code StampIntakeService} has already closed
+   * such an agreement at the moment the stamp failed, and {@link AgreementService#close} is
+   * idempotent - but this path must still name the right reason for the case where it gets there
+   * first, rather than relying on somebody else having done it.
+   */
   private void closeAbandoned(SigningCompletionView view) {
     ClosureReason reason =
-        view.status() == SignatureStatus.EXPIRED
-            ? ClosureReason.ABANDONED_SIGNING_EXPIRED
-            : ClosureReason.ABANDONED_SIGNING_FAILED;
+        switch (view.status()) {
+          case EXPIRED -> ClosureReason.ABANDONED_SIGNING_EXPIRED;
+          case STAMP_FAILED -> ClosureReason.ABANDONED_STAMP_FAILED;
+          default -> ClosureReason.ABANDONED_SIGNING_FAILED;
+        };
     if (agreementService.close(view.agreementId(), reason)) {
       log.info("Agreement {} closed as abandoned ({})", view.agreementId(), reason);
     }

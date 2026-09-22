@@ -1,0 +1,12 @@
+# Abstract base for every stamp duty rule (change stamp-duty-base-calculator, design D3).
+#
+# Holds shared DEFAULTS only and deliberately declares NO slabs: there is no national stamp duty
+# rate, so this file can never be selected for a quote. A state rule declares `extends: base` and
+# inherits rounding, registration, counterpartDuty and surcharges unless it declares its own.
+# Money and rates are quoted strings (YAML numbers are binary floats).
+abstract: true
+id: base
+rounding: { mode: UP, unitRupees: 1 }
+registration: { requiredWhenTermMonthsOver: 11 }
+counterpartDuty: "0"
+surcharges: []

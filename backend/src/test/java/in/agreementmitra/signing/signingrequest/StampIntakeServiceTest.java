@@ -15,14 +15,19 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampFailedException;
+import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
+import in.agreementmitra.signing.agreement.AgreementDocumentService;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
 import in.agreementmitra.signing.agreement.StaffPartyView;
 import in.agreementmitra.signing.agreement.StampInfo;
+import in.agreementmitra.signing.agreement.StampQuoteRecordRepository;
+import in.agreementmitra.signing.agreement.StampValueReference;
 import in.agreementmitra.signing.api.StampIntakeResponse;
 import in.agreementmitra.signing.api.StampQueueEntry;
 import in.agreementmitra.signing.payment.PaymentGate;
@@ -71,7 +76,21 @@ class StampIntakeServiceTest {
    */
   @Mock private PaymentGate paymentGate;
 
+  // Permissive by default (a Mockito mock does nothing), which is what these tests want: they
+  // exercise the OTHER preconditions. The jurisdiction gate's own behaviour is covered by
+  // JurisdictionEligibilityTest and by the integration tests.
+  @Mock private JurisdictionEligibility jurisdiction;
+
   @Mock private SigningRequestService signingRequestService;
+
+  // Empty by default (Mockito returns Optional.empty()): no reference value, so the stamp-value
+  // check is inert for the tests about other preconditions.
+  @Mock private StampValueReference stampValueReference;
+  @Mock private StampQuoteRecordRepository frozenQuotes;
+
+  // Empty by default (Mockito returns Optional.empty()): no re-render, so the stored draft is
+  // stamped exactly as before. The re-render path has its own tests below.
+  @Mock private AgreementDocumentService agreementDocuments;
 
   private final CertificateScanValidator scanValidator = new CertificateScanValidator();
 
@@ -84,6 +103,10 @@ class StampIntakeServiceTest {
         blobStore,
         auditor,
         paymentGate,
+        jurisdiction,
+        stampValueReference,
+        frozenQuotes,
+        agreementDocuments,
         signingRequestService);
   }
 
@@ -167,6 +190,91 @@ class StampIntakeServiceTest {
     assertThat(response.trackingReference()).isEqualTo(REFERENCE);
     assertThat(response.propertyCity()).isEqualTo("Bengaluru");
     assertThat(response.certificateNumberRedacted()).isEqualTo("***234X").doesNotContain("IN-KA");
+  }
+
+  // --- stamp value reconciliation (state-stamp-duty-quoting, design D8) --------
+
+  @Test
+  void aCertificateBelowThePaidStampValueIsRefusedBeforeAnythingIsWritten() {
+    UUID agreementId = UUID.randomUUID();
+    UUID staffId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    stubAwaitingStamp(agreementId);
+    // Paid for INR 840; the certificate in command() carries INR 500.
+    when(stampValueReference.forAgreement(agreementId))
+        .thenReturn(Optional.of(new StampValueReference.Reference(84_000L, true)));
+
+    assertThatThrownBy(() -> service().attach(staffId, command(TestImages.certificateScan())))
+        .isInstanceOf(ConflictException.class)
+        .extracting(e -> ((ConflictException) e).kind())
+        .isEqualTo(ConflictException.Kind.STAMP_VALUE_BELOW_PAID);
+
+    verifyNoInteractions(stampProvider);
+    verify(blobStore, Mockito.never()).put(any(), any(), any());
+    verify(persistence, Mockito.never()).markStamped(any(), any(), any());
+    verify(auditor).record(staffId, agreementId, REFERENCE, "REFUSED_STAMP_VALUE");
+  }
+
+  @Test
+  void aCertificateAtThePaidStampValueProceeds() {
+    UUID agreementId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    UUID signingRequestId = stubAwaitingStamp(agreementId);
+    stubDraft(agreementId);
+    when(stampProvider.attach(any(), any(), any())).thenReturn(successfulAttach());
+    // An acknowledged below-duty choice of INR 500 is honoured, not overridden by the legal duty.
+    when(stampValueReference.forAgreement(agreementId))
+        .thenReturn(Optional.of(new StampValueReference.Reference(50_000L, true)));
+
+    service().attach(UUID.randomUUID(), command(TestImages.certificateScan()));
+
+    verify(persistence).markStamped(eq(signingRequestId), eq(agreementId), any());
+  }
+
+  // --- the instrument states the certificate's duty (stamp-duty-amount-from-certificate) ----
+
+  @Test
+  void aReRenderedInstrumentIsWhatGetsStampedInsteadOfTheStoredDraft() {
+    UUID agreementId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    UUID signingRequestId = stubAwaitingStamp(agreementId);
+    when(agreementService.draftPdfKey(agreementId))
+        .thenReturn(Optional.of("drafts/" + agreementId + ".pdf"));
+    byte[] reRendered = "%PDF-1.4 re-rendered with duty".getBytes();
+    // The certificate's own duty amount (command() carries INR 500.00) is what the deed states.
+    when(agreementDocuments.renderForStamp(agreementId, new BigDecimal("500.00")))
+        .thenReturn(Optional.of(reRendered));
+    when(stampProvider.attach(any(), any(), any())).thenReturn(successfulAttach());
+
+    service().attach(UUID.randomUUID(), command(TestImages.certificateScan()));
+
+    verify(stampProvider).attach(eq(reRendered), any(), any());
+    verify(blobStore, never()).get("drafts/" + agreementId + ".pdf");
+    verify(persistence).markStamped(eq(signingRequestId), eq(agreementId), any());
+  }
+
+  @Test
+  void aRendererOutageIsRetryableAndSpendsNothing() {
+    UUID agreementId = UUID.randomUUID();
+    UUID staffId = UUID.randomUUID();
+    stubResolvedAgreement(agreementId);
+    stubAwaitingStamp(agreementId);
+    when(agreementService.draftPdfKey(agreementId))
+        .thenReturn(Optional.of("drafts/" + agreementId + ".pdf"));
+    when(agreementDocuments.renderForStamp(eq(agreementId), any()))
+        .thenThrow(new StampRenderUnavailableException("renderer down", null));
+
+    assertThatThrownBy(() -> service().attach(staffId, command(TestImages.certificateScan())))
+        .isInstanceOf(StampRenderUnavailableException.class);
+
+    // NOT the terminal STAMP_FAILED branch: nothing composited, stored, transitioned, or closed, so
+    // the same certificate can be uploaded again once the renderer is back.
+    verifyNoInteractions(stampProvider);
+    verify(blobStore, never()).put(any(), any(), any());
+    verify(persistence, never()).markStamped(any(), any(), any());
+    verify(persistence, never()).markStampFailed(any());
+    verify(agreementService, never()).close(any(), any());
+    verify(auditor).record(staffId, agreementId, REFERENCE, "REJECTED_RENDER_UNAVAILABLE");
   }
 
   // --- optional signing kick-off ---------------------------------------------

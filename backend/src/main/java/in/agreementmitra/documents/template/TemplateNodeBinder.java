@@ -49,9 +49,21 @@ final class TemplateNodeBinder {
     FieldValidation validation =
         field.has("validation") ? bindValidation(field.get("validation")) : null;
     String group = field.hasNonNull("group") ? field.get("group").asText() : null;
+    FieldSource source =
+        field.hasNonNull("source") ? FieldSource.from(field.get("source").asText()) : null;
+    String placeholder = field.hasNonNull("placeholder") ? field.get("placeholder").asText() : null;
 
     return new Field(
-        key, text(field, "label"), type, required, defaultValue, options, validation, group);
+        key,
+        text(field, "label"),
+        type,
+        required,
+        defaultValue,
+        options,
+        validation,
+        group,
+        source,
+        placeholder);
   }
 
   static FieldValidation bindValidation(JsonNode validation) {

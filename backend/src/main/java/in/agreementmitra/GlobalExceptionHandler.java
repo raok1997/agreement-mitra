@@ -58,14 +58,22 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       "urn:agreementmitra:problem:certificate-already-used";
   private static final String TYPE_ORDER_NOT_PLACED = "urn:agreementmitra:problem:order-not-placed";
   private static final String TYPE_PAYMENT_REQUIRED = "urn:agreementmitra:problem:payment-required";
+  private static final String TYPE_JURISDICTION_UNSUPPORTED =
+      "urn:agreementmitra:problem:jurisdiction-unsupported";
   private static final String TYPE_PAYMENT_REFERENCE_ALREADY_USED =
       "urn:agreementmitra:problem:payment-reference-already-used";
   private static final String TYPE_AGREEMENT_CLOSED = "urn:agreementmitra:problem:agreement-closed";
   private static final String TYPE_CONTACTS_FROZEN = "urn:agreementmitra:problem:contacts-frozen";
+  private static final String TYPE_STAMP_VALUE_BELOW_PAID =
+      "urn:agreementmitra:problem:stamp-value-below-paid";
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
+  private static final String TYPE_STAMP_CHOICE_INVALID =
+      "urn:agreementmitra:problem:stamp-choice-invalid";
   private static final String TYPE_PAYLOAD_TOO_LARGE =
       "urn:agreementmitra:problem:payload-too-large";
   private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
+  private static final String TYPE_STAMP_RENDER_UNAVAILABLE =
+      "urn:agreementmitra:problem:stamp-render-unavailable";
   private static final String TYPE_DOCUMENT_DATA_INVALID =
       "urn:agreementmitra:problem:document-data-invalid";
 
@@ -151,6 +159,7 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               "Draft required",
               "A draft must be uploaded before signing can be requested.");
       case CONTACT_REQUIRED -> contactRequiredProblem(ex);
+      case JURISDICTION_UNSUPPORTED -> jurisdictionUnsupportedProblem(ex);
       case NOT_SIGNABLE ->
           problem(
               HttpStatus.CONFLICT,
@@ -207,7 +216,34 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               TYPE_CONTACTS_FROZEN,
               "Contacts frozen",
               "Contact details cannot be changed once payment for this agreement is settled.");
+      // Its own type so staff can tell it apart from every other intake refusal: the certificate
+      // was bought for too little, which a different action fixes than a bad scan or a spent one.
+      case STAMP_VALUE_BELOW_PAID ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_STAMP_VALUE_BELOW_PAID,
+              "Stamp value below paid",
+              "The certificate's stamp duty is below the stamp value this agreement was paid for.");
     };
+  }
+
+  /**
+   * The checkout's stamp choice is missing, not an offered option, or a below-duty choice without
+   * an acknowledgement of the current warning. The body carries a fixed reason code and the public
+   * warning version only -- never an amount or anything else the client sent.
+   */
+  @ExceptionHandler(StampChoiceInvalidException.class)
+  ProblemDetail handleStampChoiceInvalid(StampChoiceInvalidException ex) {
+    ProblemDetail body =
+        problem(
+            HttpStatus.BAD_REQUEST,
+            TYPE_STAMP_CHOICE_INVALID,
+            "Stamp choice invalid",
+            "Choose one of the offered stamp options, acknowledging the warning for a value below"
+                + " the stamp duty.");
+    body.setProperty("reason", ex.reason().name());
+    body.setProperty("warningVersion", ex.currentWarningVersion());
+    return body;
   }
 
   @ExceptionHandler(InvalidUploadException.class)
@@ -229,6 +265,21 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         TYPE_STAMP_FAILED,
         "Stamping failed",
         "The uploaded draft could not be stamped.");
+  }
+
+  @ExceptionHandler(StampRenderUnavailableException.class)
+  ProblemDetail handleStampRenderUnavailable(StampRenderUnavailableException ex) {
+    // 503: the renderer was unavailable while re-rendering the instrument at stamp intake. Nothing
+    // was
+    // written and the certificate is unused, so the same upload can simply be retried. Its own
+    // type,
+    // not stamp-failed: that one is terminal and this one is not. Constant detail, never the cause.
+    return problem(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        TYPE_STAMP_RENDER_UNAVAILABLE,
+        "Document renderer unavailable",
+        "The agreement could not be prepared for stamping right now. Nothing was saved; retry the"
+            + " upload with the same certificate.");
   }
 
   @ExceptionHandler(DocumentDataInvalidException.class)
@@ -308,6 +359,37 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             "Every party needs a contact we can reach them on before payment.");
     if (!ex.partyLabels().isEmpty()) {
       body.setProperty("unreachableParties", ex.partyLabels());
+    }
+    return body;
+  }
+
+  /**
+   * The agreement's duty jurisdiction is not one we can fulfil. A <b>distinct</b> type from
+   * payment-required on purpose: a different person resolves each, so an operator reading a 409
+   * must be able to tell which precondition stopped the pipeline.
+   *
+   * <p>Both extra properties are safe under the never-echo invariant because both are
+   * <b>server-derived</b>, not request-derived: the rejected code comes from the agreement's pinned
+   * template and the eligible list from configuration. The eligible list is public by construction
+   * - the template picker and the published terms both disclose it - and it names only what IS
+   * eligible, never what is under consideration.
+   *
+   * <p>The wording avoids "we do not serve your state": the template remains fully usable to draft
+   * and download, and only stamping and eSign are unavailable.
+   */
+  private static ProblemDetail jurisdictionUnsupportedProblem(ConflictException ex) {
+    ProblemDetail body =
+        problem(
+            HttpStatus.CONFLICT,
+            TYPE_JURISDICTION_UNSUPPORTED,
+            "Jurisdiction not available for stamping",
+            "This agreement can be drafted and downloaded, but stamping and eSign are not yet"
+                + " available for its jurisdiction.");
+    if (ex.rejectedJurisdiction() != null) {
+      body.setProperty("jurisdiction", ex.rejectedJurisdiction());
+    }
+    if (!ex.eligibleJurisdictions().isEmpty()) {
+      body.setProperty("eligibleJurisdictions", ex.eligibleJurisdictions());
     }
     return body;
   }

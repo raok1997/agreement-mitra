@@ -225,6 +225,144 @@ class RecoveryIntegrationTest {
     assertThat(opened.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
   }
 
+  // --- 9.4 eligibility matrix -------------------------------------------------------------------
+
+  /**
+   * The eligibility rule is two predicates ANDed: settled payment AND nobody owns it. This walks
+   * the matrix so neither half can be dropped silently.
+   *
+   * <p><b>Note on the task wording.</b> Task 9.4 says "only paid-and-unowned is eligible", but the
+   * implemented rule accepts {@code WAIVED} as well as {@code PAID} -- and it is right to. A waiver
+   * is the deliberate decision to proceed without money; a customer whose agreement was waived has
+   * the same claim on reaching it as one who paid. The task text is the loose phrasing, not the
+   * code. Asserted here so the WAIVED row cannot be "tidied away" later by someone reading only
+   * that sentence.
+   */
+  @Test
+  void onlyASettledUnownedAgreementIsRecoverable() {
+    Created paid = createAgreement("paid@example.com", null);
+    Payments.markPaid(jdbc, paid.id(), "pay_" + UUID.randomUUID());
+
+    Created waived = createAgreement("waived@example.com", null);
+    Payments.waive(jdbc, waived.id());
+
+    Created unpaid = createAgreement("unpaid@example.com", null);
+
+    Created paidButOwned = createAgreement("owned@example.com", null);
+    Payments.markPaid(jdbc, paidButOwned.id(), "pay_" + UUID.randomUUID());
+    claim(paidButOwned.id());
+
+    Created waivedButOwned = createAgreement("waivedowned@example.com", null);
+    Payments.waive(jdbc, waivedButOwned.id());
+    claim(waivedButOwned.id());
+
+    mail.reset();
+    requestRecovery(paid.reference());
+    requestRecovery(waived.reference());
+    requestRecovery(unpaid.reference());
+    requestRecovery(paidButOwned.reference());
+    requestRecovery(waivedButOwned.reference());
+
+    // Settled + unowned -> a link. Everything else -> nothing, whatever the response said.
+    assertThat(mail.sentTo("paid@example.com")).hasSize(1);
+    assertThat(mail.sentTo("waived@example.com")).hasSize(1);
+    assertThat(mail.sentTo("unpaid@example.com")).isEmpty();
+    assertThat(mail.sentTo("owned@example.com")).isEmpty();
+    assertThat(mail.sentTo("waivedowned@example.com")).isEmpty();
+  }
+
+  // --- 9.20 / 9.22 / 9.23: what the link is, and is not, good for -------------------------------
+
+  /**
+   * The link carries no expiry of its own (design D2 removed per-link state). Claiming is the only
+   * revocation. This asserts the positive half -- that nothing else quietly expires it -- by moving
+   * the agreement's clock back a year and reopening.
+   */
+  @Test
+  void aLinkKeepsWorkingWhileTheAgreementStaysPaidAndUnowned() {
+    Created created = createAgreement("asha@example.com", null);
+    Payments.markPaid(jdbc, created.id(), "pay_" + UUID.randomUUID());
+
+    // Age both the agreement and its payment well past any plausible implicit window.
+    jdbc.update(
+        "UPDATE agreement SET created_at = created_at - INTERVAL '400 days',"
+            + " payment_recorded_at = payment_recorded_at - INTERVAL '400 days' WHERE id = ?",
+        created.id());
+
+    ResponseEntity<String> opened =
+        rest.getForEntity("/api/agreements/" + created.id(), String.class);
+
+    assertThat(opened.getStatusCode()).isEqualTo(HttpStatus.OK);
+  }
+
+  /**
+   * Recovery re-sends a link; it does not take ownership. The agreement must stay unowned
+   * afterwards, or the customer would be locked out of ever saving it to an account.
+   */
+  @Test
+  void aRecoveredAgreementStaysUnownedAndCanStillBeClaimedAfterwards() {
+    Created created = createAgreement("asha@example.com", null);
+    Payments.markPaid(jdbc, created.id(), "pay_" + UUID.randomUUID());
+    mail.reset();
+
+    requestRecovery(created.reference());
+    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
+
+    Integer ownedAfterRecovery =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM agreement WHERE id = ? AND owner_identity_id IS NOT NULL",
+            Integer.class,
+            created.id());
+    assertThat(ownedAfterRecovery).isZero();
+
+    // Still claimable, and claiming still revokes the link.
+    claim(created.id());
+    ResponseEntity<String> opened =
+        rest.getForEntity("/api/agreements/" + created.id(), String.class);
+    assertThat(opened.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  /**
+   * The link is a capability to <b>reach</b> the agreement, not to rewrite it. A holder who never
+   * authenticated must not be able to move the terms or the party list -- otherwise an emailed link
+   * would be a stronger credential than a login.
+   */
+  @Test
+  void aLinkHolderCannotEditTermsOrParties() {
+    Created created = createAgreement("asha@example.com", "tara@example.com");
+    Payments.markPaid(jdbc, created.id(), "pay_" + UUID.randomUUID());
+
+    // Reading with the link is fine.
+    assertThat(rest.getForEntity("/api/agreements/" + created.id(), String.class).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+
+    // Rewriting is not: the full-edit route stays authenticated.
+    Map<String, Object> rewrite =
+        Map.of(
+            "propertyAddress", "99 Somewhere Else, Bengaluru 560001",
+            "monthlyRent", "1.00",
+            "securityDeposit", "0.00",
+            "startDate", "2026-09-01",
+            "endDate", "2027-07-31",
+            "signers",
+                List.of(
+                    signer("New", "Owner", "F", "1 A St", "new@example.com", "OWNER"),
+                    signer("New", "Tenant", "G", "3 C St", "new2@example.com", "TENANT")));
+    ResponseEntity<String> edited =
+        rest.exchange(
+            "/api/agreements/" + created.id(),
+            org.springframework.http.HttpMethod.PUT,
+            new org.springframework.http.HttpEntity<>(rewrite),
+            String.class);
+    assertThat(edited.getStatusCode()).isIn(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN);
+
+    // ...and nothing moved.
+    String address =
+        jdbc.queryForObject(
+            "SELECT property_address FROM agreement WHERE id = ?", String.class, created.id());
+    assertThat(address).isEqualTo("12 Test Street, Bengaluru 560038");
+  }
+
   @Test
   void oneRecipientFailingDoesNotDenyTheOther() {
     Created created = createAgreement("asha@example.com", "tara@example.com");

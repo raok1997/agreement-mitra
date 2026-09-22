@@ -8,8 +8,9 @@ Defines which paths are permitted (the eSign webhook, actuator health, the signi
 stub, and the error dispatch), that everything else is denied with 403, the
 stateless/CSRF-disabled JSON-API posture, and the no-leak guarantees for actuator
 health and the error endpoint. Distinct from `backend-security-scanning` (build-time
-dependency/SAST gates). No authentication mechanism exists yet — this is a posture,
-not an authenticator.
+dependency/SAST gates). This capability owns the filter chain and route authorization;
+the authenticator itself — the Google handshake and the opaque bearer sessions the
+filter consumes — lives in `google-oauth-login`.
 
 ## Requirements
 
@@ -116,3 +117,131 @@ classify it as a module and module boundaries remain intact. `ModularityTests` S
 #### Scenario: Modularity verification passes
 - **WHEN** `ModularityTests` runs after this change
 - **THEN** it passes with no module-boundary violations and no new module is introduced
+
+### Requirement: Role-based authorization for staff operations
+
+The system SHALL carry a **role** on the authenticated principal and SHALL support at least
+two roles: **CUSTOMER** (the default for a self-service signup) and **STAFF** (an
+AgreementMitra operator). Role SHALL be a server-managed property of the account: it SHALL NOT
+be settable by the client at signup, on login, or through any request body or header, and
+SHALL NOT be derived from any claim supplied by the external identity provider.
+
+Every newly provisioned account SHALL default to **CUSTOMER**. Granting STAFF SHALL be an
+out-of-band administrative action.
+
+Staff-only endpoints SHALL be authorized under the existing **default-deny** posture: the
+endpoint is denied unless the caller is authenticated **and** holds the required role. An
+unauthenticated caller SHALL receive `401` and an authenticated caller lacking the role SHALL
+receive `403`. Authorization SHALL be evaluated **before** any resource lookup, so a refusal
+reveals nothing about whether the referenced resource exists.
+
+Role checks SHALL NOT replace ownership checks: an endpoint scoped to a customer's own
+resources SHALL still verify ownership even for a STAFF caller, unless a requirement explicitly
+grants staff cross-customer access (as `estamp-intake` does for stamp upload).
+
+#### Scenario: New accounts default to CUSTOMER
+
+- **WHEN** a new account is provisioned through the login flow
+- **THEN** it is assigned the CUSTOMER role
+
+#### Scenario: Role cannot be self-assigned
+
+- **WHEN** a client supplies a role value in a request body, header, or identity-provider claim
+- **THEN** the supplied value is ignored and the server-managed role is unchanged
+
+#### Scenario: Staff-only endpoint denies a customer
+
+- **WHEN** a CUSTOMER-role caller invokes a staff-only endpoint
+- **THEN** the response is `403` and no side effect occurs
+
+#### Scenario: Staff-only endpoint denies an anonymous caller
+
+- **WHEN** an unauthenticated caller invokes a staff-only endpoint
+- **THEN** the response is `401` and no side effect occurs
+
+#### Scenario: Authorization precedes resource lookup
+
+- **WHEN** an unauthorized caller invokes a staff-only endpoint naming a resource that does
+  not exist
+- **THEN** the response is the authorization failure (`401`/`403`), not `404`, so the endpoint
+  is not an existence oracle
+
+#### Scenario: Default-deny still covers unlisted endpoints
+
+- **WHEN** the role model is introduced
+- **THEN** endpoints not explicitly permitted remain denied by default, and the existing
+  default-deny verification stays green
+
+### Requirement: Session authentication filter and login-handshake authorization
+
+The security baseline SHALL gain a session-authentication filter while leaving every existing route
+authorization unchanged. The filter SHALL authenticate a request from an opaque
+`Authorization: Bearer` session value (per the `google-oauth-login` capability) and SHALL be a no-op
+when the header is absent or invalid, leaving the request unauthenticated for the deny-by-default
+chain to handle.
+
+The Google login handshake and session exchange SHALL be reachable without a session:
+`GET /api/auth/google/start`, `GET /api/auth/google/callback`, and
+`POST /api/auth/session/exchange` SHALL be `permitAll`. `GET /api/auth/me` and
+`POST /api/auth/logout` SHALL require authentication.
+
+All existing route authorization SHALL be unchanged by this capability: anonymous agreement create,
+draft upload, capability read (`GET /api/agreements/{id}`), the signing routes, and the
+HMAC-authenticated webhook remain exactly as before (agreement-route gating is introduced by a
+separate change). The chain SHALL remain deny-by-default for any unmatched route, and the actuator
+lockdown SHALL be unchanged.
+
+#### Scenario: The login handshake is reachable without a session
+
+- **WHEN** an unauthenticated client calls `GET /api/auth/google/start` or
+  `POST /api/auth/session/exchange`
+- **THEN** the chain permits the request (no session is required to log in)
+
+#### Scenario: me and logout require a session
+
+- **WHEN** an unauthenticated client calls `GET /api/auth/me` or `POST /api/auth/logout`
+- **THEN** the request is rejected as unauthenticated
+- **AND** with a valid `Authorization: Bearer` session the filter authenticates the caller and the
+  request is allowed
+
+#### Scenario: Existing routes are not regressed
+
+- **WHEN** an unauthenticated client calls `POST /api/agreements` or `GET /api/agreements/{id}` for an
+  existing agreement
+- **THEN** the request is permitted exactly as before this change
+
+### Requirement: Owner-route authorization for agreements
+
+The security baseline SHALL gate the save / resume / edit routes behind authentication while keeping
+anonymous drafting open. `GET /api/agreements` (list mine), `POST /api/agreements/*/claim`, and
+`PUT /api/agreements/*` (edit) SHALL require authentication (via the session filter introduced by the
+`google-oauth-login` capability). Anonymous agreement create (`POST /api/agreements`), draft upload
+(`POST /api/agreements/*/draft`), and capability read (`GET /api/agreements/{id}`) SHALL remain
+`permitAll`; owner-scoping for a claimed agreement's read is enforced in the handler, not the filter chain.
+
+The authenticated matchers for `GET /api/agreements`, `POST /api/agreements/*/claim`, and
+`PUT /api/agreements/*` SHALL be ordered **before** the broader `permitAll` matchers for
+`/api/agreements/*`, so that list, claim, and edit are gated while anonymous create and capability read
+remain open. The signing routes, the HMAC-authenticated webhook, and the `google-oauth-login` filter and
+handshake permits SHALL be unchanged. The chain SHALL remain deny-by-default for any unmatched route.
+
+#### Scenario: Anonymous drafting stays open while save, list, and edit are gated
+
+- **WHEN** an unauthenticated client calls `POST /api/agreements` and `GET /api/agreements/{id}` for an
+  unowned agreement
+- **THEN** both are permitted
+- **AND** an unauthenticated `GET /api/agreements`, `POST /api/agreements/{id}/claim`, or
+  `PUT /api/agreements/{id}` is rejected as unauthenticated
+
+#### Scenario: A valid session authenticates the gated routes
+
+- **WHEN** a client calls `GET /api/agreements`, `POST /api/agreements/{id}/claim`, or
+  `PUT /api/agreements/{id}` with a valid `Authorization: Bearer` session
+- **THEN** the session filter authenticates the caller and the request is allowed
+
+#### Scenario: Matcher order keeps the capability read open
+
+- **GIVEN** the authenticated `GET /api/agreements` matcher and the `permitAll`
+  `GET /api/agreements/{id}` matcher
+- **WHEN** an unauthenticated client GETs `/api/agreements/{id}` for an unowned agreement
+- **THEN** the request is permitted (the list matcher does not shadow the capability read)

@@ -6,9 +6,18 @@
 # Agreement Witnesseth -> Annexure -> Statutory (Telangana), with the statutory overlay last before
 # the signature block.
 #
-# "Statutory (Telangana)" is OPT-IN OPTIONAL (2026-07-13 requester decision): absent from preview and
-# a generated draft until the user adds it from the catalog (marked optional in the state layer's
-# addSection).
+# "Statutory (Telangana)" is MANDATORY (2026-09-07, state-TG.patch.yaml v2 -- `optional: false`),
+# reversing the 2026-07-13 opt-in decision. It renders in preview and in every generated Telangana
+# draft with no user action. THIS COMMENT SAID "OPT-IN OPTIONAL" UNTIL 2026-09-10, two months after
+# the code changed -- see rental-document-content-v2 task 9.4 on why a stale note here is a real
+# hazard: it is read by whoever reviews this template, counsel included.
+#
+# The flip exists BECAUSE of this file: the removeClause + replaceSection below drop the national
+# `stampRegistrationClause` on the theory that the state layer's `tgStampRegistration` supersedes
+# it -- but that replacement lived inside the then-opt-in statutory section, so a default Telangana
+# deed rendered with NO stamp/registration clause at all while every national deed carried one.
+# If the section is ever made optional again, `stampRegistrationClause` MUST return to the
+# witnesseth list in the same edit or the hole reopens.
 #
 # The "In Witness Whereof" execution / signature block is MANDATORY here (agreement-execution-block
 # CR): a generated draft must carry the per-signer signature zones + esign:<role> anchors to be
@@ -26,8 +35,15 @@ ops:
   # supersedes it. Then re-author the witnesseth list without the removed clause so nothing dangles.
   - { op: removeClause, id: stampRegistrationClause }
   # Re-author without the removed national stamp clause; keep the general boilerplate closing clauses
-  # (service of notice, governing law -- laws of India, severability, entire agreement). The opt-in
-  # Statutory (Telangana) section adds the more-specific tgGoverningLaw on top when the user adds it.
+  # (service of notice, governing law -- laws of India, severability, entire agreement). The
+  # mandatory Statutory (Telangana) section adds the more-specific tgGoverningLaw on top, so a
+  # Telangana deed carries BOTH choice-of-law clauses -- the national one here and the TG one there.
+  # That is redundant (tgGoverningLaw subsumes governingLawClause) but deliberately left alone:
+  # plain-removing governingLawClause here would recreate the stamp-clause hole one clause over --
+  # revert the statutory flag to optional and a TG deed would have no governing-law clause at all.
+  # The safe consolidation is a replaceClause of governingLawClause with the TG text, keeping it in
+  # this always-on list and dropping tgGoverningLaw from the statutory section. That is a drafting
+  # decision, not a drift fix: it is in the follow-up register (docs/ROADMAP.md) with counsel.
   - { op: replaceSection, title: "Now This Agreement Witnesseth",
       section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
                  entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,

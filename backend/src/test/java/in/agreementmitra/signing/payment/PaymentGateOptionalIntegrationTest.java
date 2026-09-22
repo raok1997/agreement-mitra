@@ -53,6 +53,19 @@ class PaymentGateOptionalIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
@@ -73,6 +86,8 @@ class PaymentGateOptionalIntegrationTest {
   private UUID createFinalisedAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -142,7 +157,9 @@ class PaymentGateOptionalIntegrationTest {
         "certificateNumber",
         "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase());
     form.add("issueDate", "2026-01-15");
-    form.add("dutyAmount", "500.00");
+    form.add(
+        "dutyAmount",
+        "10000.00"); // covers the recomputed stamp duty of any fixture (state-stamp-duty-quoting)
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);

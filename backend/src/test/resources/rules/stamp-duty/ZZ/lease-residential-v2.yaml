@@ -1,0 +1,47 @@
+# FICTIONAL test fixture (state ZZ does not exist). Exercises every engine feature; no real law.
+extends: base
+id: ZZ-lease-residential-v2
+state: ZZ
+instrumentKind: LEASE
+usage: RESIDENTIAL
+effectiveFrom: "2025-04-01"
+effectiveTo: null
+legalReference: "Fictional Stamp Act, Article 99 (test fixture)"
+counselReview: null
+params: { depositInterestRatePercent: "10" }
+slabs:
+  - { minMonths: 1, maxMonths: 12, consideration: [TOTAL_RENT, REFUNDABLE_DEPOSIT], ratePercent: "0.4" }
+  - { minMonths: 13, maxMonths: 60, consideration: [AVERAGE_ANNUAL_RENT, DEPOSIT_NOTIONAL_INTEREST, PREMIUM], ratePercent: "0.5" }
+  - { minMonths: 61, maxMonths: 120, fixedAmount: "5000" }
+minimumAmount: "100"
+maximumAmount: "20000"
+surcharges: [ { name: "ZZ infrastructure cess", percentOfDuty: "10" } ]
+counterpartDuty: "50"
+cases:
+  - name: "1-month boundary: minimum applies"
+    basis: { termMonths: 1, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 11000, plans: { physical: 11000, e-stamp: 11000 } }
+  - name: "11 months below minimum"
+    basis: { termMonths: 11, monthlyRent: "1000" }
+    expect: { outcome: QUOTED, amountPaise: 11000 }
+  - name: "12-month boundary uses slab 1"
+    basis: { termMonths: 12, monthlyRent: "10000", refundableDeposit: "30000" }
+    expect: { outcome: QUOTED, amountPaise: 66000, plans: { physical: 70000, e-stamp: 66000 } }
+  - name: "13-month boundary uses slab 2 with notional deposit interest"
+    basis: { termMonths: 13, monthlyRent: "10000", refundableDeposit: "50000" }
+    expect: { outcome: QUOTED, amountPaise: 69000, plans: { physical: 70000, e-stamp: 69000 } }
+  - name: "60-month boundary with escalation"
+    basis: { termMonths: 60, monthlyRent: "10000", escalationPercent: "10", escalationEveryMonths: 12 }
+    expect: { outcome: QUOTED, amountPaise: 80600, plans: { physical: 100000, e-stamp: 80600 } }
+  - name: "61-month boundary fixed duty with a counterpart"
+    basis: { termMonths: 61, monthlyRent: "10000", counterparts: 2 }
+    expect: { outcome: QUOTED, amountPaise: 555000, plans: { physical: UNPLANNABLE, e-stamp: 555000 } }
+  - name: "120-month boundary fixed duty"
+    basis: { termMonths: 120, monthlyRent: "10000" }
+    expect: { outcome: QUOTED, amountPaise: 550000 }
+  - name: "maximum caps the duty"
+    basis: { termMonths: 12, monthlyRent: "500000" }
+    expect: { outcome: QUOTED, amountPaise: 2200000, plans: { physical: UNPLANNABLE, e-stamp: 2200000 } }
+  - name: "term beyond every slab"
+    basis: { termMonths: 121, monthlyRent: "10000" }
+    expect: { outcome: UNSUPPORTED }

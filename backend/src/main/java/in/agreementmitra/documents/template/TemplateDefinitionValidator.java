@@ -26,6 +26,11 @@ final class TemplateDefinitionValidator {
       }
       validateOptions(field);
       validateDefault(field);
+      if (field.systemSourced() && field.required()) {
+        // Only the server can fill it, so a required one would fail every generate before intake.
+        throw new TemplateDefinitionException(
+            "system-sourced field '" + field.key() + "' cannot be required");
+      }
     }
 
     Set<String> clauseIds = new LinkedHashSet<>();

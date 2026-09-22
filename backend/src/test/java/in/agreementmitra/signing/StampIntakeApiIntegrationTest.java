@@ -58,6 +58,19 @@ class StampIntakeApiIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Pin every agreement these tests create to an ELIGIBLE jurisdiction. Since
+   * jurisdiction-checkout-gating, an agreement with no pinned template has no duty jurisdiction and
+   * is refused at finalise, checkout, e-stamp intake and eSign initiation - so a fixture that
+   * creates a bare agreement can no longer reach the steps these tests exercise. The seeder is
+   * local/sandbox-only, so the row is inserted here.
+   */
+  @BeforeEach
+  void seedEligibleTemplate() {
+    in.agreementmitra.support.TemplateCatalogFixture.seedEligible(jdbc);
+  }
+
   @Autowired private BlobStore blobStore;
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
@@ -115,6 +128,8 @@ class StampIntakeApiIntegrationTest {
   private UUID bareAgreement() {
     Map<String, Object> body =
         Map.of(
+            "state", "TG",
+            "type", "residential",
             "propertyAddress", "12 MG Road, Bengaluru",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -180,7 +195,9 @@ class StampIntakeApiIntegrationTest {
     form.add("agreementReference", reference);
     form.add("certificateNumber", certificateNumber);
     form.add("issueDate", "2026-01-15");
-    form.add("dutyAmount", "500.00");
+    form.add(
+        "dutyAmount",
+        "10000.00"); // covers the recomputed stamp duty of any fixture (state-stamp-duty-quoting)
     form.add("jurisdiction", "KA");
     form.add("descriptionOfDocument", "Rental agreement");
     form.add("purchasedBy", "AgreementMitra Operations");
@@ -206,6 +223,60 @@ class StampIntakeApiIntegrationTest {
 
   private static String uniqueCertificate() {
     return "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
+  }
+
+  // --- the jurisdiction gate -------------------------------------------------
+
+  @Test
+  void aGrandfatheredIneligibleAgreementIsRefusedAndNoCertificateIsSpent() {
+    // The case gate 3 exists for. An agreement finalised BEFORE the jurisdiction gate shipped is
+    // already sitting in this queue, and PaymentGate is the only other control here -- which a
+    // staff WAIVER satisfies. Without its own check, staff could buy a real SHCIL certificate for
+    // an agreement in a state whose duty nobody can compute.
+    //
+    // Built by finalising while eligible and then moving the pin, because the customer path can no
+    // longer produce such a row at all -- which is the point.
+    UUID agreementId = agreementWithDraft();
+    in.agreementmitra.support.Payments.waive(jdbc, agreementId);
+    UUID nationalTemplate = in.agreementmitra.support.TemplateCatalogFixture.seedNational(jdbc);
+    jdbc.update("UPDATE agreement SET template_id = ? WHERE id = ?", nationalTemplate, agreementId);
+
+    String certificate = uniqueCertificate();
+    ResponseEntity<String> refused =
+        postIntake(staffToken, intakeForm(staffReferenceOf(agreementId), certificate));
+
+    assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(refused.getBody()).contains("jurisdiction-unsupported");
+    // Distinct from payment-required, so staff can tell the two refusals apart at the same step.
+    assertThat(refused.getBody()).doesNotContain("payment-required");
+    // Nothing was spent: no stamp attached, and the certificate number stays unused.
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("PDF_GENERATED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM agreement WHERE stamp_certificate_number = ?",
+                Integer.class,
+                certificate))
+        .isZero();
+  }
+
+  @Test
+  void theJurisdictionRefusalIsAuditedAsItsOwnOutcomeNotAGenericError() {
+    // outcomeFor() ends `default -> OUTCOME_ERROR`, so without an explicit branch this refusal
+    // would be recorded as an unspecified error -- silently, since that switch still compiles.
+    UUID agreementId = agreementWithDraft();
+    UUID nationalTemplate = in.agreementmitra.support.TemplateCatalogFixture.seedNational(jdbc);
+    jdbc.update("UPDATE agreement SET template_id = ? WHERE id = ?", nationalTemplate, agreementId);
+
+    postIntake(staffToken, intakeForm(staffReferenceOf(agreementId), uniqueCertificate()));
+
+    List<String> outcomes =
+        jdbc.queryForList(
+            "SELECT outcome FROM stamp_intake_audit WHERE agreement_id = ?"
+                + " ORDER BY occurred_at DESC",
+            String.class,
+            agreementId);
+    assertThat(outcomes).isNotEmpty();
+    assertThat(outcomes.get(0)).isEqualTo("REJECTED_JURISDICTION_UNSUPPORTED");
   }
 
   // --- happy path ------------------------------------------------------------
@@ -237,11 +308,16 @@ class StampIntakeApiIntegrationTest {
 
     // The scan is retained as the evidence artifact...
     assertThat(blobStore.get("estamp-scans/" + agreementId)).isNotEmpty();
-    // ...and the composite has the scan as page 1 with the certificate number on the document page.
+    // ...and the composite has the scan as page 1, with NOTHING stamped onto the agreement page.
+    // The number printed there was whatever staff transcribed at intake, so the document could
+    // assert a stamp it could not vouch for; it is persisted (asserted above) but never printed.
+    // See PdfStampComposer#compose and PdfStampComposerTest.
     byte[] stamped = blobStore.get("stamped/" + agreementId + ".pdf");
     try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(stamped)) {
       assertThat(doc.getNumberOfPages()).isEqualTo(2);
-      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains(certificate);
+      assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc))
+          .doesNotContain(certificate)
+          .doesNotContain("e-Stamp Certificate No.");
     }
 
     assertThat(statusOfAgreement(agreementId)).isEqualTo("STAMPED");
@@ -568,6 +644,88 @@ class StampIntakeApiIntegrationTest {
     assertThat(signingRequestCount()).isEqualTo(afterFirst);
   }
 
+  // --- stamp value reconciliation (state-stamp-duty-quoting) ------------------
+
+  /** Finalised, then PAID with a frozen stamp quote instead of the file's usual waiver. */
+  private UUID paidAgreementWithFrozenQuote(long dutyMinorUnits, long stampValueMinorUnits) {
+    UUID agreementId = agreementWithDraft();
+    Payments.reset(jdbc, agreementId);
+    in.agreementmitra.support.StampQuotes.freezePaid(
+        jdbc, agreementId, dutyMinorUnits, stampValueMinorUnits);
+    return agreementId;
+  }
+
+  private MultiValueMap<String, Object> intakeFormWithDuty(UUID agreementId, String dutyAmount) {
+    MultiValueMap<String, Object> form =
+        intakeForm(staffReferenceOf(agreementId), uniqueCertificate());
+    form.set("dutyAmount", dutyAmount);
+    return form;
+  }
+
+  @Test
+  void aCertificateBelowThePaidStampValueIsRefusedAndNothingIsStored() {
+    // Paid for a stamp value of INR 20,000; the certificate carries INR 10,000.
+    UUID agreementId = paidAgreementWithFrozenQuote(2_000_000L, 2_000_000L);
+
+    ResponseEntity<String> resp =
+        postIntake(staffToken, intakeFormWithDuty(agreementId, "10000.00"));
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(resp.getBody()).contains("stamp-value-below-paid");
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("PDF_GENERATED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT stamp_certificate_number FROM agreement WHERE id = ?",
+                String.class,
+                agreementId))
+        .isNull();
+  }
+
+  @Test
+  void aCertificateAtThePaidStampValueIsAccepted() {
+    UUID agreementId = paidAgreementWithFrozenQuote(2_000_000L, 2_000_000L);
+
+    ResponseEntity<String> resp =
+        postIntake(staffToken, intakeFormWithDuty(agreementId, "20000.00"));
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(statusOfAgreement(agreementId)).isEqualTo("STAMPED");
+  }
+
+  @Test
+  void anAcknowledgedBelowDutyChoiceIsHonouredNotOverridden() {
+    // Legal duty INR 1,300, but the customer chose and acknowledged a single INR 100 paper.
+    UUID agreementId = paidAgreementWithFrozenQuote(130_000L, 10_000L);
+
+    ResponseEntity<String> resp = postIntake(staffToken, intakeFormWithDuty(agreementId, "100.00"));
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+  }
+
+  @Test
+  void theQueueShowsThePaidStampValueAndABelowDutyChoiceButNoRentOrDeposit() {
+    UUID agreementId = paidAgreementWithFrozenQuote(130_000L, 10_000L);
+    String reference = staffReferenceOf(agreementId);
+
+    ResponseEntity<List> resp =
+        rest.exchange(
+            INTAKE_PATH + "/queue",
+            HttpMethod.GET,
+            new HttpEntity<>(bearer(staffToken)),
+            List.class);
+
+    Map<?, ?> row =
+        ((List<?>) resp.getBody())
+            .stream()
+                .map(r -> (Map<?, ?>) r)
+                .filter(r -> reference.equals(r.get("trackingReference")))
+                .findFirst()
+                .orElseThrow();
+    assertThat(((Number) row.get("paidStampValueMinorUnits")).longValue()).isEqualTo(10_000L);
+    assertThat(row.get("belowDutyChosen")).isEqualTo(true);
+    assertThat(row.toString()).doesNotContain("25000").doesNotContain("50000");
+  }
+
   // --- staff console queue ----------------------------------------------------
 
   @Test
@@ -603,11 +761,16 @@ class StampIntakeApiIntegrationTest {
         .contains("Bengaluru")
         .contains("waitingSeconds")
         .contains("awaitingSince");
-    // Non-PII: no party names, no contact details, no full street address.
-    assertThat(resp.getBody())
-        .doesNotContain("Asha")
-        .doesNotContain("asha@example.com")
-        .doesNotContain("12 MG Road");
+    // STAFF-only, and it deliberately DOES carry party names: buying the certificate means naming
+    // both parties on the vendor's form, so the row lists every party with their name and father's
+    // name (staff-queue-fulfilment-context reversed the row's original non-PII shape). The PII rule
+    // this must still respect is that party names never reach a LOG line -- not that they are
+    // absent from a role-gated response. See StampQueueEntry.
+    assertThat(resp.getBody()).contains("Asha Owner").contains("Tara Tenant");
+    // Still excluded, deliberately: contact details, rent/deposit, and the full street address --
+    // only the property city. A fulfilment queue carries the least data that lets someone do the
+    // job.
+    assertThat(resp.getBody()).doesNotContain("asha@example.com").doesNotContain("12 MG Road");
   }
 
   @Test

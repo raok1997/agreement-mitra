@@ -25,6 +25,15 @@ import java.util.UUID;
  * capture form can restore the optional sections and dynamic values when an agreement is reopened
  * for edit. Both are {@code null} for an agreement with no stored capture state (a legacy row / an
  * API client that sent only the fixed fields).
+ *
+ * <p>{@code state}/{@code type} are the <b>pinned template's dimensions</b>, resolved server-side
+ * from the template the agreement is pinned to -- never echoed from what the client sent at create.
+ * {@code state} is the agreement's duty jurisdiction, the same value {@code
+ * JurisdictionEligibility} gates on, so a client reopening an agreement can mark a draft-only
+ * jurisdiction truthfully instead of guessing from a default. Both are {@code null} when the
+ * agreement has no pinned template, or one that no longer resolves -- which the gate treats as an
+ * unknown jurisdiction and refuses. Neither is a template <b>id</b>: the id stays internal to
+ * {@code signing}.
  */
 public record AgreementResponse(
     UUID id,
@@ -38,7 +47,44 @@ public record AgreementResponse(
     Instant createdAt,
     List<SignerResponse> signers,
     Map<String, String> captureData,
-    List<String> activeSections) {
+    List<String> activeSections,
+    String state,
+    String type) {
+
+  /**
+   * Backward-compatible constructor without the pinned template's dimensions: keeps callers/tests
+   * that build a response without them compiling. Both default to {@code null} ("no jurisdiction
+   * established").
+   */
+  public AgreementResponse(
+      UUID id,
+      String trackingNumber,
+      String propertyAddress,
+      BigDecimal monthlyRent,
+      BigDecimal securityDeposit,
+      LocalDate startDate,
+      LocalDate endDate,
+      int durationMonths,
+      Instant createdAt,
+      List<SignerResponse> signers,
+      Map<String, String> captureData,
+      List<String> activeSections) {
+    this(
+        id,
+        trackingNumber,
+        propertyAddress,
+        monthlyRent,
+        securityDeposit,
+        startDate,
+        endDate,
+        durationMonths,
+        createdAt,
+        signers,
+        captureData,
+        activeSections,
+        null,
+        null);
+  }
 
   /**
    * Backward-compatible constructor without the M5 capture state: keeps callers/tests that build a
@@ -67,6 +113,8 @@ public record AgreementResponse(
         durationMonths,
         createdAt,
         signers,
+        null,
+        null,
         null,
         null);
   }

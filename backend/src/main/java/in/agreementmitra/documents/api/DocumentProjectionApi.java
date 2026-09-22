@@ -49,4 +49,19 @@ public interface DocumentProjectionApi {
    *     field is missing
    */
   DocumentProjectionResult generate(DocumentProjectionRequest request);
+
+  /**
+   * Generate tier with <b>server-supplied</b> values for the effective template's system-sourced
+   * fields (for example the stamp duty amount of an attached e-stamp certificate). Keys that are
+   * not system-sourced fields are ignored. Deliberately a separate Java-only entry point: the
+   * request record is bound from HTTP bodies, so system values must never travel inside it.
+   * Submitted values for system-sourced fields are discarded on every projection, this one
+   * included.
+   *
+   * @throws in.agreementmitra.ResourceNotFoundException if the dimensions resolve to no template
+   * @throws in.agreementmitra.DocumentDataInvalidException if any field is invalid or a required
+   *     field is missing
+   */
+  DocumentProjectionResult generate(
+      DocumentProjectionRequest request, java.util.Map<String, Object> systemValues);
 }

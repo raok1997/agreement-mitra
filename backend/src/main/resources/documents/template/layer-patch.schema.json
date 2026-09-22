@@ -160,7 +160,9 @@
         "default": true,
         "options": { "type": "array", "items": { "type": "string" } },
         "validation": { "$ref": "#/$defs/validation" },
-        "group": { "type": "string" }
+        "group": { "type": "string" },
+        "source": { "type": "string", "enum": ["system"] },
+        "placeholder": { "type": "string", "minLength": 1 }
       }
     },
     "validation": {

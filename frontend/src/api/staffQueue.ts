@@ -56,6 +56,14 @@ export interface StampQueueEntry {
    * can see what is waiting on money rather than wondering where an order went.
    */
   paymentState: string | null;
+  /**
+   * The stamp value the customer paid for, in paise, from the quote frozen with a PAID order
+   * (state-stamp-duty-quoting). The certificate bought must carry at least this much. Null when
+   * there is no paid order with a frozen quote.
+   */
+  paidStampValueMinorUnits?: number | null;
+  /** True when the customer chose, and acknowledged, a stamp value below the legal duty. */
+  belowDutyChosen?: boolean | null;
 }
 
 /** The certificate fields a staff member transcribes from the e-stamp they purchased. */

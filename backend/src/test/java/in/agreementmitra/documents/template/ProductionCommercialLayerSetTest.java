@@ -149,7 +149,9 @@ class ProductionCommercialLayerSetTest {
     DocumentMeta document = eff.template().meta().document();
     assertThat(document).isNotNull();
     assertThat(document.title()).isEqualTo("Commercial Lease Agreement");
-    assertThat(document.subtitle()).isNotEqualTo("Residential Tenancy (Leave & Licence)");
+    // Must not inherit the residential subtitle (base.yaml v2 dropped the "(Leave & Licence)"
+    // label; this points at the current string so the guard does not go vacuous).
+    assertThat(document.subtitle()).isNotEqualTo("Residential Tenancy");
 
     // The recital renders the Lessor/Lessee parties.
     String html = new TemplateCompiler().compile(eff, aggregateBackedData());

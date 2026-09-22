@@ -268,6 +268,12 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/payment")
                     .permitAll()
+                    // Stamp quote before payment (state-stamp-duty-quoting). Same posture as the
+                    // payment progress read above: permitted here, owner-scoped in the handler
+                    // with the same 404 for "not yours" and "unknown", so no amount is disclosed to
+                    // a caller who may not see the payment. Read-only; carries no party data.
+                    .requestMatchers(HttpMethod.GET, "/api/agreements/*/stamp-quote")
+                    .permitAll()
                     // Draft upload - scoped to the exact sub-path (NOT /api/agreements/**) so the
                     // posture stays fail-closed. Unauthenticated today; ownership authorization +
                     // rate-limiting on upload/overwrite are deferred to the signing-auth change.
@@ -297,6 +303,13 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/templates")
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/templates/*")
+                    .permitAll()
+                    // Eligible jurisdictions (jurisdiction-checkout-gating) -- which states can be
+                    // stamped/eSigned, so the SPA can mark the rest draft-and-download only before
+                    // a customer fills in a whole agreement. Public, static, and carries no
+                    // agreement data: it is disclosure, never the control (the four server-side
+                    // gates are). Exact path only, so no future sub-path is opened by accident.
+                    .requestMatchers(HttpMethod.GET, "/api/jurisdictions")
                     .permitAll()
                     // Google login handshake (google-oauth-login CR) -- reachable without a session
                     // (there is none yet during login). Exact method+path only so no other

@@ -1,0 +1,14 @@
+# FICTIONAL test fixture: stamp paper issued in state ZZ. Lives outside rules/stamp-duty so the
+# duty-rule loader never reads it.
+state: ZZ
+effectiveFrom: "2024-04-01"
+effectiveTo: null
+source: "Fictional treasury notification (test fixture)"
+media:
+  - id: physical
+    kind: DENOMINATIONS
+    denominations: ["10", "20", "50", "100", "500", "1000"]
+    maxPapers: 3
+  - id: e-stamp
+    kind: ANY_AMOUNT
+    minimumAmount: "10"

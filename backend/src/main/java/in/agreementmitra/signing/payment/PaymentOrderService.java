@@ -2,13 +2,23 @@ package in.agreementmitra.signing.payment;
 
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
+import in.agreementmitra.StampChoiceInvalidException;
+import in.agreementmitra.rules.DutyLine;
+import in.agreementmitra.rules.DutyOutcome;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.agreement.AgreementService;
+import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
+import in.agreementmitra.signing.agreement.StampOptions;
+import in.agreementmitra.signing.agreement.StampQuoteRecord;
+import in.agreementmitra.signing.agreement.StampQuoteRecordRepository;
+import in.agreementmitra.signing.agreement.StampQuoting;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.CheckoutCallbackRequest;
+import in.agreementmitra.signing.api.CheckoutRequest;
 import in.agreementmitra.signing.api.CheckoutSessionResponse;
 import in.agreementmitra.signing.api.PaymentProgressResponse;
+import in.agreementmitra.signing.api.StampQuoteResponse;
 import in.agreementmitra.signing.contact.PartyReachability;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,6 +32,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Gateway-backed payment for one agreement: place a priced order, report progress, and apply
@@ -37,7 +49,10 @@ import org.springframework.stereotype.Service;
  * they would be charged and stay {@code UNPAID}.
  *
  * <p><b>Pricing is ours.</b> The amount comes from {@link PaymentPricing} and is integer minor
- * units throughout. No request on this surface has an amount, currency, or discount field.
+ * units throughout. No request on this surface has an amount, currency, or discount field: the
+ * customer sends only a <b>stamp choice</b>, validated against the options {@link StampQuoting}
+ * recomputes, and the stamp quote is frozen with the order in the same transaction
+ * (state-stamp-duty-quoting, design D7).
  *
  * <p>Java-{@code public} so the {@code api} controllers can call it; still Modulith-internal.
  */
@@ -60,6 +75,10 @@ public class PaymentOrderService {
   private final AgreementService agreementService;
   private final PaymentProperties properties;
   private final PartyReachability reachability;
+  private final JurisdictionEligibility jurisdiction;
+  private final StampQuoting quoting;
+  private final StampQuoteRecordRepository frozenQuotes;
+  private final TransactionTemplate transaction;
 
   PaymentOrderService(
       PaymentOrderRepository orders,
@@ -68,8 +87,16 @@ public class PaymentOrderService {
       PaymentConfirmations confirmations,
       AgreementService agreementService,
       PaymentProperties properties,
-      PartyReachability reachability) {
+      PartyReachability reachability,
+      JurisdictionEligibility jurisdiction,
+      StampQuoting quoting,
+      StampQuoteRecordRepository frozenQuotes,
+      PlatformTransactionManager transactionManager) {
+    this.quoting = quoting;
+    this.frozenQuotes = frozenQuotes;
+    this.transaction = new TransactionTemplate(transactionManager);
     this.reachability = reachability;
+    this.jurisdiction = jurisdiction;
     this.orders = orders;
     this.pricing = pricing;
     this.razorpay = razorpay;
@@ -127,9 +154,11 @@ public class PaymentOrderService {
    * @param staffCaller whether the caller holds the STAFF role (authorized before ownership)
    * @throws ResourceNotFoundException when the agreement is unknown, or the caller may not act on
    *     it - the same 404 either way, so ownership cannot be probed
+   * @param request the stamp choice; required to place a new order, ignored when resuming one
+   * @throws StampChoiceInvalidException when a new order's stamp choice is missing or unacceptable
    */
   public CheckoutSessionResponse startCheckout(
-      UUID agreementId, UUID callerIdentityId, boolean staffCaller) {
+      UUID agreementId, UUID callerIdentityId, boolean staffCaller, CheckoutRequest request) {
     authorize(agreementId, callerIdentityId, staffCaller);
 
     // Every party must be reachable before money moves. Checked ahead of order reuse as well as
@@ -141,16 +170,61 @@ public class PaymentOrderService {
     // gate - nor redirect where anything is later sent.
 
     PaymentOrder reusable = reusableOrder(agreementId);
-    if (reusable != null) {
+    if (reusable != null && reusable.status().settled()) {
+      // ALREADY PAID: report it, never refuse it. This is the one place the reachability analogy
+      // above does NOT carry, and the placement is deliberate. Contacts freeze at settlement, so a
+      // settled order's reachability cannot go stale - but the jurisdiction allowlist CAN change
+      // under a settled order. Refusing here would 409 a customer who has already paid, which is
+      // the exact hazard the jurisdiction gate exists to prevent, inverted. Hence this returns
+      // BEFORE the jurisdiction check rather than after it.
       return toSession(reusable);
     }
-    Money price = pricing.priceFor(agreementId);
+
+    // Only a jurisdiction we can actually stamp may take money. Checked ahead of resuming an
+    // outstanding order as well as creating one: an order placed earlier proves the jurisdiction
+    // was eligible then, not now.
+    jurisdiction.require(agreementId);
+
+    if (reusable != null) {
+      // The stamp choice is fixed once an order exists: resume it as frozen, ignoring the body.
+      return toSession(reusable);
+    }
+
+    // Recompute the quote now and validate the choice against it, before any provider call.
+    StampQuoting.Evaluation evaluation =
+        quoting
+            .evaluate(agreementId)
+            .orElseThrow(
+                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+    if (!evaluation.payable()) {
+      // jurisdiction.require just passed, so only a concurrent rule change lands here.
+      throw ConflictException.jurisdictionUnsupported(
+          evaluation.state(), quoting.chargeableStates());
+    }
+    StampOptions.Option option = validChoice(evaluation.options().orElseThrow(), request);
+    StampQuoteRecord.Acknowledgement acknowledgement =
+        option.belowDuty()
+            ? new StampQuoteRecord.Acknowledgement(
+                StampOptions.UNDER_STAMP_WARNING_VERSION, callerIdentityId, Instant.now())
+            : null;
+    StampQuoteRecord.Snapshot snapshot = snapshotOf(evaluation, option);
+
+    Money price = pricing.price(option.stampValuePaise());
     String receipt = nextReceipt(agreementId);
     RazorpayClient.ProviderOrder placed = razorpay.createOrder(receipt, price);
     try {
-      return toSession(
-          orders.save(
-              PaymentOrder.create(agreementId, placed.id(), receipt, price, Instant.now())));
+      PaymentOrder saved =
+          transaction.execute(
+              status -> {
+                Instant now = Instant.now();
+                PaymentOrder order =
+                    orders.save(PaymentOrder.create(agreementId, placed.id(), receipt, price, now));
+                frozenQuotes.save(
+                    StampQuoteRecord.freeze(
+                        order.getId(), agreementId, snapshot, acknowledgement, now));
+                return order;
+              });
+      return toSession(saved);
     } catch (DataIntegrityViolationException raced) {
       // Two simultaneous starts for one agreement. The partial unique index on outstanding orders
       // is
@@ -160,6 +234,141 @@ public class PaymentOrderService {
       return toSession(
           orders.findTopByAgreementIdOrderByCreatedAtDesc(agreementId).orElseThrow(() -> raced));
     }
+  }
+
+  /**
+   * Refuse any stamp choice that is not exactly one of the recomputed options, and any below-duty
+   * choice not acknowledged against the <b>current</b> warning version. An acknowledgement sent
+   * with an at-or-above-duty choice is ignored, never stored.
+   */
+  static StampOptions.Option validChoice(StampOptions options, CheckoutRequest request) {
+    String version = StampOptions.UNDER_STAMP_WARNING_VERSION;
+    if (request == null || request.stampValueMinorUnits() == null) {
+      throw new StampChoiceInvalidException(
+          StampChoiceInvalidException.Reason.CHOICE_REQUIRED, version);
+    }
+    StampOptions.Option option =
+        options
+            .find(request.stampValueMinorUnits())
+            .orElseThrow(
+                () ->
+                    new StampChoiceInvalidException(
+                        StampChoiceInvalidException.Reason.NOT_AN_OPTION, version));
+    if (option.belowDuty()) {
+      CheckoutRequest.Acknowledgement ack = request.underStampAcknowledgement();
+      if (ack == null || ack.warningVersion() == null || ack.warningVersion().isBlank()) {
+        throw new StampChoiceInvalidException(
+            StampChoiceInvalidException.Reason.ACKNOWLEDGEMENT_REQUIRED, version);
+      }
+      if (!version.equals(ack.warningVersion())) {
+        throw new StampChoiceInvalidException(
+            StampChoiceInvalidException.Reason.WARNING_VERSION_STALE, version);
+      }
+    }
+    return option;
+  }
+
+  private static StampQuoteRecord.Snapshot snapshotOf(
+      StampQuoting.Evaluation evaluation, StampOptions.Option option) {
+    DutyOutcome.Quoted quote = evaluation.quote().orElseThrow();
+    return new StampQuoteRecord.Snapshot(
+        quote.amountPaise(),
+        option.stampValuePaise(),
+        option.mediumId(),
+        quote.rule().id(),
+        quote.rule().contentHash(),
+        quote.rule().reviewed(),
+        quote.catalog().contentHash(),
+        evaluation.executionDate(),
+        quote.registrationRequired(),
+        quote.breakdown().stream().map(PaymentOrderService::lineOf).toList());
+  }
+
+  private static StampQuoteRecord.Line lineOf(DutyLine line) {
+    return new StampQuoteRecord.Line(
+        line.kind().name(), line.label(), line.amount().stripTrailingZeros().toPlainString());
+  }
+
+  // --- the stamp quote shown before payment ------------------------------------
+
+  /**
+   * The stamp quote for an agreement (state-stamp-duty-quoting, design D7): the frozen quote when
+   * an order is outstanding or settled, else a fresh one with every option and its total. Computed
+   * on every call; nothing is persisted here.
+   */
+  public StampQuoteResponse stampQuote(
+      UUID agreementId, UUID callerIdentityId, boolean staffCaller) {
+    authorize(agreementId, callerIdentityId, staffCaller);
+    PaymentOrder latest = orders.findTopByAgreementIdOrderByCreatedAtDesc(agreementId).orElse(null);
+    if (latest != null
+        && (latest.status().settled()
+            || (latest.status().outstanding()
+                && !latest.outstandingLongerThan(properties.order().ttl(), Instant.now())))) {
+      Optional<StampQuoteRecord> frozen = frozenQuotes.findById(latest.getId());
+      if (frozen.isPresent()) {
+        return frozenQuote(agreementId, latest, frozen.get());
+      }
+    }
+
+    StampQuoting.Evaluation evaluation =
+        quoting
+            .evaluate(agreementId)
+            .orElseThrow(
+                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+    if (!evaluation.payable()) {
+      return StampQuoteResponse.unavailable(agreementId, evaluation.status().name());
+    }
+    DutyOutcome.Quoted quote = evaluation.quote().orElseThrow();
+    List<StampQuoteResponse.Option> options =
+        evaluation.options().orElseThrow().options().stream()
+            .map(
+                o ->
+                    new StampQuoteResponse.Option(
+                        o.stampValuePaise(),
+                        o.belowDuty(),
+                        o.recommended(),
+                        pricing.price(o.stampValuePaise()).minorUnits(),
+                        o.mediumId()))
+            .toList();
+    return new StampQuoteResponse(
+        agreementId,
+        true,
+        evaluation.status().name(),
+        false,
+        quote.amountPaise(),
+        pricing.currency(),
+        quote.breakdown().stream()
+            .map(l -> new StampQuoteResponse.Line(l.kind().name(), l.label(), lineOf(l).amount()))
+            .toList(),
+        quote.registrationRequired(),
+        new StampQuoteResponse.Rule(
+            quote.rule().id(), quote.rule().legalReference(), quote.rule().reviewed()),
+        StampOptions.UNDER_STAMP_WARNING_VERSION,
+        options);
+  }
+
+  private static StampQuoteResponse frozenQuote(
+      UUID agreementId, PaymentOrder order, StampQuoteRecord frozen) {
+    return new StampQuoteResponse(
+        agreementId,
+        true,
+        StampQuoting.Status.QUOTABLE.name(),
+        true,
+        frozen.dutyMinorUnits(),
+        order.currency(),
+        frozen.breakdown().stream()
+            .map(l -> new StampQuoteResponse.Line(l.kind(), l.label(), l.amount()))
+            .toList(),
+        frozen.registrationRequired(),
+        new StampQuoteResponse.Rule(frozen.ruleId(), null, frozen.ruleReviewed()),
+        StampOptions.UNDER_STAMP_WARNING_VERSION,
+        List.of(
+            new StampQuoteResponse.Option(
+                frozen.stampValueMinorUnits(),
+                frozen.belowDuty(),
+                !frozen.belowDuty(),
+                order.amountMinorUnits(),
+                frozen.mediumId())));
   }
 
   /**
@@ -212,12 +421,16 @@ public class PaymentOrderService {
       UUID agreementId, UUID callerIdentityId, boolean staffCaller) {
     authorize(agreementId, callerIdentityId, staffCaller);
     PaymentOrder latest = orders.findTopByAgreementIdOrderByCreatedAtDesc(agreementId).orElse(null);
+    StampQuoteRecord frozen =
+        latest == null ? null : frozenQuotes.findById(latest.getId()).orElse(null);
     return new PaymentProgressResponse(
         agreementId,
         paymentStateOf(agreementId).name(),
         latest == null ? null : latest.status().name(),
         latest == null ? null : latest.amountMinorUnits(),
-        latest == null ? null : latest.currency());
+        latest == null ? null : latest.currency(),
+        frozen == null ? null : frozen.dutyMinorUnits(),
+        frozen == null ? null : frozen.stampValueMinorUnits());
   }
 
   // --- the browser callback (a UX signal, never a confirmation) --------------
@@ -337,6 +550,7 @@ public class PaymentOrderService {
   }
 
   private CheckoutSessionResponse toSession(PaymentOrder order) {
+    StampQuoteRecord frozen = frozenQuotes.findById(order.getId()).orElse(null);
     return new CheckoutSessionResponse(
         order.agreementId(),
         razorpay.publicKeyId(),
@@ -344,6 +558,8 @@ public class PaymentOrderService {
         order.amountMinorUnits(),
         order.currency(),
         order.status().name(),
-        paymentStateOf(order.agreementId()).name());
+        paymentStateOf(order.agreementId()).name(),
+        frozen == null ? null : frozen.dutyMinorUnits(),
+        frozen == null ? null : frozen.stampValueMinorUnits());
   }
 }

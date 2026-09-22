@@ -84,3 +84,203 @@ no-log guarantee from the start.
 
 - **WHEN** the renderer renders a template with a data map
 - **THEN** no log line contains the composed HTML or the rendered PDF bytes
+
+### Requirement: Execution / signature block with eSign anchors
+
+The renderer SHALL render an execution / signature block for the agreement's signer set, filling the
+previously-empty "In Witness Whereof" section. For each signer it SHALL render a signature zone
+(signature area, the signer's name, and the field's role label) and SHALL emit a stable, non-PII eSign **anchor**
+identified by role (`esign:<role>`). The block, its clauses, and its anchors are part of the effective
+template (system-owned markup); all signer-supplied values are escaped. Witness lines SHALL render
+only when the optional Witnesses section is added (opt-in via activeSections -- the engine's standard
+optional-section gating; the section and its witness fields default off), as printed escaped data
+without an eSign anchor. The renderer SHALL remain eSign-agnostic (it emits an anchor token, not a
+provider signature field).
+
+The zone SHALL NOT render a date or place line: an eSigned instrument takes its date from the eSign
+appearance, so those blanks could never be completed. The label SHALL state the signer's role only
+and SHALL NOT claim the name matches an Aadhaar record, because nothing in this flow verifies the
+captured name against one.
+
+#### Scenario: Signature zone + anchor per signer
+
+- **GIVEN** an agreement with an Owner and a Tenant
+- **WHEN** the document is rendered (preview or generate-as-draft)
+- **THEN** the "In Witness Whereof" section renders an execution block with one signature zone for the
+  Owner and one for the Tenant
+- **AND** each zone shows a signature area, the signer's name, and the role label -- and no date or
+  place line
+- **AND** the output contains a stable anchor `esign:owner` and `esign:tenant`, one per zone
+
+#### Scenario: Signer data is escaped in the execution block
+
+- **GIVEN** a signer whose name contains `<script>alert(1)</script>`
+- **WHEN** the execution block renders
+- **THEN** the value appears escaped as literal text (`&lt;script&gt;...`), never as active markup
+
+#### Scenario: Witnesses are an optional section, default off
+
+- **GIVEN** an agreement whose optional Witnesses section is not added (the residential default)
+- **WHEN** the document renders
+- **THEN** no witness lines appear
+- **AND GIVEN** the Witnesses section is added with witness name / address, **WHEN** it renders,
+  **THEN** the corresponding witness lines appear as printed (escaped) data, without an eSign anchor
+
+#### Scenario: Anchors are reproducible under the version pin
+
+- **GIVEN** a generated draft whose effective template is pinned
+- **WHEN** the document is re-rendered from the pin
+- **THEN** the execution block and both eSign anchors reproduce byte-stable
+
+### Requirement: Boilerplate clauses and document furniture
+
+The renderer SHALL render the boilerplate clauses declared in the template (notices, governing law,
+severability, entire-agreement / amendment) and SHALL render document furniture: a unique, non-PII
+agreement reference on the document and a page indicator (page X of Y).
+
+#### Scenario: Boilerplate clauses present
+
+- **WHEN** a rental-agreement document renders
+- **THEN** it includes a Notices clause, a Governing-law clause, a Severability clause, and an
+  Entire-agreement / Amendment clause
+
+#### Scenario: Agreement reference and page numbers
+
+- **WHEN** a rental-agreement document renders
+- **THEN** every page shows a unique agreement reference and a "page X of Y" indicator
+- **AND** the reference contains no Aadhaar / OTP / VID / secret
+
+### Requirement: Enum values render humanised in the document body
+
+The renderer SHALL render every enum-typed field value with its human display label -- the **same**
+label the form list box shows (Initial Caps, `_` replaced with a space, acronyms upper-case,
+already-capitalised tokens preserved) -- wherever it renders an enum value in the preview or generated
+document (a key/value cell or a clause slot). Humanisation SHALL occur at render time from the raw
+token; the data map SHALL retain the raw value so conditional (`showWhen`) evaluation, defaults, and
+validation are unaffected. The list-box label and the document body SHALL be produced by one shared
+derivation so they never diverge.
+
+#### Scenario: Enum value humanised in a cell and a clause
+
+- **GIVEN** an agreement with `paymentMode` `bank_transfer`
+- **WHEN** the document is rendered (preview or generate-as-draft)
+- **THEN** the value reads `Bank Transfer` in both the Financial key/value cell and the rent clause
+- **AND** the raw token `bank_transfer` does not appear in the output
+
+#### Scenario: Conditional gating still evaluates on the raw token
+
+- **GIVEN** a clause gated on `parkingType != "none"` with `parkingType` `two_wheeler`
+- **WHEN** the document renders
+- **THEN** the clause is included (the condition compared the raw token) and its rendered text shows
+  `Two Wheeler`
+
+### Requirement: Rendered dates use a single dd-MMM-yyyy format
+
+The renderer SHALL format every date-typed field value to a single `dd-MMM-yyyy` form (e.g.
+`13-Jul-2026` -- zero-padded day, title-case 3-letter English month, 4-digit year) wherever a date is
+rendered: clause slots, key/value cells, party cards, the annexure, and the header execution line, in
+both the preview and generate projections. Formatting SHALL occur at render time from the underlying
+ISO value; the data map SHALL retain the ISO value so conditional (`showWhen`) evaluation is
+unaffected. A date-typed field with no value SHALL render the existing labelled placeholder, and a
+value that does not parse as an ISO date SHALL render unchanged rather than causing a failure.
+
+#### Scenario: Term dates render in dd-MMM-yyyy
+
+- **GIVEN** an agreement with `startDate` `2026-08-05` and `endDate` `2027-06-30`
+- **WHEN** the document is rendered (preview or generate-as-draft)
+- **THEN** the rendered term reads the dates as `05-Aug-2026` and `30-Jun-2027`
+- **AND** neither the raw ISO (`2026-08-05`) nor an `MM/DD/YYYY` form appears in the output
+
+#### Scenario: The execution line uses the same format
+
+- **GIVEN** an agreement whose resolved execution date is `2026-07-13`
+- **WHEN** the header execution line renders
+- **THEN** it reads `13-Jul-2026` (the same format as every other rendered date), not `1 July 2026`
+  or a raw ISO string
+
+#### Scenario: Conditional gating still evaluates on the ISO value
+
+- **GIVEN** a clause whose `showWhen` compares a date field
+- **WHEN** the document renders
+- **THEN** the clause is included or dropped exactly as before (the condition evaluates on the ISO
+  value; only the displayed date is reformatted)
+
+#### Scenario: Missing or unparseable date is safe
+
+- **GIVEN** a date-typed field with no submitted value
+- **WHEN** the document renders
+- **THEN** the labelled placeholder renders (as today), never a bare `null`
+- **AND GIVEN** a date field whose value is not a valid ISO date, **WHEN** it renders, **THEN** the
+  value renders unchanged and the render does not throw
+
+#### Scenario: Reproducible under the version pin
+
+- **GIVEN** a generated draft whose effective template is pinned
+- **WHEN** the document is re-rendered from the pin
+- **THEN** the formatted dates reproduce byte-stable (the format is deterministic and locale-fixed)
+
+### Requirement: The rendered PDF stamps a per-page footer with the reference, platform URL, and page numbers
+
+The system SHALL stamp a **per-page footer** onto the rendered agreement PDF as Chromium print
+**furniture** in the **reserved bottom margin** (not as body flow content), so it appears on **every**
+page without orphaning onto its own page or overlapping the document content. The footer SHALL carry the
+escaped **reference** (the agreement's persisted tracking reference for a saved agreement, or the
+`PREVIEW - NOT FOR EXECUTION` marker before save) with the escaped **platform URL** on the left, and
+**`Page <pageNumber> of <totalPages>`** on the right. The page total (`totalPages`) SHALL render (not be
+blank); the footer SHALL use a layout in which Chromium reliably fills the page-count placeholders (a
+table, not a flex row).
+
+The render SHALL emulate **print** media, so a screen-only body element (the on-screen provenance line --
+see the `template-document-projection` capability) does **not** appear in the PDF. The reference and URL
+SHALL be **HTML-escaped**; the URL SHALL be inert display text (no anchor, no fetch); the render SHALL
+stay offline (Gotenberg's outbound network denied) and SHALL NOT log the rendered HTML or PDF bytes. The
+`documents` module SHALL hold **no hardcoded brand string** -- the platform URL is application
+configuration; a blank URL renders the reference alone.
+
+#### Scenario: Every PDF page carries the reference, URL, and page number
+
+- **WHEN** an agreement document is rendered to PDF
+- **THEN** every page carries a footer showing the escaped reference and platform URL on the left and
+  `Page <n> of <total>` on the right, with the total rendered (not blank)
+
+#### Scenario: The footer does not orphan or duplicate
+
+- **WHEN** a multi-page document is rendered to PDF
+- **THEN** the reference appears exactly once per page (as margin furniture) and never as an extra body
+  line on its own page (the on-screen provenance line is hidden under print media)
+
+#### Scenario: The reference renders alone when the platform URL is blank
+
+- **WHEN** the platform URL configuration is unset or blank
+- **THEN** the footer shows the reference and page numbers with no URL, and no empty or literal value
+
+### Requirement: The renderer tolerates partial data and can emit HTML
+
+The renderer SHALL render a template from a data map that is **incomplete** -- missing keys, blank
+values, or empty party lists SHALL render as placeholders (or be omitted), never as an error and never
+as a bare `null`, so an in-progress agreement produces a coherent document. This SHALL cover **scalar**
+fields (dates, money, agreement date) as well as party lists. In addition to the PDF, the renderer
+SHALL be able to return the composed, self-contained **HTML** (the same escaped, offline template
+output, pre-PDF) so a caller can embed a fast live preview without a PDF round-trip. The embeddable
+HTML SHALL be **font-self-contained** -- the fonts needed to shape complex/Indic scripts SHALL be
+embedded in the HTML (not resolved from the render host), so a browser preview shapes those scripts
+faithfully rather than falling back to system fonts. The markup/data boundary is unchanged: the
+template is trusted markup; all supplied data is escaped.
+
+#### Scenario: A partial data map renders without error
+
+- **WHEN** the renderer is given the rental-agreement template with a data map that omits the parties
+- **THEN** it returns a document that renders the present fields and placeholders for the missing
+  parties, without failing
+
+#### Scenario: The renderer returns composed HTML
+
+- **WHEN** a caller requests the composed HTML for a data map
+- **THEN** the renderer returns the self-contained, escaped HTML of the document (no external
+  references, fonts embedded), suitable for embedding in a sandboxed preview pane
+
+#### Scenario: A blank scalar field renders as a placeholder, not null
+
+- **WHEN** the renderer is given a data map whose rent or dates are blank/absent
+- **THEN** the document shows a placeholder in those positions (e.g. "[ rent not set ]"), never a
+  literal `null` or an error
