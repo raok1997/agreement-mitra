@@ -55,7 +55,9 @@ class RuleSetLoaderTest {
             "ZZ-lease-residential-v2",
             "ZZ-lease-commercial",
             "TG-lease-residential",
-            "TG-lease-commercial");
+            "TG-lease-commercial",
+            "KA-lease-residential",
+            "KA-lease-commercial");
   }
 
   @Test

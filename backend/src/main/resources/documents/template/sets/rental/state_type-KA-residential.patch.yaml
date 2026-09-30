@@ -1,0 +1,70 @@
+# Production layer set (rental) -- STATE+TYPE layer (Karnataka residential), highest precedence.
+# Karnataka residential specifics over the M5 structure: drop the generic national stamp clause in
+# favour of the Karnataka-specific one (state layer), remove its now-dangling entry from the
+# witnesseth covenant list, default the jurisdiction city to Bengaluru, and order the sections so the
+# document reads Owner -> Tenant -> Schedule -> Term -> Financial -> [optional add-ons] -> Now This
+# Agreement Witnesseth -> Annexure -> Statutory (Karnataka) -> In Witness Whereof -> Witnesses.
+#
+# "Statutory (Karnataka)" is MANDATORY (`optional: false` in state-KA.patch.yaml) and this file is
+# WHY. The removeClause + replaceSection below drop the national `stampRegistrationClause` on the
+# theory that the state layer's `kaStampRegistration` supersedes it. If that replacement ever sits
+# inside an opt-in section, a default Karnataka deed renders with no stamp or registration clause at
+# all -- strictly worse than the national template it overlays. Telangana shipped exactly that defect
+# for two months; it is recorded in state_type-TG-residential.patch.yaml and is not repeated here.
+# The two decisions are one decision: do not change either without the other.
+#
+# The "In Witness Whereof" execution / signature block is MANDATORY: a generated draft must carry the
+# per-signer signature zones + esign:<role> anchors to be signable via Aadhaar eSign. The block
+# declares its signatories by their name field keys (ownerName, tenantName); the compiler renders one
+# zone + one anchor per entry.
+#
+# JURISDICTION CITY. Defaulting it here is not cosmetic. `disputeClause` /
+# `disputeAlternativeClause` sit in the MANDATORY witnesseth list gated only on `disputeResolution`
+# (base default "courts"), so one of them renders on every deed -- naming `jurisdictionCity`, which
+# the base declares required:false with no national default and places in the OPTIONAL "Dispute
+# Resolution" section. Without this override a Karnataka deed generated without that optional section
+# would read "...exclusive jurisdiction of the courts at [ Jurisdiction city ]" in an operative
+# covenant. The national gap remains open (see `national-jurisdiction-city-unfilled` in
+# docs/ROADMAP.md); Karnataka is no longer exposed to it.
+meta:
+  kind: state_type
+  dimensions: { state: KA, type: residential }
+  version: 1
+
+ops:
+  # Drop the generic national stamp/registration clause; the state layer's kaStampRegistration
+  # supersedes it. Then re-author the witnesseth list without the removed clause so nothing dangles.
+  - { op: removeClause, id: stampRegistrationClause }
+  # Re-authored without the removed national stamp clause; the general boilerplate closing clauses
+  # (service of notice, governing law -- laws of India, severability, entire agreement) are kept. The
+  # mandatory Statutory (Karnataka) section adds the more-specific kaGoverningLaw on top, so a
+  # Karnataka deed carries BOTH choice-of-law clauses -- the national one here and the Karnataka one
+  # there. That redundancy is deliberate and mirrors Telangana: plain-removing governingLawClause here
+  # would recreate the stamp-clause hole one clause over. The safe consolidation is a replaceClause of
+  # governingLawClause with the Karnataka text, dropping kaGoverningLaw from the statutory section --
+  # a drafting decision for counsel, not a drift fix, and tracked with the Telangana one.
+  - { op: replaceSection, title: "Now This Agreement Witnesseth",
+      section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
+                 entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,
+                            inspectionClause, handoverClause, disputeClause, disputeAlternativeClause,
+                            serviceOfNoticeClause, governingLawClause, severabilityClause,
+                            entireAgreementClause ] } }
+
+  # Execution / signature block: MANDATORY, declaring its signatories by name field key so the
+  # compiler renders one signature zone + one esign:<role> anchor per entry. SIGNATURES sections are
+  # document-only, so M3 omits it from the capture form even though it carries field-key entries.
+  - { op: replaceSection, title: "In Witness Whereof",
+      section: { title: "In Witness Whereof", render: signatures, optional: false,
+                 entries: [ ownerName, tenantName ] } }
+
+  # Karnataka default jurisdiction.
+  - { op: overrideField, key: jurisdictionCity, default: "Bengaluru" }
+
+  # Full section order for the Karnataka residential set: Statutory then the signature block last.
+  # These are the RENTAL set's section titles -- the commercial set uses Lessor / Lessee / Schedule
+  # of Premises and must not be copied here.
+  - { op: reorderSections,
+      order: [ "Owner", "Tenant", "Schedule of Property", "Term", "Financial",
+               "Charges & Utilities", "Occupancy & Use", "Dispute Resolution",
+               "Now This Agreement Witnesseth", "Annexure", "Statutory (Karnataka)",
+               "In Witness Whereof", "Witnesses" ] }

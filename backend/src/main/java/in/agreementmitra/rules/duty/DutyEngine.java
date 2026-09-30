@@ -24,10 +24,10 @@ import org.slf4j.LoggerFactory;
 /**
  * The base stamp duty calculator: one fixed pipeline for every state (design D4, D8).
  *
- * <p>Order: rule -> precheck -> quantities -> slab -> consideration -> rate or fixed -> min/max ->
- * extension adjust -> surcharges -> counterpart duty -> round once -> catalog -> one stamp plan per
- * medium. Exact decimals throughout; nothing is rounded to a currency unit before the last duty
- * step. Logs only the rule id and outcome type, never the facts.
+ * <p>Order: rule -> precheck -> quantities -> slab -> consideration -> rate or fixed -> the slab's
+ * own min/max -> the rule's min/max -> extension adjust -> surcharges -> counterpart duty -> round
+ * once -> catalog -> one stamp plan per medium. Exact decimals throughout; nothing is rounded to a
+ * currency unit before the last duty step. Logs only the rule id and outcome type, never the facts.
  */
 final class DutyEngine implements StampDutyCalculator {
 
@@ -157,6 +157,30 @@ final class DutyEngine implements StampDutyCalculator {
                   + slabLabel(slab)
                   + ")",
               duty));
+    }
+
+    // The selected slab's own bounds first, then the rule's. Order matters and is specified: the
+    // rule bound is the OUTER bound on the quote, so a slab cap must never be able to defeat a rule
+    // minimum. A slab bound also must not reach a term that falls in a different slab -- which is
+    // the whole reason Karnataka's INR 500 residential cap cannot be written as a rule maximum.
+    RuleSet.Bounds slabBounds = slab.bounds();
+    if (slabBounds.minimum() != null && duty.compareTo(slabBounds.minimum()) < 0) {
+      lines.add(
+          delta(
+              DutyLine.Kind.SLAB_MINIMUM,
+              "minimum " + plain(slabBounds.minimum()) + " for " + slabLabel(slab),
+              duty,
+              slabBounds.minimum()));
+      duty = slabBounds.minimum();
+    }
+    if (slabBounds.maximum() != null && duty.compareTo(slabBounds.maximum()) > 0) {
+      lines.add(
+          delta(
+              DutyLine.Kind.SLAB_MAXIMUM,
+              "maximum " + plain(slabBounds.maximum()) + " for " + slabLabel(slab),
+              duty,
+              slabBounds.maximum()));
+      duty = slabBounds.maximum();
     }
 
     RuleSet.Bounds bounds = rule.bounds();

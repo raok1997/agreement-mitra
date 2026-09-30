@@ -1,0 +1,75 @@
+# KARNATAKA -- commercial / industrial lease stamp duty (ka-rental-and-commercial-templates, D1-D4).
+#
+# *** EVERY FIGURE BELOW IS UNVERIFIED. See lease-residential.yaml for the source list [K1]-[K4], the
+# *** counsel gate, and why the Karnataka Stamp (Amendment) Act 2023 [K2] is the first thing to check.
+# *** Only the differences from the residential rule are annotated here.
+extends: base
+id: KA-lease-commercial
+state: KA
+instrumentKind: LEASE
+usage: COMMERCIAL
+effectiveFrom: "2017-04-20"
+effectiveTo: null
+legalReference: "Karnataka Stamp Act 1957 Sch. Art. 30(1) -- UNVERIFIED, 2017-vintage source [K1]"
+counselReview: null
+slabs:
+  # Art. 30(1)(ii): term not exceeding one year, COMMERCIAL or INDUSTRIAL property -- 0.5% on the
+  # average annual rent, premium, fine and money advanced [K1] MEDIUM.
+  #
+  # NO MAXIMUM. This is the ONLY difference between residential and commercial anywhere in Art. 30:
+  # (i) and (ii) carry the identical rate and the identical base, and (i) alone adds "subject to a
+  # maximum of rupees five hundred". So a one-year commercial lease is uncapped where the identical
+  # residential lease pays at most INR 500. The worked cases below pin that contrast deliberately.
+  #
+  # The average-annual-rent reading (design D2) matters here in a way it does not for residential,
+  # because nothing caps the result: a one-month commercial lease annualises its rent twelvefold
+  # before the rate applies. That is what the text says; whether it is what the text means is open
+  # with counsel. The final case below pins the current behaviour so the answer is visible.
+  - { minMonths: 1, maxMonths: 12, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT],
+      ratePercent: "0.5" }
+  # Art. 30(1)(iii): exceeding one year, not exceeding ten years -- 1% [K1] MEDIUM. Identical to the
+  # residential 13-60 band, because above one year Karnataka does not split on usage. Runs to 120
+  # months, the full statutory band, since the commercial template allows it.
+  - { minMonths: 13, maxMonths: 120, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT],
+      ratePercent: "1" }
+  # Art. 30(1)(iv): exceeding ten years, not exceeding twenty years -- 2% [K1] MEDIUM. Stops at 240
+  # months, the commercial template's maximum. Art. 30(1)(v) (20-30 years, 3%) and (vi) (over thirty
+  # years or in perpetuity, conveyance rates under Art. 20(1) on the higher of the annualised
+  # consideration and market value) are not reachable from the template and are deliberately not
+  # modelled -- (vi) in particular needs a market value the product never captures.
+  - { minMonths: 121, maxMonths: 240, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT],
+      ratePercent: "2" }
+minimumAmount: null
+maximumAmount: null
+rounding: { mode: UP, unitRupees: 1 }
+# Art. 22 [K4]; flat, and a deliberate over-reading -- see lease-residential.yaml.
+counterpartDuty: "500"
+# Registration Act 1908 s.17(1)(d) [K3], unamended in Karnataka.
+registration: { requiredWhenTermMonthsOver: 12 }
+cases:
+  # The deliberate contrast with the residential rule: identical facts, no cap, so INR 1,700 rather
+  # than INR 500. If these two ever quote the same figure, the cap has leaked across usages.
+  - name: "12 months is uncapped, unlike residential"
+    basis: { termMonths: 12, monthlyRent: "20000", refundableDeposit: "100000" }
+    expect: { outcome: QUOTED, amountPaise: 170000, plans: { e-stamp: 170000, stamp-paper: 170000 } }
+  - name: "13-month boundary takes 1 percent"
+    basis: { termMonths: 13, monthlyRent: "5000" }
+    expect: { outcome: QUOTED, amountPaise: 60000 }
+  - name: "120-month boundary, still 1 percent"
+    basis: { termMonths: 120, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 900000 }
+  - name: "121-month boundary doubles the rate"
+    basis: { termMonths: 121, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 1800000 }
+  - name: "240-month boundary"
+    basis: { termMonths: 240, monthlyRent: "50000", refundableDeposit: "300000" }
+    expect: { outcome: QUOTED, amountPaise: 1800000 }
+  # Pins the annualisation reading (design D2) where nothing caps it: one month at INR 50,000 is an
+  # average annual rent of INR 600,000, so 0.5% is INR 3,000 -- more than the rent itself. If counsel
+  # rules that a sub-year term is charged on the rent for the term, THIS case is the one that moves.
+  - name: "a one-month lease annualises the rent"
+    basis: { termMonths: 1, monthlyRent: "50000" }
+    expect: { outcome: QUOTED, amountPaise: 300000 }
+  - name: "beyond the commercial template range"
+    basis: { termMonths: 241, monthlyRent: "50000" }
+    expect: { outcome: UNSUPPORTED }

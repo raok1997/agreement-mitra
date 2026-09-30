@@ -1,0 +1,55 @@
+# Production layer set (commercial) -- STATE layer (Karnataka). A patch over the composed commercial
+# template that adds Karnataka's statutory overlay for commercial leases: governing law (Transfer of
+# Property Act 1882 / Registration Act 1908), stamping under the Karnataka Stamp Act 1957 and
+# registration before the jurisdictional Sub-Registrar, and who bears those charges.
+#
+# MANDATORY (`optional: false`), DELIBERATELY UNLIKE THE TELANGANA COMMERCIAL LAYER, which is still
+# opt-in. The reasoning is the one Telangana's residential set already acted on and its commercial
+# set has not: the Karnataka state_type layer beside this file removes the national
+# `stampRegistrationClause`, so an opt-in section would leave a default Karnataka commercial deed with
+# no stamp or registration clause at all. The Telangana commercial set carries that defect today --
+# it is recorded, not inherited. If this is ever flipped to `optional: true`, restore
+# `stampRegistrationClause` to the witnesseth list in the same edit.
+#
+# No rent-control clause here: the Karnataka Rent Act 1999 is a residential-tenancy statute and does
+# not govern a commercial lease, so the commercial overlay names the general property law instead.
+# The essential-services covenant likewise belongs to the residential set only.
+#
+# stampDutyAmount is SYSTEM-SOURCED (filled from the attached e-stamp certificate at stamp intake),
+# so a deed never prints a blank or a customer-typed duty row.
+meta:
+  kind: state
+  dimensions: { state: KA }
+  version: 1
+
+ops:
+  - { op: addField,
+      field: { key: stampDutyAmount, label: "Stamp duty paid (INR)", type: money, required: false,
+               source: system, placeholder: "Provision for stamp duty" } }
+  - { op: addField,
+      field: { key: registrationChargesBorneBy, label: "Registration charges borne by", type: enum,
+               required: false, default: lessee, options: [ lessor, lessee, shared ] } }
+
+  - { op: addClause,
+      clause: { id: kaGoverningLaw,
+                text: "This Agreement shall be governed by the laws of India as applicable in the
+                       State of Karnataka, including the Transfer of Property Act, 1882 and the
+                       Registration Act, 1908, as amended." } }
+  # Twelve months, matching rules/stamp-duty/KA/lease-commercial.yaml's
+  # `requiredWhenTermMonthsOver: 12` -- NOT Telangana's "eleven (11) months". See the residential
+  # state layer for why the threshold differs between the two states.
+  - { op: addClause,
+      clause: { id: kaStampRegistration,
+                text: "This Agreement shall be duly stamped under the Karnataka Stamp Act, 1957 and,
+                       where the term exceeds twelve (12) months, compulsorily registered before the
+                       jurisdictional Sub-Registrar in the State of Karnataka under the Registration
+                       Act, 1908. The stamp duty and registration charges shall be borne by the
+                       {{registrationChargesBorneBy}}." } }
+  - { op: addClause,
+      clause: { id: kaStampAmount, showWhen: "stampDutyAmount > 0",
+                text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }
+
+  - { op: addSection,
+      section: { title: "Statutory (Karnataka)", optional: false,
+                 entries: [ stampDutyAmount, registrationChargesBorneBy,
+                            kaGoverningLaw, kaStampRegistration, kaStampAmount ] } }

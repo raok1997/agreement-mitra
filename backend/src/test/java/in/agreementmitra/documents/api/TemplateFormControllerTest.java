@@ -54,7 +54,22 @@ class TemplateFormControllerTest {
                         null,
                         null,
                         new FormField.Validation(0L, null, null, null, null),
-                        null)),
+                        null,
+                        null),
+                    // A DERIVED field: projected read-only so the client displays the server's
+                    // computed value instead of collecting one.
+                    new FormField(
+                        "durationMonths",
+                        "Duration (months)",
+                        "number",
+                        "int",
+                        false,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        Boolean.TRUE)),
                 false,
                 "keyvalue")));
   }
@@ -104,5 +119,23 @@ class TemplateFormControllerTest {
     mockMvc
         .perform(get("/api/templates/form").param("state", "TG"))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void aDerivedFieldServesReadOnlyTrueAndAnOrdinaryFieldOmitsTheMemberEntirely() throws Exception {
+    when(templateForm.formFor("TG", "residential")).thenReturn(schema("abc123"));
+
+    mockMvc
+        .perform(get("/api/templates/form").param("state", "TG").param("type", "residential"))
+        .andExpect(status().isOk())
+        // The derived field carries the marker and is never required of the customer.
+        .andExpect(jsonPath("$.sections[0].fields[1].key").value("durationMonths"))
+        .andExpect(jsonPath("$.sections[0].fields[1].readOnly").value(true))
+        .andExpect(jsonPath("$.sections[0].fields[1].required").value(false))
+        // An ordinary field omits the member ALTOGETHER rather than serving readOnly:false, so
+        // every schema payload without a derived field is byte-identical to what it served before
+        // this member existed.
+        .andExpect(jsonPath("$.sections[0].fields[0].key").value("monthlyRent"))
+        .andExpect(jsonPath("$.sections[0].fields[0].readOnly").doesNotExist());
   }
 }

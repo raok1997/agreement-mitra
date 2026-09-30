@@ -1,0 +1,130 @@
+# KARNATAKA -- residential lease stamp duty (change ka-rental-and-commercial-templates, design D1-D4).
+#
+# *** EVERY FIGURE BELOW IS UNVERIFIED. Do not record a counselReview until counsel has checked each
+# *** one against a primary source. Charging on this rule is refused unless
+# *** rules.stamp-duty.allow-unreviewed=true (sandbox / founding-team beta only).
+#
+# Sources (researched 2026-09-18):
+#   [K1] Karnataka Stamp Act 1957, Schedule, Art. 30(1) "Lease of immoveable property" --
+#        Dept of Stamps & Registration (IGR Karnataka) electronic copy of the Schedule:
+#        https://igr.karnataka.gov.in/storage/pdf-files/Acts-Rules/THE%20KARNATAKA%20STAMP%20ACT%201957%20-%20Schedule.pdf
+#        (PRIMARY publisher, but the document's own header reads "Updated till 20th April, 2017",
+#        and its opening note says to consult the gazette where accuracy is critical.)
+#   [K2] Karnataka Stamp (Amendment) Act 2023, notified 3 February 2024 -- revised rates for 50+
+#        instruments. NOT READ. Whether it moved Art. 30 is UNKNOWN.
+#   [K3] Registration Act 1908 s.17(1)(d) (central, unamended in Karnataka): leases of immovable
+#        property from year to year, for a term exceeding one year, or reserving a yearly rent, are
+#        compulsorily registrable.
+#   [K4] Karnataka Stamp Act 1957, Schedule, Art. 22 "Counterpart or duplicate" [K1].
+#
+# *** THE FIRST QUESTION FOR COUNSEL IS [K2], not the arithmetic. The rates below are transcribed
+# *** from a 2017-vintage copy of a schedule that was amended in 2024. Secondary sites disagree with
+# *** the 2017 text and with each other (0.5% and 1% are both asserted for the 11-month case), which
+# *** is consistent with an amendment having landed. Verify Art. 30(1) against the gazette FIRST;
+# *** every figure here may move together.
+#
+# effectiveFrom is NOT the date of the Government Order that set these rates -- that order was not
+# located. It is the vintage of the source consulted [K1], which is the earliest date from which we
+# can honestly say "this is what the schedule said". Treat it as provenance, not as commencement.
+#
+# Instrument kind LEASE follows Art. 30's own title and the rental template's substance. Pending the
+# counsel ruling tracked as rental-deed-lease-vs-licence -- an instrument assessed under the wrong
+# article is inadmissible under s.35 Indian Stamp Act until duty plus penalty is paid.
+extends: base
+id: KA-lease-residential
+state: KA
+instrumentKind: LEASE
+usage: RESIDENTIAL
+effectiveFrom: "2017-04-20"
+effectiveTo: null
+legalReference: "Karnataka Stamp Act 1957 Sch. Art. 30(1) -- UNVERIFIED, 2017-vintage source [K1]"
+counselReview: null
+slabs:
+  # Art. 30(1)(i): term not exceeding one year, RESIDENTIAL property -- "fifty paise for every one
+  # hundred rupees or part thereof on the total amount or value of; the average annual rent, premium,
+  # fine and money advanced, subject to a maximum of rupees five hundred" [K1] MEDIUM.
+  #
+  # NOT total rent. Karnataka uses AVERAGE ANNUAL RENT on this slab, unlike Telangana, which uses
+  # total rent below twelve months. For a term under a year that ANNUALISES the rent upward: eleven
+  # months at INR 20,000 gives an average annual rent of INR 240,000 against a total rent of
+  # INR 220,000. Whether the statute intends annualisation for a sub-year lease is a real reading
+  # question (design D2) -- it is open with counsel and is NOT a transcription slip to be "fixed".
+  # The INR 500 cap makes it moot here at any realistic rent; it does not for commercial.
+  #
+  # The cap is a SLAB maximum, not a rule maximum, and that distinction is load-bearing: it binds
+  # this band alone. As a rule-level maximum it would also cap the 13-60 month band below, quoting
+  # INR 500 where INR 600 is due -- an under-stamped instrument. LOW confidence on the cap surviving
+  # [K2]; HIGH that it is confined to this band if it survives, since Art. 30(1)(i) is the only
+  # sub-clause carrying it.
+  #
+  # Deposit INCLUDED via "money advanced", which the Article's Explanation defines as including "the
+  # security deposit whether refundable or adjustable towards the rent" [K1] MEDIUM. The Explanation
+  # is printed under clause (2) in the source, so its reach over clause (1) is arguable (design D3),
+  # but clause (1)'s own chargeable-event text names "money advanced or security deposit (as the case
+  # may be)", so inclusion is the better-supported reading -- and the conservative one.
+  - { minMonths: 1, maxMonths: 12, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT],
+      ratePercent: "0.5", maximumAmount: "500" }
+  # Art. 30(1)(iii): exceeding one year, not exceeding ten years -- one rupee per hundred (1%) [K1]
+  # MEDIUM. NO CAP: the INR 500 maximum belongs to (i) alone.
+  #
+  # Above one year Karnataka does NOT split on usage -- this is the same 1% the commercial rule
+  # applies over the same band. That is the statute, not a copy-paste: the residential/commercial
+  # distinction in Art. 30(1) exists only between (i) and (ii), and there only as the cap. Do not
+  # "correct" the duplication.
+  #
+  # Stops at 60 months, the rental template's maximum duration. Longer residential terms are
+  # Unsupported rather than approximated, even though the statute continues to ten years.
+  - { minMonths: 13, maxMonths: 60, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT],
+      ratePercent: "1" }
+# No rule-wide minimum or maximum in Art. 30(1) [K1] MEDIUM. The INR 500 figure is a slab bound and
+# is declared on its slab above -- putting it here would be the exact defect described there.
+minimumAmount: null
+maximumAmount: null
+# Statute computes in paise; whole-rupee UP is a deliberate conservative choice (never under-stamps).
+rounding: { mode: UP, unitRupees: 1 }
+# Art. 22 [K4] MEDIUM: the same duty as the original where the original's duty does not exceed
+# INR 500, and INR 500 in any other case.
+#
+# DELIBERATE OVER-READING. counterpartDuty is a flat amount, so the conditional form cannot be
+# expressed -- and it does not need to be: DutyBasis.counterparts has no call site above 1 anywhere
+# in the signing module, so the product never asks for a counterpart and this value is unreachable
+# today. Flat 500 over-states where the original duty is at or below INR 500 (it should then equal
+# the original). If counterparts ever become a product feature, this must become conditional before
+# the feature ships, not after.
+counterpartDuty: "500"
+# Registration Act 1908 s.17(1)(d) [K3] MEDIUM. Karnataka has NO state amendment equivalent to the
+# AP/Telangana one that makes every lease compulsorily registrable, so the unamended central
+# threshold applies: a term exceeding one year. Hence 12, not Telangana's 0. The Karnataka template
+# layers state this same threshold in their stamp/registration clause -- keep the two in step.
+registration: { requiredWhenTermMonthsOver: 12 }
+cases:
+  # The low boundary of the first slab. Annualisation (design D2) is at its most visible here: one
+  # month at INR 8,000 is charged on an average annual rent of INR 96,000, not on INR 8,000.
+  - name: "1-month boundary, below the cap"
+    basis: { termMonths: 1, monthlyRent: "8000" }
+    expect: { outcome: QUOTED, amountPaise: 48000 }
+  - name: "12-month boundary, below the cap"
+    basis: { termMonths: 12, monthlyRent: "5000" }
+    expect: { outcome: QUOTED, amountPaise: 30000, plans: { e-stamp: 30000, stamp-paper: 30000 } }
+  # The regression this change's engine work exists to prevent: at 13 months the rate becomes 1% AND
+  # the INR 500 cap must NOT follow. A rule-level maximum would quote 50000 paise here.
+  - name: "13-month boundary takes 1 percent and the cap does not follow"
+    basis: { termMonths: 13, monthlyRent: "5000" }
+    expect: { outcome: QUOTED, amountPaise: 60000 }
+  - name: "11 months with the INR 500 cap biting"
+    basis: { termMonths: 11, monthlyRent: "20000", refundableDeposit: "100000" }
+    expect: { outcome: QUOTED, amountPaise: 50000, plans: { e-stamp: 50000, stamp-paper: 50000 } }
+  - name: "60-month boundary"
+    basis: { termMonths: 60, monthlyRent: "5000" }
+    expect: { outcome: QUOTED, amountPaise: 60000 }
+  - name: "escalation compounds into the average annual rent"
+    basis: { termMonths: 24, monthlyRent: "10000", escalationPercent: "5", escalationEveryMonths: 12 }
+    expect: { outcome: QUOTED, amountPaise: 123000 }
+  # Counterpart duty is added AFTER the slab cap, so a capped duty of 500 plus one counterpart is
+  # 1000 -- the cap bounds the slab's duty, not the quote.
+  - name: "a counterpart copy is added after the cap"
+    basis: { termMonths: 11, monthlyRent: "20000", refundableDeposit: "100000", counterparts: 2 }
+    expect: { outcome: QUOTED, amountPaise: 100000 }
+  - name: "beyond the rental template range"
+    basis: { termMonths: 61, monthlyRent: "10000" }
+    expect: { outcome: UNSUPPORTED }

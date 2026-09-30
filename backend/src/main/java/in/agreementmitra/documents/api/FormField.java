@@ -25,6 +25,11 @@ import java.util.List;
  *   <li>{@code validation} -- the projected declarative bounds sufficient for client-side checks.
  *   <li>{@code showWhen} -- an optional conditional-visibility expression carried through
  *       <b>verbatim and unevaluated</b> (reserved for document projection; never fired here).
+ *   <li>{@code readOnly} -- {@code TRUE} when the server computes this field's value (a
+ *       <b>derived</b> field), so the client displays it rather than collecting it. It is a boxed
+ *       {@code Boolean} left {@code null} rather than a primitive {@code false} precisely so {@code
+ *       NON_NULL} omits it: every schema payload without a derived field stays byte-identical to
+ *       what it was before this member existed.
  * </ul>
  *
  * Optional members are omitted from JSON when absent ({@link JsonInclude.Include#NON_NULL}).
@@ -40,7 +45,8 @@ public record FormField(
     List<Option> options,
     String group,
     Validation validation,
-    String showWhen) {
+    String showWhen,
+    Boolean readOnly) {
 
   public FormField {
     options = options == null ? null : List.copyOf(options);

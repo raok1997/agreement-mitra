@@ -35,7 +35,7 @@ export const TERMS_STATUS_BANNER =
   "you can read beats terms that do not exist -- not because it is finished.";
 
 /** The date the draft last changed. Bumped by hand when a clause changes. */
-export const TERMS_LAST_UPDATED = "8 September 2026";
+export const TERMS_LAST_UPDATED = "18 September 2026";
 
 export const TERMS_CLAUSES: Clause[] = [
   {
@@ -79,6 +79,7 @@ export const TERMS_CLAUSES: Clause[] = [
     status: "drafted",
     body: [
       "Stamp duty is levied by each state under its own law, and there is no single national rate. So we can only buy a stamp certificate for a state whose duty we can calculate and whose certificates we can obtain. Today that is Telangana.",
+      "Those are two separate conditions, and a state can meet one without the other. We calculate stamp duty for Karnataka agreements and show you the figure, but we cannot yet buy a Karnataka certificate for you, so a Karnataka agreement is draft-only here for now. Seeing a duty amount is not the same as us being able to stamp for you, and we will not take your money until it is.",
       "Templates for other jurisdictions, including our national template, are available to draft, preview and download free of charge. They cannot be paid for, stamped or eSigned here, and we mark them accordingly before you start filling one in. A document you draft this way is yours to use however you wish -- including having it stamped yourself -- but it has not been stamped by us and carries no signature from this service.",
       "We add jurisdictions as we are able to. This clause is updated when we do, so it is the current list rather than a promise about the future.",
     ],

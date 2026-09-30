@@ -42,7 +42,9 @@ class StampPaperCatalogLoaderTest {
         new StampPaperCatalogLoader()
             .load(RuleSetLoader.resolve(TestRules.DEFAULT_CATALOG_LOCATIONS));
 
-    assertThat(loaded).extracting(StampPaperCatalog::state).containsExactlyInAnyOrder("ZZ", "TG");
+    assertThat(loaded)
+        .extracting(StampPaperCatalog::state)
+        .containsExactlyInAnyOrder("ZZ", "TG", "KA");
   }
 
   @Test

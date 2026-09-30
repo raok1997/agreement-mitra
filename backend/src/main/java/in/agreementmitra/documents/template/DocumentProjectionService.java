@@ -207,8 +207,12 @@ class DocumentProjectionService implements DocumentProjectionApi {
   /**
    * The data map the validator sees: the submitted map with every <b>system-sourced</b> key removed
    * (a client can never put a value there, not even an invalid one that would raise an error), then
-   * the server-supplied {@code systemValues} for those keys only. Everything else is left as
-   * submitted.
+   * the server-supplied {@code systemValues} for those keys only, then every <b>derived</b> key
+   * recomputed by {@link #withDerivedValues}. Everything else is left as submitted.
+   *
+   * <p>Both substitutions run here, ahead of validation and compilation, because every render path
+   * funnels through this method -- which is what keeps the preview and the generated draft
+   * compiling the same map.
    */
   static Map<String, Object> withSystemValues(
       EffectiveTemplate effective,
@@ -223,6 +227,43 @@ class DocumentProjectionService implements DocumentProjectionApi {
       data.remove(field.key());
       if (systemValues != null && systemValues.get(field.key()) != null) {
         data.put(field.key(), systemValues.get(field.key()));
+      }
+    }
+    return withDerivedValues(effective, data);
+  }
+
+  /** The field key whose value is the tenancy/lease term in whole months. */
+  private static final String DURATION_MONTHS = "durationMonths";
+
+  /**
+   * Substitute the server-derived value for every <b>derived</b> field the template declares,
+   * discarding whatever the client submitted for it. Today exactly one field is derived -- {@code
+   * durationMonths}, computed from the submitted {@code startDate}/{@code endDate} -- and a
+   * template declares only THAT a field is derived, never how; the rule lives here.
+   *
+   * <p>This runs on EVERY render path (stateless preview and generate alike) because both funnel
+   * through {@link #withSystemValues}. That is the point: the preview used to compile the typed
+   * term while generate compiled the date-derived one, so the same deed previewed as one term and
+   * signed as another. Deriving here makes the two agree by construction rather than by two callers
+   * remembering to agree.
+   *
+   * <p>The substitution is unconditional -- a submitted value is discarded even when it happens to
+   * match -- so no client value can reach the document. When the term cannot be determined (either
+   * date absent or unparseable) the key is left UNSET rather than defaulted, and the document
+   * renders it as any other unfilled field.
+   */
+  private static Map<String, Object> withDerivedValues(
+      EffectiveTemplate effective, Map<String, Object> data) {
+    for (Field field : effective.template().fields()) {
+      if (!field.derived()) {
+        continue;
+      }
+      data.remove(field.key());
+      if (DURATION_MONTHS.equals(field.key())) {
+        Long months = TermMonths.between(data.get("startDate"), data.get("endDate"));
+        if (months != null) {
+          data.put(field.key(), months);
+        }
       }
     }
     return data;

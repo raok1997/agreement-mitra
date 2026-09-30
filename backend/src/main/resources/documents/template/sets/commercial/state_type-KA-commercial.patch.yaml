@@ -1,0 +1,48 @@
+# Production layer set (commercial) -- STATE+TYPE layer (Karnataka commercial), highest precedence.
+# Karnataka commercial specifics over the base structure: drop the generic national stamp clause in
+# favour of the Karnataka-specific one (state layer), remove its now-dangling entry from the
+# witnesseth covenant list, default the jurisdiction city to Bengaluru, and order the sections so the
+# document reads Lessor -> Lessee -> Schedule of Premises -> Term -> Financial -> [optional add-ons]
+# -> Now This Agreement Witnesseth -> Annexure -> Statutory (Karnataka) -> In Witness Whereof ->
+# Witnesses.
+#
+# "Statutory (Karnataka)" is MANDATORY (state-KA.patch.yaml, `optional: false`), unlike the Telangana
+# commercial overlay. This file is why: the removeClause below drops the national
+# `stampRegistrationClause`, so an opt-in section would leave a default Karnataka commercial deed
+# carrying no stamp or registration clause at all. Do not flip one without the other.
+#
+# The "In Witness Whereof" execution / signature block is MANDATORY (declared so in the base): a
+# generated draft must carry the per-signer signature zones + esign:<role> anchors to be signable via
+# Aadhaar eSign, so the block always renders.
+#
+# THESE ARE THE COMMERCIAL SET'S SECTION TITLES. The sibling residential layer orders
+# Owner / Tenant / Schedule of Property; copying that ordering here would silently drop every section
+# of this document from the reorder. The render tests pin the difference.
+meta:
+  kind: state_type
+  dimensions: { state: KA, type: commercial }
+  version: 1
+
+ops:
+  # Drop the generic national stamp/registration clause; the state layer's kaStampRegistration
+  # supersedes it. Then re-author the witnesseth list without the removed clause so nothing dangles.
+  - { op: removeClause, id: stampRegistrationClause }
+  - { op: replaceSection, title: "Now This Agreement Witnesseth",
+      section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
+                 entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,
+                            inspectionClause, quietEnjoymentClause, handoverClause, disputeClause,
+                            disputeAlternativeClause,
+                            serviceOfNoticeClause, governingLawClause, severabilityClause,
+                            entireAgreementClause ] } }
+
+  # Karnataka default jurisdiction. As in the residential layer, this is what keeps the always-on
+  # exclusive-jurisdiction covenant from naming "[ Jurisdiction city ]" on a deed generated without
+  # the optional Dispute Resolution section.
+  - { op: overrideField, key: jurisdictionCity, default: "Bengaluru" }
+
+  # Full section order for the Karnataka commercial set: Statutory then the signature block last.
+  - { op: reorderSections,
+      order: [ "Lessor", "Lessee", "Schedule of Premises", "Term", "Financial",
+               "Charges & Utilities", "Occupancy & Use", "Dispute Resolution",
+               "Now This Agreement Witnesseth", "Annexure", "Statutory (Karnataka)",
+               "In Witness Whereof", "Witnesses" ] }

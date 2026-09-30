@@ -84,10 +84,27 @@ class ProductionCommercialLayerSetTest {
     data.put("propertyAddress", "Unit 4, HITEC City, Hyderabad");
     data.put("monthlyRent", new BigDecimal("150000.00"));
     data.put("securityDeposit", new BigDecimal("900000.00"));
+    // durationMonths is DERIVED -- see the matching note in ProductionRentalLayerSetTest. Left here
+    // disagreeing with the dates (they span 35 whole months, one day short of 36) so a regression
+    // that lets a submitted term reach the document renders "36 month(s)" instead of "35".
     data.put("durationMonths", 36);
     data.put("startDate", "2026-09-01");
     data.put("endDate", "2029-08-31");
     return data;
+  }
+
+  @Test
+  void theRenderedTermFollowsTheDatesNotTheSubmittedDuration() {
+    EffectiveTemplate eff = resolve("IN", "commercial");
+
+    Map<String, Object> data =
+        DocumentProjectionService.withSystemValues(eff, aggregateBackedData(), Map.of());
+    String html =
+        new TemplateCompiler()
+            .compile(
+                eff, SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.GENERATE));
+
+    assertThat(html).contains("a term of 35 month(s)").doesNotContain("a term of 36 month(s)");
   }
 
   @Test

@@ -10,6 +10,7 @@ import MoneyWidget from "./MoneyWidget.vue";
 import DateWidget from "./DateWidget.vue";
 import CheckboxWidget from "./CheckboxWidget.vue";
 import SelectWidget from "./SelectWidget.vue";
+import DerivedWidget from "./DerivedWidget.vue";
 
 const props = defineProps<{
   field: FormField;
@@ -28,8 +29,11 @@ const registry: Record<string, Component> = {
   select: SelectWidget,
 };
 
-const widget = computed<Component>(
-  () => registry[props.field.widget] ?? TextWidget,
+// A read-only (server-derived) field short-circuits the widget vocabulary entirely: it is a DISPLAY,
+// not an input, whatever its underlying type says. Dispatching on readOnly before the type keeps
+// that decision in one place instead of every widget having to learn a disabled state.
+const widget = computed<Component>(() =>
+  props.field.readOnly ? DerivedWidget : (registry[props.field.widget] ?? TextWidget),
 );
 </script>
 

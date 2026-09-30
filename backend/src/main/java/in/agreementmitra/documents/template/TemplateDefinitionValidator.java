@@ -31,6 +31,10 @@ final class TemplateDefinitionValidator {
         throw new TemplateDefinitionException(
             "system-sourced field '" + field.key() + "' cannot be required");
       }
+      // A DERIVED field is deliberately NOT rejected when required. Unlike a system-sourced one it
+      // is always present in the output (the server computes it from other captured values), so
+      // declaring it required is not an authoring error -- it is simply not a statement about
+      // capture. FormProjector normalizes it to required: false in the FormSchema.
     }
 
     Set<String> clauseIds = new LinkedHashSet<>();
