@@ -12,6 +12,7 @@ import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -210,7 +211,7 @@ class PaymentGateIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
   }
@@ -218,7 +219,7 @@ class PaymentGateIntegrationTest {
   private ResponseEntity<String> confirmPayment(UUID agreementId, String reference) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     String body =
         "{\"amount\":\"1499.00\",\"currency\":\"INR\",\"reference\":\"" + reference + "\"}";
     return rest.postForEntity(
@@ -229,7 +230,7 @@ class PaymentGateIntegrationTest {
 
   private ResponseEntity<String> waivePayment(UUID agreementId) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/payments/" + agreementId + "/waive",
         HttpMethod.POST,
@@ -425,7 +426,7 @@ class PaymentGateIntegrationTest {
 
     HttpHeaders customer = new HttpHeaders();
     customer.setContentType(MediaType.APPLICATION_JSON);
-    customer.setBearerAuth(customerToken);
+    customer.add(HttpHeaders.COOKIE, SessionCookie.header(customerToken));
     ResponseEntity<String> confirmed =
         rest.postForEntity(
             "/api/staff/payments/" + agreementId + "/confirm",
@@ -449,7 +450,7 @@ class PaymentGateIntegrationTest {
   @Test
   void theActiveGateModeIsObservableAtRuntime() {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
 
     ResponseEntity<String> response =
         rest.exchange(
@@ -463,7 +464,7 @@ class PaymentGateIntegrationTest {
   void theStaffQueueShowsWhoHasNotPaid() {
     UUID unpaid = createFinalisedAgreement();
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
 
     ResponseEntity<String> response =
         rest.exchange(

@@ -5,12 +5,12 @@ import {
   SigningProgressHttpError,
 } from "./signingProgress";
 
-// Both reads attach the Bearer header from the auth store: a claimed agreement answers only its
-// owner, so a request that dropped the header would be refused for exactly the customer who
-// saved it. The download in particular must be a fetch, never a bare link -- a link carries no
-// header -- and must never put the session in the URL.
-vi.mock("./authStore", () => ({
-  authHeader: () => ({ Authorization: "Bearer test-session" }),
+// Both reads ride the HttpOnly session cookie (same-origin credentials): a claimed agreement answers
+// only its owner. The download stays a fetch turned into a blob URL, and never puts anything
+// session-like in the URL.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
 }));
 
 function okJson(body: unknown) {
@@ -27,7 +27,7 @@ describe("signingProgress api", () => {
     vi.useRealTimers();
   });
 
-  it("reads progress with the Bearer header", async () => {
+  it("reads progress over the session cookie", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
@@ -40,11 +40,7 @@ describe("signingProgress api", () => {
     expect(progress.stage).toBe("AWAITING_STAMP");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/signing/a1/progress",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-session",
-        }),
-      }),
+      expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 
@@ -60,7 +56,7 @@ describe("signingProgress api", () => {
     );
   });
 
-  it("downloads the signed document with the Bearer header, via a blob URL, never a token in the URL", async () => {
+  it("downloads the signed document over the session cookie, via a blob URL, never a token in the URL", async () => {
     vi.useFakeTimers();
     const blob = new Blob(["%PDF-1.7"], { type: "application/pdf" });
     const fetchMock = vi.fn().mockResolvedValue({
@@ -84,10 +80,8 @@ describe("signingProgress api", () => {
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/agreements/a1/signed-document");
-    expect(url).not.toContain("test-session");
-    expect(init.headers).toMatchObject({
-      Authorization: "Bearer test-session",
-    });
+    expect(url).not.toContain("session");
+    expect(init.credentials).toBe("same-origin");
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     expect(click).toHaveBeenCalledOnce();
     // The download navigation is asynchronous: the URL outlives the click, then is revoked.

@@ -20,7 +20,8 @@ class TokenHasherTest {
           Duration.ofSeconds(60),
           Duration.ofMinutes(5),
           new AuthProperties.Google(
-              "client", "secret", "redirect", "spa", "issuer", "auth", "token", "jwks"));
+              "client", "secret", "redirect", "spa", "issuer", "auth", "token", "jwks"),
+          null);
 
   private final TokenHasher hasher = new TokenHasher(PROPS);
 
@@ -49,7 +50,8 @@ class TokenHasherTest {
                 Duration.ofHours(1),
                 Duration.ofSeconds(60),
                 Duration.ofMinutes(5),
-                PROPS.google()));
+                PROPS.google(),
+                null));
     assertThat(other.hash("abc")).isNotEqualTo(hasher.hash("abc"));
   }
 

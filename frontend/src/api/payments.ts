@@ -14,7 +14,7 @@
 // Card, UPI, netbanking and wallet details are collected entirely inside the provider's hosted
 // checkout. They never pass through our code, so nothing here can accept, proxy, store, or log one.
 
-import { authHeader } from "./authStore";
+import { apiFetch } from "./http";
 import type { StampSelection } from "./stampQuote";
 
 const BASE = "/api";
@@ -70,13 +70,18 @@ export async function startCheckout(
   agreementId: string,
   selection?: StampSelection,
 ): Promise<CheckoutSession> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/payment/order`, {
-    method: "POST",
-    headers: selection
-      ? { "Content-Type": "application/json", ...authHeader() }
-      : { ...authHeader() },
-    ...(selection ? { body: JSON.stringify(selection) } : {}),
-  });
+  const res = await apiFetch(
+    `${BASE}/agreements/${agreementId}/payment/order`,
+    {
+      method: "POST",
+      ...(selection
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(selection),
+          }
+        : {}),
+    },
+  );
   if (!res.ok) throw new PaymentHttpError(res.status);
   return res.json();
 }
@@ -85,9 +90,7 @@ export async function startCheckout(
 export async function getPaymentProgress(
   agreementId: string,
 ): Promise<PaymentProgress> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/payment`, {
-    headers: { ...authHeader() },
-  });
+  const res = await apiFetch(`${BASE}/agreements/${agreementId}/payment`);
   if (!res.ok) throw new PaymentHttpError(res.status);
   return res.json();
 }
@@ -108,11 +111,11 @@ export async function reportCheckoutResult(
   agreementId: string,
   result: CheckoutResult,
 ): Promise<PaymentProgress> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${BASE}/agreements/${agreementId}/payment/callback`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         razorpayOrderId: result.razorpay_order_id,
         razorpayPaymentId: result.razorpay_payment_id,

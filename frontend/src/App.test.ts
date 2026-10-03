@@ -467,12 +467,14 @@ describe("App agreement link", () => {
 
 // The header's "My agreements" switches the in-app view; from /staff that view is not on the page
 // at all, so the switch must also return to the app route or the click does nothing visible.
+// The boot /me defaults to "no session" (401): left resolving undefined, init() would read every
+// anonymous test as signed in.
 vi.mock("./api/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/auth")>();
   return {
     ...actual,
     exchangeHandoff: vi.fn(),
-    fetchMe: vi.fn(),
+    fetchMe: vi.fn(() => Promise.reject(new actual.AuthHttpError(401))),
     logout: vi.fn(),
   };
 });
@@ -489,7 +491,6 @@ describe("App header navigation from the staff console", () => {
     vi.mocked(auth.exchangeHandoff)
       .mockReset()
       .mockResolvedValue({
-        session: "s-1",
         me: {
           identityId: "id-1",
           displayName: "Staff",
@@ -525,32 +526,171 @@ describe("App header navigation from the staff console", () => {
   });
 });
 
-describe("App reload with a stored session", () => {
-  afterEach(() => sessionStorage.clear());
+// The session is an HttpOnly cookie, so a reload knows nothing until /me answers. Each test re-imports
+// the app (vi.resetModules) so the auth store's module-load `ready` promise starts pending.
+describe("App reload (cookie session)", () => {
+  const ME_R = {
+    identityId: "id-r",
+    displayName: "Restored User",
+    email: null,
+    role: "CUSTOMER" as const,
+  };
 
-  it("restores the signed-in header from the tab's storage via /auth/me", async () => {
-    sessionStorage.setItem("am.session", "s-restored");
-    // A reload re-evaluates every module, including the auth store that reads the storage.
+  async function reloadApp(path: string) {
     vi.resetModules();
     const auth = await import("./api/auth");
-    vi.mocked(auth.fetchMe).mockResolvedValue({
-      identityId: "id-r",
-      displayName: "Restored User",
-      email: null,
-      role: "CUSTOMER",
-    });
     const catalogR = await import("./api/templateCatalog");
     vi.mocked(catalogR.listTemplates).mockResolvedValue(catalogRows());
     const { default: ReloadedApp } = await import("./App.vue");
-    window.history.replaceState({}, "", "/start");
+    window.history.replaceState({}, "", path);
+    return { auth, ReloadedApp };
+  }
+
+  function pending<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  afterEach(() => sessionStorage.clear());
+
+  it("a reload with /me 200 shows the signed-in header", async () => {
+    sessionStorage.setItem("am.session", "legacy-value");
+    const { auth, ReloadedApp } = await reloadApp("/start");
+    vi.mocked(auth.fetchMe).mockResolvedValue(ME_R);
     const wrapper = mount(ReloadedApp);
     await flushPromises();
 
-    expect(auth.fetchMe).toHaveBeenCalledWith("s-restored");
+    expect(auth.fetchMe).toHaveBeenCalledWith();
+    expect(sessionStorage.getItem("am.session")).toBeNull();
     expect(wrapper.find('[data-testid="nav-my-agreements"]').exists()).toBe(
       true,
     );
     expect(wrapper.text()).toContain("Restored User");
+    wrapper.unmount();
+  });
+
+  it("renders no account control before /me resolves", async () => {
+    const { auth, ReloadedApp } = await reloadApp("/start");
+    const me = pending<typeof ME_R>();
+    vi.mocked(auth.fetchMe).mockReturnValue(me.promise);
+    const wrapper = mount(ReloadedApp);
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("Sign in with Google");
+    expect(wrapper.find('[data-testid="nav-my-agreements"]').exists()).toBe(
+      false,
+    );
+
+    me.reject(new auth.AuthHttpError(401));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Sign in with Google");
+    wrapper.unmount();
+  });
+
+  it("My agreements requested while /me is pending waits, then opens for a signed-in user", async () => {
+    const { auth, ReloadedApp } = await reloadApp("/start");
+    const agreements = await import("./api/agreements");
+    vi.mocked(agreements.listMyAgreements).mockResolvedValue([]);
+    const me = pending<typeof ME_R>();
+    vi.mocked(auth.fetchMe).mockReturnValue(me.promise);
+    const wrapper = mount(ReloadedApp, {
+      global: { stubs: { TemplatePicker: true, CaptureForm: true } },
+    });
+    await flushPromises();
+
+    // A save-to-account before the boot check answers routes through showMyAgreements().
+    wrapper
+      .findComponent({ name: "TemplatePicker" })
+      .vm.$emit("select", { state: "TG", type: "residential" });
+    await flushPromises();
+    wrapper.findComponent({ name: "CaptureForm" }).vm.$emit("saved-to-account");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="my-agreements"]').exists()).toBe(false);
+
+    // Had it decided early, it would have sent the user to Google and never shown the list.
+    me.resolve(ME_R);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="my-agreements"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("an agreement link opened while /me is pending does not ask a signed-in user to sign in", async () => {
+    const { auth, ReloadedApp } = await reloadApp(
+      "/agreement/3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    );
+    const agreements = await import("./api/agreements");
+    vi.mocked(agreements.getAgreement).mockRejectedValue(
+      new agreements.AgreementHttpError(404),
+    );
+    const me = pending<typeof ME_R>();
+    vi.mocked(auth.fetchMe).mockReturnValue(me.promise);
+    const wrapper = mount(ReloadedApp);
+    await flushPromises();
+
+    // The link read failed, but the sign-in decision waits for /me.
+    expect(wrapper.text()).not.toContain("This link did not open");
+
+    me.resolve(ME_R);
+    await flushPromises();
+    expect(wrapper.text()).toContain("This link did not open");
+    expect(wrapper.find("section button.bg-slate-900").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("the staff console shows loading, not the refusal, while /me is pending", async () => {
+    const { auth, ReloadedApp } = await reloadApp("/staff");
+    const staffQueue = await import("./api/staffQueue");
+    vi.mocked(staffQueue.listStampQueue).mockResolvedValue([]);
+    const me = pending<{
+      identityId: string;
+      displayName: string;
+      email: null;
+      role: "STAFF";
+    }>();
+    vi.mocked(auth.fetchMe).mockReturnValue(me.promise);
+    const wrapper = mount(ReloadedApp);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="staff-loading"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="staff-forbidden"]').exists()).toBe(
+      false,
+    );
+
+    me.resolve({
+      identityId: "s",
+      displayName: "Staff",
+      email: null,
+      role: "STAFF",
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="staff-loading"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="staff-forbidden"]').exists()).toBe(
+      false,
+    );
+    wrapper.unmount();
+  });
+
+  it("on the callback route, an exchange resolving before a pending boot /me ends signed in", async () => {
+    const { auth, ReloadedApp } = await reloadApp("/auth/callback");
+    window.history.replaceState({}, "", "/auth/callback#handoff=h-1");
+    const me = pending<typeof ME_R>();
+    vi.mocked(auth.fetchMe).mockReturnValue(me.promise);
+    vi.mocked(auth.exchangeHandoff).mockResolvedValue({ me: ME_R });
+    const wrapper = mount(ReloadedApp);
+    await flushPromises();
+
+    me.reject(new auth.AuthHttpError(403)); // the boot /me carried the pre-login cookie
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Restored User");
+    expect(wrapper.find('[data-testid="nav-my-agreements"]').exists()).toBe(
+      true,
+    );
     wrapper.unmount();
   });
 });

@@ -78,6 +78,9 @@ not.
   completion. A scheduled reconciliation job is the fallback for missed hooks.
 - Tests: every module change must keep `ModularityTests` green (it verifies
   module boundaries). Write a slice/integration test for new endpoints.
+- **GET handlers must be side-effect-free.** The session cookie is `SameSite=Lax`, which a
+  cross-site top-level GET navigation still carries; CSRF tokens guard only unsafe methods. A GET
+  that changes state is a CSRF hole.
 - Frontend: composition API + `<script setup>`; Tailwind utilities for layout
   (responsive is a CSS concern, not a JS one); keep API calls in `src/api/`.
 
@@ -213,6 +216,12 @@ Backend (from `backend/`):
 - `./start_local.sh` — run the API against the compose infra without remembering env
   vars: supplies the compose MinIO creds (defaults only; a real env wins) + the `local`
   profile, then `bootRun`. Run `docker compose up -d` first.
+- `AUTH_COOKIE_SECURE=false` — drop `Secure` and the `__Host-` prefix from the session and
+  CSRF cookies, for plain-http testing from a LAN IP (`http://192.168.x.x:5173`) or Safari.
+  **Required on a LAN IP even for anonymous drafting**: the browser drops `Secure` cookies there,
+  so every POST fails CSRF. `http://localhost` works with the default `true`. Clear site cookies
+  when switching modes (a stale cookie of the other name lingers). Startup refuses `false` while a
+  Google OAuth URI is https.
 - `./gradlew test` — run tests (includes module-boundary verification)
 - `./gradlew check` — tests + JaCoCo coverage gate
 - `./gradlew spotlessApply` — format Java

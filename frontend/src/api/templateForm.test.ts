@@ -5,6 +5,12 @@ import {
   type FormSection,
 } from "./templateForm";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 function sampleSchema(): FormSchema {
   return {
     dimensions: { state: "TG", type: "residential" },
@@ -32,6 +38,7 @@ describe("template-form api client", () => {
     await expect(getTemplateForm("TG", "residential")).resolves.toEqual(schema);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/templates/form?state=TG&type=residential",
+      { credentials: "same-origin" },
     );
   });
 

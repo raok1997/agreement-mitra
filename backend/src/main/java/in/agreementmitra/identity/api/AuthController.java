@@ -11,11 +11,12 @@ import in.agreementmitra.identity.oauth.GoogleLoginService.StartRedirect;
 import in.agreementmitra.identity.oauth.InvalidLoginException;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.identity.session.SessionService.SessionIssued;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.net.URI;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -25,15 +26,15 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Public HTTP surface of the identity module's optional Google login. Backend-mediated OAuth: the
  * SPA never sees a Google token. The handshake routes ({@code /google/start}, {@code
- * /google/callback}, {@code /session/exchange}) are {@code permitAll} in the security baseline; me
- * and logout require an authenticated session.
+ * /google/callback}, {@code /session/exchange}), the CSRF bootstrap ({@code /csrf}) and logout are
+ * {@code permitAll} in the security baseline; me requires an authenticated session. The session
+ * travels only in the HttpOnly cookie owned by {@link SessionCookies} -- never in a body.
  *
  * <p>No token, authorization code, session value, handoff, PKCE verifier, or unredacted email is
  * ever logged, and none is ever placed in an error body. A failed handshake/exchange returns an
@@ -44,19 +45,20 @@ public class AuthController {
 
   private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
-  private static final String BEARER_PREFIX = "Bearer ";
-
   private final GoogleLoginService googleLoginService;
   private final SessionService sessionService;
   private final IdentityService identityService;
+  private final SessionCookies sessionCookies;
 
   AuthController(
       GoogleLoginService googleLoginService,
       SessionService sessionService,
-      IdentityService identityService) {
+      IdentityService identityService,
+      SessionCookies sessionCookies) {
     this.googleLoginService = googleLoginService;
     this.sessionService = sessionService;
     this.identityService = identityService;
+    this.sessionCookies = sessionCookies;
   }
 
   /** Begin login: 302 to Google's consent screen (a single-use state + PKCE pair is persisted). */
@@ -83,12 +85,29 @@ public class AuthController {
   }
 
   /**
-   * Exchange the single-use handoff for an opaque session; returns the value once + the summary.
+   * Exchange the single-use handoff for an opaque session, delivered only as the HttpOnly cookie;
+   * the body carries just the caller's summary. Order is load-bearing (D7): consume + mint first,
+   * and only on success establish the cookie (which rotates CSRF and revokes any prior session). A
+   * refused handoff throws before the browser's existing session or cookie is touched.
    */
   @PostMapping("/api/auth/session/exchange")
-  ResponseEntity<SessionResponse> exchange(@RequestBody SessionExchangeRequest request) {
+  ResponseEntity<SessionResponse> exchange(
+      @RequestBody SessionExchangeRequest request,
+      HttpServletRequest httpRequest,
+      HttpServletResponse httpResponse) {
     SessionIssued issued = sessionService.exchange(request == null ? null : request.handoff());
-    return ResponseEntity.ok(new SessionResponse(issued.value(), toMe(issued.me())));
+    sessionCookies.establish(httpRequest, httpResponse, issued);
+    return ResponseEntity.ok(new SessionResponse(toMe(issued.me())));
+  }
+
+  /**
+   * CSRF bootstrap: 204 with no body. The eager CSRF handler in the security chain sets the token
+   * cookie on any response to a browser that lacks one; this route just gives the SPA a
+   * deterministic, side-effect-free request to trigger that before its first unsafe call.
+   */
+  @GetMapping("/api/auth/csrf")
+  ResponseEntity<Void> csrf() {
+    return ResponseEntity.noContent().build();
   }
 
   /** Return the authenticated caller's identity summary. Requires a live session. */
@@ -101,15 +120,27 @@ public class AuthController {
         .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
   }
 
-  /** Revoke the caller's session and clear the security context. Idempotent; 204. */
+  /**
+   * Revoke the cookie's session (if any), always expire the cookie, rotate CSRF; 204. Reachable
+   * without a live session so a stale cookie can still be cleared -- JS cannot delete an HttpOnly
+   * cookie. Still CSRF-protected, so it cannot be used for forced logout.
+   */
   @PostMapping("/api/auth/logout")
-  ResponseEntity<Void> logout(
-      @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
-    if (authorization != null && authorization.startsWith(BEARER_PREFIX)) {
-      sessionService.revoke(authorization.substring(BEARER_PREFIX.length()).trim());
+  ResponseEntity<Void> logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+    boolean revoked = true;
+    try {
+      sessionCookies.read(httpRequest).ifPresent(sessionService::revoke);
+    } catch (RuntimeException e) {
+      // The cookie is still expired below, so this browser is signed out either way; the row is
+      // unreachable without its value and expires at its TTL. Report 500 so the SPA says so.
+      log.warn("Logout revoke failed: {}", e.getClass().getSimpleName());
+      revoked = false;
     }
+    sessionCookies.clear(httpRequest, httpResponse);
     SecurityContextHolder.clearContext();
-    return ResponseEntity.noContent().build();
+    return revoked
+        ? ResponseEntity.noContent().build()
+        : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
   }
 
   private MeResponse toMe(IdentitySummary summary) {

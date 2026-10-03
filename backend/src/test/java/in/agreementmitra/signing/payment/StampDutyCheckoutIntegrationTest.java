@@ -15,6 +15,7 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import java.util.List;
 import java.util.Map;
@@ -202,7 +203,7 @@ class StampDutyCheckoutIntegrationTest {
         StaffSessions.customerSession(
             identityService, handoffService, sessionService, "quote-other-" + UUID.randomUUID());
     HttpHeaders ownerHeaders = new HttpHeaders();
-    ownerHeaders.setBearerAuth(owner);
+    ownerHeaders.add(HttpHeaders.COOKIE, SessionCookie.header(owner));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",
@@ -212,7 +213,7 @@ class StampDutyCheckoutIntegrationTest {
                 .getStatusCode())
         .isEqualTo(HttpStatus.OK);
     HttpHeaders otherHeaders = new HttpHeaders();
-    otherHeaders.setBearerAuth(other);
+    otherHeaders.add(HttpHeaders.COOKIE, SessionCookie.header(other));
 
     ResponseEntity<String> refused = quote(agreementId, otherHeaders);
 

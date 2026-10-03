@@ -282,6 +282,10 @@ auth:
   session-ttl: ${AUTH_SESSION_TTL:PT24H}
   handoff-ttl: ${AUTH_HANDOFF_TTL:PT60S}
   login-state-ttl: ${AUTH_LOGIN_STATE_TTL:PT5M}
+  # Browser-session cookies (cookie-session-auth D5). `false` drops Secure + the __Host- prefix for
+  # plain-http LAN/Safari testing only; startup refuses it when a Google URI is https.
+  cookie:
+    secure: ${AUTH_COOKIE_SECURE:true}
   google:
     client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
     client-secret: ${GOOGLE_OAUTH_SECRET:}

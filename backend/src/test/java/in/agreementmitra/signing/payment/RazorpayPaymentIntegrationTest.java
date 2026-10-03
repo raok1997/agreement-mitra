@@ -16,6 +16,7 @@ import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.RecordingEmailSender;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import java.time.Instant;
 import java.util.List;
@@ -171,7 +172,7 @@ class RazorpayPaymentIntegrationTest {
 
   private void claimFor(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(token);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",
@@ -211,7 +212,7 @@ class RazorpayPaymentIntegrationTest {
   private ResponseEntity<String> startCheckout(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
     if (token != null) {
-      headers.setBearerAuth(token);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     }
     return rest.exchange(
         "/api/agreements/" + agreementId + "/payment/order",
@@ -223,7 +224,7 @@ class RazorpayPaymentIntegrationTest {
   private ResponseEntity<String> readProgress(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
     if (token != null) {
-      headers.setBearerAuth(token);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     }
     return rest.exchange(
         "/api/agreements/" + agreementId + "/payment",
@@ -403,7 +404,7 @@ class RazorpayPaymentIntegrationTest {
       UUID agreementId, String orderId, String paymentId, String signature) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
-    headers.setBearerAuth(customerToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(customerToken));
     String body =
         "{\"razorpayOrderId\":\""
             + orderId
@@ -717,7 +718,7 @@ class RazorpayPaymentIntegrationTest {
 
     assertThat(paymentStateOf(agreementId)).isEqualTo("UNPAID");
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> gate =
         rest.exchange(
             "/api/staff/payments/gate", HttpMethod.GET, new HttpEntity<>(headers), String.class);
@@ -731,7 +732,7 @@ class RazorpayPaymentIntegrationTest {
     UUID agreementId = createAgreement();
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
 
     ResponseEntity<String> response =
         rest.postForEntity(

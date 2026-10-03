@@ -1,5 +1,6 @@
 package in.agreementmitra.documents;
 
+import static in.agreementmitra.support.CsrfMockMvc.csrf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -91,6 +92,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(fullData("Asha Rao"))))
@@ -116,6 +118,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(fullData("Asha Rao"))))
@@ -137,6 +140,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(Map.of("ownerName", "Asha Rao"))))
@@ -154,6 +158,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(data)))
@@ -175,6 +180,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(data)))
@@ -194,6 +200,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(fullData("Asha Rao"))))
@@ -213,6 +220,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(mapper.writeValueAsString(body)))
@@ -229,6 +237,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(fullData("Asha Rao"))))
@@ -323,6 +332,7 @@ class DocumentProjectionApiIntegrationTest {
                 mockMvc
                     .perform(
                         post(PREVIEW)
+                            .with(csrf())
                             .contentType(MediaType.APPLICATION_JSON)
                             .accept(MediaType.APPLICATION_PDF)
                             .content(previewBody(fullData(distinctive))))
@@ -379,6 +389,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/agreements")
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(body)))
             .andExpect(status().isCreated())

@@ -16,6 +16,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -219,7 +220,7 @@ class SigningCompletionIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> resp =
         rest.exchange(
             "/api/staff/estamp",

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { AgreementView, Role } from "../api/client";
-import { auth } from "../api/authStore";
+import { isSignedIn } from "../api/authStore";
 import {
   getPaymentProgress,
   payForAgreement,
@@ -48,7 +48,7 @@ const payment = ref<PaymentProgress | null>(null);
 const progress = ref<SigningProgress | null>(null);
 const loadError = ref<string | null>(null);
 const unavailable = ref(false);
-const signedIn = computed(() => !!auth.session);
+const signedIn = isSignedIn;
 
 // --- milestone rules (design D2). Sets, never enum order. -------------------------------------
 

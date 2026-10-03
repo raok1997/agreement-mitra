@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestSignature, type SignSession } from "./client";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 describe("requestSignature", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -21,6 +27,8 @@ describe("requestSignature", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/signing/agr-42/request", {
       method: "POST",
+      credentials: "same-origin",
+      headers: { "X-XSRF-TOKEN": "csrf-token" },
     });
   });
 

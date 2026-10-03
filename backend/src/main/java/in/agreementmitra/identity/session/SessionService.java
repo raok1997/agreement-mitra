@@ -65,18 +65,17 @@ public class SessionService {
             .orElseThrow(() -> new InvalidLoginException("identity missing for handoff"));
 
     String value = secretTokens.newToken();
-    sessions.save(
-        AuthSession.create(
-            identityId, hasher.hash(value), Instant.now().plus(properties.sessionTtl())));
+    Instant expiresAt = Instant.now().plus(properties.sessionTtl());
+    sessions.save(AuthSession.create(identityId, hasher.hash(value), expiresAt));
 
     log.debug("Session minted for identity {}", identityId);
-    return new SessionIssued(value, summary);
+    return new SessionIssued(value, summary, expiresAt);
   }
 
   /**
-   * Authenticate a presented bearer value: re-hash it, resolve a live unexpired session, touch its
-   * last-seen, and return the owning identity id. Returns empty when the value is absent, unknown,
-   * or expired -- leaving the request unauthenticated. Never logs the value.
+   * Authenticate a presented session cookie value: re-hash it, resolve a live unexpired session,
+   * touch its last-seen, and return the owning identity id. Returns empty when the value is absent,
+   * unknown, or expired -- leaving the request unauthenticated. Never logs the value.
    */
   @Transactional
   public Optional<UUID> authenticate(String bearerValue) {
@@ -104,6 +103,9 @@ public class SessionService {
     sessions.deleteByValueHash(hasher.hash(bearerValue));
   }
 
-  /** The freshly-minted session value (returned once) plus the caller's identity summary. */
-  public record SessionIssued(String value, IdentitySummary me) {}
+  /**
+   * The freshly-minted session value (returned once), the caller's identity summary, and the
+   * absolute expiry persisted on the row -- the single source for the session cookie's Max-Age.
+   */
+  public record SessionIssued(String value, IdentitySummary me, Instant expiresAt) {}
 }

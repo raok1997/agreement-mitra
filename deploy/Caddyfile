@@ -4,9 +4,16 @@
 # the public TLS connection and opens a second one to this origin, which presents
 # a Cloudflare Origin CA certificate. The origin IP is never published in DNS.
 #
-# One origin serves the SPA and /api, so the opaque session cookie is same-site
-# and there is no CORS to configure. This is what resolves the open "/api
-# problem" in docs/DOMAIN-AND-EMAIL-SETUP.md section 4.
+# One origin serves the SPA and /api, so the HttpOnly session cookie
+# (`__Host-am_session`) and its CSRF companion (`__Host-XSRF-TOKEN`) are
+# same-origin and there is no CORS to configure. Both are `__Host-` cookies:
+# no Domain attribute, so they bind to the apex host only -- the single-origin
+# apex redirect below is what they depend on. This is what resolves the open
+# "/api problem" in docs/DOMAIN-AND-EMAIL-SETUP.md section 4.
+#
+# NEVER log request or response cookies (or the Cookie / Set-Cookie headers):
+# the session cookie IS the credential. Any `log` directive added here must
+# keep Caddy's default header redaction or filter those fields out.
 
 {
 	# No admin API in production. It is unauthenticated on localhost by default
@@ -53,7 +60,8 @@
 }
 
 # Redirect www to the apex so there is a single canonical origin (and a single
-# cookie scope). Cloudflare proxies both hostnames to here.
+# cookie scope -- the `__Host-` cookies are never sent to www). Cloudflare
+# proxies both hostnames to here.
 www.agreementmitra.com {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
 	redir https://agreementmitra.com{uri} permanent
@@ -83,6 +91,9 @@ agreementmitra.com {
 	# API first: this must take precedence over the SPA fallback below, or a
 	# misrouted API call would receive index.html and a fetch() expecting JSON
 	# would fail confusingly instead of loudly.
+	# Never edge-cache /api/*: public GETs carry a per-browser CSRF Set-Cookie
+	# (eager issuance), so a cached response would hand one visitor's token to
+	# everyone. See docs/DEPLOYMENT.md.
 	handle /api/* {
 		reverse_proxy backend:8090 {
 			# The draft-upload route accepts up to 11 MB (spring.servlet

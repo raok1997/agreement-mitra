@@ -17,6 +17,7 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -48,8 +49,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * Login handshake end-to-end with Google stubbed (task 5.7): a WireMock OIDC token endpoint + JWKS
  * stand in for Google, and a Nimbus-signed ID token is validated against that JWKS. The full flow
- * -- start -> callback (find-or-create + handoff) -> exchange -> Bearer authenticates {@code GET
- * /api/auth/me} -> logout revokes -- runs against real Postgres (Testcontainers). No live Google.
+ * -- start -> callback (find-or-create + handoff) -> exchange -> the session cookie authenticates
+ * {@code GET /api/auth/me} -> logout revokes -- runs against real Postgres (Testcontainers). No
+ * live Google.
  *
  * <p>{@link TestRestTemplate} does not follow redirects, so the {@code 302}s from start/callback
  * are observed by their {@code Location} (from which the {@code state} and {@code handoff} are
@@ -184,20 +186,24 @@ class GoogleLoginHandshakeIntegrationTest {
     String handoff = spaTarget.getFragment().substring("handoff=".length());
     assertThat(handoff).isNotBlank();
 
-    // 3. exchange the handoff -> a session value (once) + the identity summary.
-    Map<String, Object> exchanged = exchange(handoff, org.springframework.http.HttpStatus.OK);
-    String session = (String) exchanged.get("session");
+    // 3. exchange the handoff -> the session in an HttpOnly cookie + the identity summary only.
+    ResponseEntity<Map<String, Object>> exchangedResp =
+        exchangeResponse(handoff, org.springframework.http.HttpStatus.OK);
+    Map<String, Object> exchanged = exchangedResp.getBody();
+    assertThat(exchanged).doesNotContainKey("session");
+    String session =
+        SessionCookie.lastValue(exchangedResp.getHeaders(), SessionCookie.NAME).orElseThrow();
     assertThat(session).isNotBlank();
     @SuppressWarnings("unchecked")
     Map<String, Object> me = (Map<String, Object>) exchanged.get("me");
     assertThat(me.get("email")).isEqualTo("alice@gmail.com");
 
-    // 4. the Bearer session authenticates a subsequent /api/auth/me.
+    // 4. the session cookie authenticates a subsequent /api/auth/me.
     ResponseEntity<Map<String, Object>> meResp =
         rest.exchange(
             "/api/auth/me",
             HttpMethod.GET,
-            new HttpEntity<>(bearer(session)),
+            new HttpEntity<>(sessionCookie(session)),
             new ParameterizedTypeReference<>() {});
     assertThat(meResp.getStatusCode().value()).isEqualTo(200);
     assertThat(meResp.getBody()).containsEntry("email", "alice@gmail.com");
@@ -205,12 +211,15 @@ class GoogleLoginHandshakeIntegrationTest {
     // 5. logout revokes -> 204, and the same value no longer authenticates.
     ResponseEntity<Void> logout =
         rest.exchange(
-            "/api/auth/logout", HttpMethod.POST, new HttpEntity<>(bearer(session)), Void.class);
+            "/api/auth/logout",
+            HttpMethod.POST,
+            new HttpEntity<>(sessionCookie(session)),
+            Void.class);
     assertThat(logout.getStatusCode().value()).isEqualTo(204);
 
     ResponseEntity<String> afterLogout =
         rest.exchange(
-            "/api/auth/me", HttpMethod.GET, new HttpEntity<>(bearer(session)), String.class);
+            "/api/auth/me", HttpMethod.GET, new HttpEntity<>(sessionCookie(session)), String.class);
     assertThat(afterLogout.getStatusCode().value()).isIn(401, 403);
   }
 
@@ -245,6 +254,11 @@ class GoogleLoginHandshakeIntegrationTest {
 
   private Map<String, Object> exchange(
       String handoff, org.springframework.http.HttpStatus expected) {
+    return exchangeResponse(handoff, expected).getBody();
+  }
+
+  private ResponseEntity<Map<String, Object>> exchangeResponse(
+      String handoff, org.springframework.http.HttpStatus expected) {
     ResponseEntity<Map<String, Object>> resp =
         rest.exchange(
             "/api/auth/session/exchange",
@@ -252,7 +266,7 @@ class GoogleLoginHandshakeIntegrationTest {
             new HttpEntity<>("{\"handoff\":\"" + handoff + "\"}", jsonHeaders()),
             new ParameterizedTypeReference<>() {});
     assertThat(resp.getStatusCode()).isEqualTo(expected);
-    return resp.getBody();
+    return resp;
   }
 
   private static HttpHeaders jsonHeaders() {
@@ -261,9 +275,9 @@ class GoogleLoginHandshakeIntegrationTest {
     return headers;
   }
 
-  private static HttpHeaders bearer(String session) {
+  private static HttpHeaders sessionCookie(String session) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(session);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
     return headers;
   }
 

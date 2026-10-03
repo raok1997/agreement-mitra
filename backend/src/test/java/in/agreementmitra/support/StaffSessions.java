@@ -19,7 +19,10 @@ public final class StaffSessions {
 
   private StaffSessions() {}
 
-  /** A live session for a CUSTOMER-role account. Returns the bearer value. */
+  /**
+   * A live session for a CUSTOMER-role account. Returns the session cookie value (send it with
+   * {@link SessionCookie#header}).
+   */
   public static String customerSession(
       IdentityService identityService,
       HandoffService handoffService,
@@ -28,7 +31,10 @@ public final class StaffSessions {
     return sessionFor(identityService, handoffService, sessionService, subject);
   }
 
-  /** A live session for a STAFF-role account. Returns the bearer value. */
+  /**
+   * A live session for a STAFF-role account. Returns the session cookie value (send it with {@link
+   * SessionCookie#header}).
+   */
   public static String staffSession(
       IdentityService identityService,
       HandoffService handoffService,

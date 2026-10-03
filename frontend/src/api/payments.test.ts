@@ -15,6 +15,12 @@ import {
   startCheckout,
 } from "./payments";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 const AGREEMENT_ID = "1a111111-2b22-3c33-4d44-5e5555555555";
 
 const SESSION = {

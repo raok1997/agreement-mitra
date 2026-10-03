@@ -31,7 +31,8 @@ class HandoffServiceTest {
           Duration.ofSeconds(60),
           Duration.ofMinutes(5),
           new AuthProperties.Google(
-              "client", "secret", "redirect", "spa", "issuer", "auth", "token", "jwks"));
+              "client", "secret", "redirect", "spa", "issuer", "auth", "token", "jwks"),
+          null);
 
   private final LoginHandoffRepository handoffs = mock(LoginHandoffRepository.class);
   private final SecretTokens secretTokens = mock(SecretTokens.class);

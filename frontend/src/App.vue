@@ -11,7 +11,7 @@ import StaffConsole from "./views/StaffConsole.vue";
 import AgreementStatus from "./views/AgreementStatus.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./views/linkCopy";
 import wordmark from "./assets/logo-wordmark.svg";
-import { auth, logout, refreshMe } from "./api/authStore";
+import { auth, init, isSignedIn, logout, whenReady } from "./api/authStore";
 import { googleStartUrl } from "./api/auth";
 import { getAgreement } from "./api/agreements";
 import type { AgreementView } from "./api/client";
@@ -91,8 +91,9 @@ function syncRoute(): void {
 let linkResolution = 0;
 onMounted(() => {
   window.addEventListener("popstate", syncRoute);
-  // A session restored from the tab's storage carries no identity yet; fetch it (a 401 signs out).
-  if (auth.session && !auth.me) void refreshMe().catch(() => {});
+  // The session is an HttpOnly cookie script cannot see, so "signed in" comes from /me. Children
+  // mounted first (the OAuth callback) may already have settled it; init() then skips /me.
+  void init();
   // A recovery link resolves on arrival: the customer clicked a link to their agreement, so it
   // should open, not present another step.
   if (route.value === "openLink") void openFromLink();
@@ -139,14 +140,25 @@ function signIn(): void {
   // Full navigation: the backend redirects to Google, then back to /auth/callback.
   window.location.href = googleStartUrl();
 }
-function signOut(): void {
-  void logout();
+// Only the server can expire the HttpOnly cookie, so a failed logout must not look like success:
+// on a shared browser the next person would reload straight into this account.
+const signOutError = ref<string | null>(null);
+async function signOut(): Promise<void> {
+  signOutError.value = null;
+  try {
+    await logout();
+  } catch {
+    signOutError.value = "We couldn't sign you out — try again.";
+    return;
+  }
   goToCreate();
 }
 
-// Guard (D8): the authenticated views require a session; without one, send the user to login.
-function showMyAgreements(): void {
-  if (!auth.session) {
+// Guard (D8): the authenticated views require a session; without one, send the user to login. The
+// decision waits for the boot /me so a reload never bounces a signed-in user to Google.
+async function showMyAgreements(): Promise<void> {
+  await whenReady();
+  if (!isSignedIn.value) {
     signIn();
     return;
   }
@@ -206,19 +218,22 @@ async function openFromLink(): Promise<void> {
     // A claimed agreement and an unknown one look identical from here by design (the server returns
     // the same 404 so ownership cannot be probed), so the message has to cover both without
     // asserting either.
-    linkNeedsSignIn.value = !auth.session;
+    await whenReady();
+    if (resolution !== linkResolution) return;
+    linkNeedsSignIn.value = !isSignedIn.value;
     linkError.value = LINK_UNAVAILABLE_MESSAGE;
   }
 }
 
 /** From the link page: the signed-in customer's list, via the app route. */
 function openMyAgreementsFromLink(): void {
-  showMyAgreements();
+  void showMyAgreements();
 }
 
 // From the list: load the chosen agreement and reopen it in the capture form (edit mode).
 async function openForEdit(id: string): Promise<void> {
-  if (!auth.session) {
+  await whenReady();
+  if (!isSignedIn.value) {
     signIn();
     return;
   }
@@ -234,7 +249,7 @@ async function openForEdit(id: string): Promise<void> {
 
 function onSavedToAccount(): void {
   // A fresh agreement was just claimed, or an edit saved -- return to the list to see it.
-  showMyAgreements();
+  void showMyAgreements();
 }
 </script>
 
@@ -249,7 +264,7 @@ function onSavedToAccount(): void {
         <img :src="wordmark" alt="AgreementMitra" class="h-8" />
       </button>
       <button
-        v-if="auth.session"
+        v-if="isSignedIn"
         type="button"
         class="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
         data-testid="link-my-agreements"
@@ -299,7 +314,11 @@ function onSavedToAccount(): void {
           <span class="hidden text-sm text-ink-500 sm:inline"
             >Rental agreements made simple</span
           >
-          <span v-if="auth.session" class="flex items-center gap-2 text-sm">
+          <!-- No account controls until /me answers: no "Sign in" flash for a signed-in reload. -->
+          <span
+            v-if="auth.ready && isSignedIn"
+            class="flex items-center gap-2 text-sm"
+          >
             <button
               type="button"
               class="rounded border border-ink-200 px-2 py-1 text-ink-700 hover:bg-ink-50"
@@ -327,12 +346,19 @@ function onSavedToAccount(): void {
             >
               Sign out
             </button>
+            <span
+              v-if="signOutError"
+              class="text-red-600"
+              role="alert"
+              data-testid="sign-out-error"
+              >{{ signOutError }}</span
+            >
           </span>
           <!-- For the customer who paid, closed the tab, and has no account to sign in to. Sits
                beside sign-in because that is where someone looks when they want to get back to
                something. -->
           <button
-            v-if="!auth.session"
+            v-if="auth.ready && !isSignedIn"
             type="button"
             class="text-sm text-ink-700 underline"
             @click="navigate('/recover')"
@@ -340,7 +366,7 @@ function onSavedToAccount(): void {
             Find my agreement
           </button>
           <button
-            v-if="!auth.session"
+            v-if="auth.ready && !isSignedIn"
             type="button"
             class="rounded border border-ink-200 px-2 py-1 text-sm text-ink-700 hover:bg-ink-50"
             @click="signIn"
@@ -359,7 +385,14 @@ function onSavedToAccount(): void {
       v-else-if="route === 'staff'"
       class="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4"
     >
-      <StaffConsole v-if="isStaff" />
+      <p
+        v-if="!auth.ready"
+        class="py-8 text-sm text-ink-600"
+        data-testid="staff-loading"
+      >
+        Loading...
+      </p>
+      <StaffConsole v-else-if="isStaff" />
       <p v-else class="py-8 text-sm text-ink-600" data-testid="staff-forbidden">
         This console is for AgreementMitra staff.
       </p>

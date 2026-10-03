@@ -202,7 +202,7 @@ never know" into "we could find out".
 - **The limiter is per-instance** -> on one deployment that is the whole
   population. On more than one it weakens proportionally rather than failing, and
   the moment to move it to shared storage is when the app is actually scaled out
-  (tracked by `session-store-not-durable`).
+  (tracked by `shared-limiter-store`).
 - **Trusting a forwarded header is a bypass if the trust boundary is wrong** ->
   trusted only from Cloudflare ranges, with an origin firewall that drops
   everything else; a direct client-supplied header is ignored. This is the single
@@ -242,3 +242,14 @@ rolled back -- reverting it restores a shared-bucket bug.
 3. **No CSP is set** (`Customizer.withDefaults()`). Out of scope here, but it is
    the kind of gap this review surfaced and it should become a register row rather
    than be forgotten.
+
+> **Note (2026-10-04, from `cookie-session-auth`):** the per-instance limiter is now tracked by
+> the `shared-limiter-store` register row; `session-store-not-durable` was deleted as stale.
+> This change is next in line after `cookie-session-auth`, and it should be **re-reviewed once
+> `cookie-session-auth` merges**: every unsafe request now needs the `X-XSRF-TOKEN` CSRF header,
+> the session is the `__Host-am_session` cookie (not Bearer), and logout is `permitAll`.
+> Its `backend-security-baseline` delta MODIFIES "Signing stub endpoint permitted pending an auth
+> mechanism", which `cookie-session-auth` also modified (adding "Like every unsafe request, a call to
+> the permitted path SHALL still carry a valid CSRF token" and a CSRF qualifier on its scenario). A
+> MODIFIED block replaces the whole requirement, so rebase this delta on the archived text first, or
+> that CSRF clause is silently dropped.

@@ -6,6 +6,12 @@ import {
   type StampQueueEntry,
 } from "./staffQueue";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 // API-client tests for the staff stamp queue. The upload assertion that matters is that the
 // agreement reference sent to the server comes from the QUEUE ENTRY -- never from anything an
 // operator typed -- because that is what removes the transcription step entirely.

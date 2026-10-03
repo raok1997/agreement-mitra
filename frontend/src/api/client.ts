@@ -1,5 +1,7 @@
 // Thin API client. Keep all backend calls here, not scattered in components.
 
+import { apiFetch } from "./http";
+
 export interface SignSession {
   providerRequestId: string;
   signingUrl: string;
@@ -100,7 +102,7 @@ const BASE = "/api";
 export async function createAgreement(
   input: CreateAgreementInput,
 ): Promise<AgreementView> {
-  const res = await fetch(`${BASE}/agreements`, {
+  const res = await apiFetch(`${BASE}/agreements`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -149,7 +151,7 @@ async function describeProblem(res: Response): Promise<string> {
 export async function fetchAgreementPreview(
   agreementId: string,
 ): Promise<string> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/preview`);
+  const res = await apiFetch(`${BASE}/agreements/${agreementId}/preview`);
   if (!res.ok) throw new Error(await describeProblem(res));
   const blob = await res.blob();
   return URL.createObjectURL(blob);
@@ -163,7 +165,7 @@ export async function fetchAgreementPreview(
 export async function generateAgreementDocument(
   agreementId: string,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/document`, {
+  const res = await apiFetch(`${BASE}/agreements/${agreementId}/document`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(await describeProblem(res));
@@ -172,7 +174,7 @@ export async function generateAgreementDocument(
 export async function requestSignature(
   agreementId: string,
 ): Promise<SignSession> {
-  const res = await fetch(`${BASE}/signing/${agreementId}/request`, {
+  const res = await apiFetch(`${BASE}/signing/${agreementId}/request`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Sign request failed: ${res.status}`);

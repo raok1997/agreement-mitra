@@ -110,7 +110,7 @@ No new authentication is proposed, and the no-login product is unchanged.
 **Not in scope:** any authentication or login requirement; ownership authZ on the
 capability routes (the id remains the credential -- that trade is
 `claim-bound-to-initiator`'s and `signing-auth`'s to revisit); a shared/distributed
-limiter store (single instance today, tracked by `session-store-not-durable`); and
+limiter store (single instance today, tracked by `shared-limiter-store`); and
 Turnstile or any in-app CAPTCHA, since Cloudflare Bot Fight Mode covers the same
 ground at the edge with no third-party script, no npm dependency and no DPDP
 processor disclosure.
@@ -174,3 +174,14 @@ upload endpoint, so landing these controls first is what keeps that acceptable.
   let an attacker mint unlimited buckets and bypass every limit here.
 - **No new secret and no new outbound integration.** Sandbox and dummy data only
   is preserved; the limiter holds coarse counters, not identities.
+
+> **Note (2026-10-04, from `cookie-session-auth`):** the per-instance limiter is now tracked by
+> the `shared-limiter-store` register row; `session-store-not-durable` was deleted as stale.
+> This change is next in line after `cookie-session-auth`, and it should be **re-reviewed once
+> `cookie-session-auth` merges**: every unsafe request now needs the `X-XSRF-TOKEN` CSRF header,
+> the session is the `__Host-am_session` cookie (not Bearer), and logout is `permitAll`.
+> Its `backend-security-baseline` delta MODIFIES "Signing stub endpoint permitted pending an auth
+> mechanism", which `cookie-session-auth` also modified (adding "Like every unsafe request, a call to
+> the permitted path SHALL still carry a valid CSRF token" and a CSRF qualifier on its scenario). A
+> MODIFIED block replaces the whole requirement, so rebase this delta on the archived text first, or
+> that CSRF clause is silently dropped.

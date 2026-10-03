@@ -7,6 +7,8 @@ import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
 import type { AgreementView } from "../api/client";
 import type { PaymentProgress } from "../api/payments";
 import type { SigningProgress } from "../api/signingProgress";
+import * as authStore from "../api/authStore";
+import type { Ref } from "vue";
 
 // The page behind the emailed link. Every milestone here is a claim about the server's state, so
 // each rule in design D2 gets a case; and because the page keeps itself current, the polling rules
@@ -58,13 +60,13 @@ vi.mock("../api/signingProgress", async (importOriginal) => {
     downloadSignedDocument: vi.fn(),
   };
 });
-// Hoisted with the mock: vi.mock factories run before module-level code, so the shared session
-// state must be created the same way or the factory sees it before initialisation.
-const authState = vi.hoisted(() => ({ session: null as string | null }));
-vi.mock("../api/authStore", () => ({
-  auth: authState,
-  authHeader: () => ({}),
-}));
+// The view reads `isSignedIn` (a computed ref in the real store), so the mock exports a ref the
+// tests flip directly. Built inside the factory: vi.mock runs before module-level code.
+vi.mock("../api/authStore", async () => {
+  const { ref } = await import("vue");
+  return { isSignedIn: ref(false) };
+});
+const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
 
 const mockedPayment = vi.mocked(payments.getPaymentProgress);
 const mockedPay = vi.mocked(payments.payForAgreement);
@@ -213,7 +215,7 @@ beforeEach(() => {
   mockedProgress.mockReset();
   mockedPay.mockReset();
   mockedDownload.mockReset();
-  authState.session = null;
+  signedIn.value = false;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -492,7 +494,7 @@ describe("AgreementStatus — the signed document", () => {
     await wrapper.get('[data-testid="status-download"]').trigger("click");
     await flushPromises();
 
-    // The helper is what carries the session header; the view never builds a URL.
+    // The helper is what rides the session cookie; the view never builds a URL.
     expect(mockedDownload).toHaveBeenCalledWith(
       "ag-1",
       "AM3G3VXSAKD-signed.pdf",
@@ -596,7 +598,7 @@ describe("AgreementStatus — keeping current (design D3)", () => {
   });
 
   it("shows the unavailable message on first load too, and no sign-in button for a signed-in viewer", async () => {
-    authState.session = "s-1";
+    signedIn.value = true;
     const wait = controlledWait();
     mockedPayment.mockRejectedValue(new payments.PaymentHttpError(404));
     mockedProgress.mockResolvedValue(progress());

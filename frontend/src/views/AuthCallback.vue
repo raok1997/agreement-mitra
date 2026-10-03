@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The SPA landing target of the Google callback. The backend 302s here with the single-use handoff
-// in the URL fragment (never a token, never the session). We read it, exchange it for a session, and
+// in the URL fragment (never a token, never the session). We read it, exchange it (the server sets the session cookie), and
 // signal the app to return to the main flow. The fragment is dropped from history on success.
 import { onMounted, ref } from "vue";
 import { completeLogin } from "../api/authStore";

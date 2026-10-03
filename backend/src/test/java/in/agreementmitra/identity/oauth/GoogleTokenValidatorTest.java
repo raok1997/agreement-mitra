@@ -37,7 +37,8 @@ class GoogleTokenValidatorTest {
         Duration.ofSeconds(60),
         Duration.ofMinutes(5),
         new AuthProperties.Google(
-            CLIENT_ID, "secret", "redirect", "spa", ISSUER, "auth", "token", "jwks"));
+            CLIENT_ID, "secret", "redirect", "spa", ISSUER, "auth", "token", "jwks"),
+        null);
   }
 
   private static Jwt.Builder wellFormed() {

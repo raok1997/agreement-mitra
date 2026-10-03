@@ -16,6 +16,7 @@ import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -224,7 +225,7 @@ class SignedDeliveryIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     assertThat(
             rest.exchange(
                     "/api/staff/estamp",
@@ -521,7 +522,7 @@ class SignedDeliveryIntegrationTest {
 
     // ...and staff can see which party is stuck and why, with the address redacted.
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     @SuppressWarnings("unchecked")
     ResponseEntity<List> view =
         rest.exchange(
@@ -564,7 +565,7 @@ class SignedDeliveryIntegrationTest {
                 agreementId,
                 TENANT_EMAIL));
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> resent =
         rest.exchange(
             "/api/staff/deliveries/" + deliveryId + "/resend",
@@ -728,7 +729,7 @@ class SignedDeliveryIntegrationTest {
 
   private String stampQueueIds() {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> queue =
         rest.exchange(
             "/api/staff/estamp/queue", HttpMethod.GET, new HttpEntity<>(headers), String.class);
@@ -745,7 +746,7 @@ class SignedDeliveryIntegrationTest {
   private ResponseEntity<String> getAs(String path, String bearer) {
     HttpHeaders headers = new HttpHeaders();
     if (bearer != null) {
-      headers.setBearerAuth(bearer);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(bearer));
     }
     return rest.exchange(path, HttpMethod.GET, new HttpEntity<>(headers), String.class);
   }
@@ -755,7 +756,7 @@ class SignedDeliveryIntegrationTest {
     UUID agreementId = readyToSign();
     String ownerToken = customerToken("party-owner-" + UUID.randomUUID());
     HttpHeaders claimHeaders = new HttpHeaders();
-    claimHeaders.setBearerAuth(ownerToken);
+    claimHeaders.add(HttpHeaders.COOKIE, SessionCookie.header(ownerToken));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",

@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -175,7 +176,7 @@ class SigningRequestApiIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> resp =
         rest.exchange(
             "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);

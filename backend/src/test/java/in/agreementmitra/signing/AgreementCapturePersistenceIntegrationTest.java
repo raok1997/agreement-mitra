@@ -13,6 +13,7 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.TestPdfs;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -78,7 +79,7 @@ class AgreementCapturePersistenceIntegrationTest {
 
   private static HttpHeaders bearer(String session) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(session);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
     return headers;
   }
 

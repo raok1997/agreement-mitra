@@ -9,11 +9,12 @@ import {
 } from "./agreements";
 import type { CreateAgreementInput } from "./client";
 
-// The authenticated agreement calls must attach the Bearer header (from the auth store). We stub the
-// store so a session is always present, then assert each verb hits the right URL/method with the
-// header -- and that a non-2xx surfaces an AgreementHttpError carrying the status.
-vi.mock("./authStore", () => ({
-  authHeader: () => ({ Authorization: "Bearer test-session" }),
+// The authenticated agreement calls ride the HttpOnly session cookie (same-origin credentials, never
+// an Authorization header) and send the CSRF header on unsafe verbs. The CSRF cookie is mocked so no
+// bootstrap GET enters the call sequence; a non-2xx surfaces an AgreementHttpError with the status.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
 }));
 
 function okJson(body: unknown) {
@@ -35,24 +36,21 @@ const editInput: CreateAgreementInput = {
 describe("agreements api", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("lists mine with the Bearer header", async () => {
+  it("lists mine with the session cookie and no Authorization header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson([{ id: "a1" }]));
     vi.stubGlobal("fetch", fetchMock);
 
     const rows = await listMyAgreements();
 
     expect(rows).toEqual([{ id: "a1" }]);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/agreements",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-session",
-        }),
-      }),
-    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/agreements");
+    expect(init.credentials).toBe("same-origin");
+    expect(JSON.stringify(init.headers ?? {})).not.toContain("Authorization");
   });
 
-  it("claims (saves) with a POST to /{id}/claim and the Bearer header", async () => {
+  it("claims (saves) with a POST to /{id}/claim and the CSRF header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({ id: "a1" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -61,12 +59,11 @@ describe("agreements api", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/agreements/a1/claim");
     expect(init.method).toBe("POST");
-    expect(init.headers).toMatchObject({
-      Authorization: "Bearer test-session",
-    });
+    expect(init.credentials).toBe("same-origin");
+    expect(init.headers).toMatchObject({ "X-XSRF-TOKEN": "csrf-token" });
   });
 
-  it("edits with a PUT carrying the body and the Bearer header", async () => {
+  it("edits with a PUT carrying the body and the CSRF header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({ id: "a1" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -76,12 +73,13 @@ describe("agreements api", () => {
     expect(url).toBe("/api/agreements/a1");
     expect(init.method).toBe("PUT");
     expect(init.headers).toMatchObject({
-      Authorization: "Bearer test-session",
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": "csrf-token",
     });
     expect(JSON.parse(init.body).propertyAddress).toBe("1 Road");
   });
 
-  it("reads one for edit with a GET and the Bearer header", async () => {
+  it("reads one for edit with a GET over the session cookie", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({ id: "a1" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -89,11 +87,7 @@ describe("agreements api", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/agreements/a1",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-session",
-        }),
-      }),
+      expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 

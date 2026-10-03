@@ -37,7 +37,7 @@ import {
   getPaymentProgress,
   payForAgreement,
 } from "../api/payments";
-import { auth } from "../api/authStore";
+import { isSignedIn, whenReady } from "../api/authStore";
 import {
   fetchDocumentPreviewHtml,
   fetchDocumentPreviewPdf,
@@ -659,7 +659,7 @@ const claiming = ref(false);
 const claimed = ref(false);
 const claimError = ref<string | null>(null);
 const canSaveToAccount = computed(
-  () => !editMode.value && saved.value && !claimed.value && !!auth.session,
+  () => !editMode.value && saved.value && !claimed.value && isSignedIn.value,
 );
 // The saved agreement's tracking reference (the one persisted number). Held after save so the
 // confirmation can show it and the preview/download can render the real number in the provenance
@@ -703,8 +703,10 @@ async function saveAndContinue(): Promise<void> {
       savedTrackingNumber.value = created.trackingNumber; // now the client holds the reference
       // If the user is signed in, claim it straight away so it lands in "My Agreements" without a
       // second click. A failed claim is non-fatal -- the manual "Save to my account" button remains
-      // as a fallback (canSaveToAccount stays true while not yet claimed).
-      if (auth.session) {
+      // as a fallback (canSaveToAccount stays true while not yet claimed). Wait for the boot /me so
+      // a signed-in reload is not mistaken for anonymous.
+      await whenReady();
+      if (isSignedIn.value) {
         try {
           await claimAgreement(created.id);
           claimed.value = true;

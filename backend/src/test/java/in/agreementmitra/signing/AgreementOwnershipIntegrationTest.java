@@ -8,6 +8,7 @@ import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.AgreementSummaryResponse;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -36,7 +37,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * {@code disabledWithoutDocker = true} skips (not fails) without a Docker daemon.
  *
  * <p>An authenticated caller is seeded through the real session layer: find-or-create an identity,
- * issue a handoff, exchange it for an opaque session value used as the {@code Bearer}. No PII
+ * issue a handoff, exchange it for an opaque session value sent as the session cookie. No PII
  * beyond a dummy email/name is used.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -51,7 +52,7 @@ class AgreementOwnershipIntegrationTest {
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
 
-  /** Mint a live opaque session for a fresh identity and return its Bearer value. */
+  /** Mint a live opaque session for a fresh identity and return its session cookie value. */
   private String sessionFor(String subject) {
     UUID identityId =
         identityService.findOrCreate(
@@ -62,7 +63,7 @@ class AgreementOwnershipIntegrationTest {
 
   private static HttpHeaders bearer(String session) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(session);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
     return headers;
   }
 

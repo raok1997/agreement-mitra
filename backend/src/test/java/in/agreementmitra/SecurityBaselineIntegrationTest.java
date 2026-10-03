@@ -65,7 +65,9 @@ class SecurityBaselineIntegrationTest {
     ResponseEntity<String> resp =
         rest.exchange(
             "/api/webhooks/esign", HttpMethod.POST, new HttpEntity<>("{}", json), String.class);
-    // 401 = the filter permitted it (no CSRF token needed) and it reached the controller, whose
+    // 401 = the filter permitted it and it reached the controller (the webhook is CSRF-exempt; the
+    // harness interceptor's token is incidental here -- CsrfProtectionIntegrationTest proves the
+    // exemption with no token at all), whose
     // body-MAC verifier rejected the unsigned `{}` payload. A 403 would mean the filter (or the
     // /error re-dispatch) blocked it — that regression is exactly what this asserts against.
     assertThat(resp.getStatusCode().value()).isEqualTo(401);
@@ -83,7 +85,8 @@ class SecurityBaselineIntegrationTest {
   @Test
   void staffStampIntakeChallengesAnAnonymousCallerWith401() {
     // The staff surface is the one place a 401 is right: it tells an operator whose session lapsed
-    // to re-authenticate, instead of the blanket 403 every other route still returns.
+    // to re-authenticate, instead of the blanket 403 every other route still returns. The harness
+    // interceptor supplies a valid CSRF token; without one the CSRF 403 would precede this 401.
     HttpHeaders multipart = new HttpHeaders();
     multipart.setContentType(MediaType.MULTIPART_FORM_DATA);
     ResponseEntity<String> resp =

@@ -11,7 +11,7 @@
 // the point of listing the work: it removes the transcription step entirely rather than relying on
 // the reference's check character to catch a slip.
 
-import { authHeader } from "./authStore";
+import { apiFetch } from "./http";
 
 const BASE = "/api";
 
@@ -133,7 +133,7 @@ async function problemTypeOf(res: Response): Promise<string | null> {
 
 /** Orders awaiting a stamp, longest-waiting first. 401/403 for anyone without the STAFF role. */
 export async function listStampQueue(): Promise<StampQueueEntry[]> {
-  const res = await fetch(QUEUE, { headers: { ...authHeader() } });
+  const res = await apiFetch(QUEUE);
   if (!res.ok) throw new StaffQueueHttpError(res.status);
   return res.json();
 }
@@ -164,9 +164,8 @@ export async function uploadStampForEntry(
     form.append("initiateSigning", "true");
   }
   // No Content-Type header: the browser must set the multipart boundary itself.
-  const res = await fetch(INTAKE, {
+  const res = await apiFetch(INTAKE, {
     method: "POST",
-    headers: { ...authHeader() },
     body: form,
   });
   if (!res.ok) {

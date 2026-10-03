@@ -14,6 +14,7 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -229,7 +230,7 @@ class SigningProgressApiIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     assertThat(
             rest.exchange(
                     "/api/staff/estamp",
@@ -243,7 +244,7 @@ class SigningProgressApiIntegrationTest {
   private ResponseEntity<String> progress(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
     if (token != null) {
-      headers.setBearerAuth(token);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     }
     return rest.exchange(
         "/api/signing/" + agreementId + "/progress",
@@ -254,7 +255,7 @@ class SigningProgressApiIntegrationTest {
 
   private void claim(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(token);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",

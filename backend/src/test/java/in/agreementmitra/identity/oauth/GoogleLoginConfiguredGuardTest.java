@@ -20,7 +20,8 @@ class GoogleLoginConfiguredGuardTest {
         Duration.ofHours(1),
         Duration.ofSeconds(60),
         Duration.ofMinutes(5),
-        new AuthProperties.Google("", "", "redirect", "spa", "issuer", "auth", "token", "jwks"));
+        new AuthProperties.Google("", "", "redirect", "spa", "issuer", "auth", "token", "jwks"),
+        null);
   }
 
   // Collaborators are unused: the not-configured guard runs first and throws before any of them is

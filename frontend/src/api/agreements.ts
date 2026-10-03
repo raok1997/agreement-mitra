@@ -1,9 +1,9 @@
 // Authenticated agreement calls: the "My Agreements" list, claim (save), read-for-edit, and edit
-// (PUT). All attach the Bearer session header (via authStore); anonymous drafting uses none of this.
+// (PUT). All ride the HttpOnly session cookie (via apiFetch); anonymous drafting uses none of this.
 // Kept here with the other API modules -- components never call fetch directly.
 
+import { apiFetch } from "./http";
 import { type AgreementView, type CreateAgreementInput } from "./client";
-import { authHeader } from "./authStore";
 
 const BASE = "/api";
 
@@ -70,18 +70,15 @@ async function problemTypeOf(res: Response): Promise<string | null> {
 
 /** List the signed-in caller's agreements, most-recent first. Requires a live session. */
 export async function listMyAgreements(): Promise<AgreementSummary[]> {
-  const res = await fetch(`${BASE}/agreements`, {
-    headers: { ...authHeader() },
-  });
+  const res = await apiFetch(`${BASE}/agreements`);
   if (!res.ok) throw new AgreementHttpError(res.status);
   return res.json();
 }
 
 /** Claim (save) an unowned agreement into the caller's account. Idempotent for the same owner. */
 export async function claimAgreement(id: string): Promise<AgreementView> {
-  const res = await fetch(`${BASE}/agreements/${id}/claim`, {
+  const res = await apiFetch(`${BASE}/agreements/${id}/claim`, {
     method: "POST",
-    headers: { ...authHeader() },
   });
   if (!res.ok) throw new AgreementHttpError(res.status);
   return res.json();
@@ -89,9 +86,7 @@ export async function claimAgreement(id: string): Promise<AgreementView> {
 
 /** Read one owned agreement to prefill the edit form. 404 (as AgreementHttpError) if not the owner. */
 export async function getAgreement(id: string): Promise<AgreementView> {
-  const res = await fetch(`${BASE}/agreements/${id}`, {
-    headers: { ...authHeader() },
-  });
+  const res = await apiFetch(`${BASE}/agreements/${id}`);
   if (!res.ok) throw new AgreementHttpError(res.status);
   return res.json();
 }
@@ -108,9 +103,8 @@ export interface FinaliseResult {
  * the same reference and places no second order, so a retry after a failed payment is safe.
  */
 export async function finaliseAgreement(id: string): Promise<FinaliseResult> {
-  const res = await fetch(`${BASE}/agreements/${id}/finalise`, {
+  const res = await apiFetch(`${BASE}/agreements/${id}/finalise`, {
     method: "POST",
-    headers: { ...authHeader() },
   });
   if (!res.ok) throw new AgreementHttpError(res.status);
   return res.json();
@@ -121,9 +115,9 @@ export async function updateAgreement(
   id: string,
   input: CreateAgreementInput,
 ): Promise<AgreementView> {
-  const res = await fetch(`${BASE}/agreements/${id}`, {
+  const res = await apiFetch(`${BASE}/agreements/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!res.ok) throw new AgreementHttpError(res.status);
@@ -154,9 +148,9 @@ export async function updateAgreementContacts(
   id: string,
   contacts: PartyContactInput[],
 ): Promise<AgreementView> {
-  const res = await fetch(`${BASE}/agreements/${id}/contacts`, {
+  const res = await apiFetch(`${BASE}/agreements/${id}/contacts`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contacts }),
   });
   if (!res.ok) {

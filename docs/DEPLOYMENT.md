@@ -17,8 +17,19 @@ and the website.
   Gotenberg all run under Docker Compose on the VPS, and the same origin serves
   the SPA and `/api`. This resolves the open "`/api` problem" in
   `DOMAIN-AND-EMAIL-SETUP.md` section 4 by choosing option (c): one origin, so no
-  CORS and the opaque session cookie works unmodified. **The Cloudflare Pages
-  plan in that document is superseded.**
+  CORS, and the HttpOnly session cookie (`__Host-am_session`) plus its CSRF
+  companion (`__Host-XSRF-TOKEN`) work unmodified. Both are `__Host-` cookies
+  (no `Domain`), so they depend on the apex-only single origin -- `www.`
+  redirects to the apex and never receives them. **The Cloudflare Pages plan in
+  that document is superseded.**
+- **Never edge-cache `/api/*`.** Every API response may carry a per-browser
+  `Set-Cookie: __Host-XSRF-TOKEN` (the CSRF token is issued eagerly), and
+  `GET /api/templates/form` sets its own `Cache-Control: public, max-age`, so
+  Spring Security writes no cache header on it. A Cloudflare cache rule over
+  `/api/*` would serve one visitor's CSRF cookie to others. Leave `/api/*` on
+  Cloudflare's default (bypass for dynamic content) and add no "Cache
+  Everything" rule that matches it. Never log the `Cookie` or `Set-Cookie`
+  headers either: the session cookie is the credential.
 - **Cloudflare in front, proxied (orange cloud), from day one.** The origin IP is
   never published in DNS. TLS is terminated at the Cloudflare edge and
   re-originated to Caddy against a Cloudflare Origin CA certificate, with SSL/TLS

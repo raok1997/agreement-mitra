@@ -6,6 +6,7 @@ import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -163,7 +164,7 @@ class PaymentGateOptionalIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
   }
@@ -195,7 +196,7 @@ class PaymentGateOptionalIntegrationTest {
   @Test
   void theRelaxedModeIsObservableAtRuntime() {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
 
     ResponseEntity<String> response =
         rest.exchange(

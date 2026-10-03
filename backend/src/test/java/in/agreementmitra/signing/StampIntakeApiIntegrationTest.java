@@ -7,6 +7,7 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -208,7 +209,7 @@ class StampIntakeApiIntegrationTest {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
     if (token != null) {
-      headers.setBearerAuth(token);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     }
     return rest.exchange(
         INTAKE_PATH, HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
@@ -787,7 +788,7 @@ class StampIntakeApiIntegrationTest {
   private ResponseEntity<String> getQueue(String token) {
     HttpHeaders headers = new HttpHeaders();
     if (token != null) {
-      headers.setBearerAuth(token);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     }
     return rest.exchange(
         INTAKE_PATH + "/queue", HttpMethod.GET, new HttpEntity<>(headers), String.class);
@@ -807,7 +808,7 @@ class StampIntakeApiIntegrationTest {
 
   private static HttpHeaders bearer(String token) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(token);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     return headers;
   }
 

@@ -9,6 +9,7 @@ import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.TestPdfs;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +99,7 @@ class ContactGateIntegrationTest {
   }
 
   /**
-   * Claim the agreement and return a live Bearer session for the identity that now owns it.
+   * Claim the agreement and return a live session for the identity that now owns it.
    *
    * <p>Needed because {@code PUT /api/agreements/*} is {@code .authenticated()} in {@link
    * in.agreementmitra.SecurityConfig}, unlike the contacts route this file otherwise exercises
@@ -115,7 +116,7 @@ class ContactGateIntegrationTest {
 
   private static HttpHeaders bearer(String session) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(session);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
     return headers;
   }
 

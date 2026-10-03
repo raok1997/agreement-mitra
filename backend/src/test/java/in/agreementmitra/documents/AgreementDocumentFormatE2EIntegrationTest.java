@@ -1,5 +1,6 @@
 package in.agreementmitra.documents;
 
+import static in.agreementmitra.support.CsrfMockMvc.csrf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -99,6 +100,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
     return mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(data, activeSections)))
@@ -270,6 +272,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(telanganaData(), List.of("Occupancy & Use"))))
@@ -300,6 +303,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(telanganaData(), List.of())))
@@ -360,6 +364,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     // Enough content to run past one page, so the assertion covers a page whose

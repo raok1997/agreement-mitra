@@ -6,6 +6,8 @@
 // the point of template selection, rather than filling in a whole agreement and meeting a 409 at
 // checkout. A client that ignores it is still refused.
 
+import { apiFetch } from "./http";
+
 const BASE = "/api";
 
 /** The state codes eligible for paid fulfilment; everything else is draft-and-download only. */
@@ -20,7 +22,7 @@ export interface EligibleJurisdictions {
  * for the marking path, which deliberately degrades to "mark nothing".
  */
 export async function fetchEligibleJurisdictions(): Promise<string[]> {
-  const res = await fetch(`${BASE}/jurisdictions`, {
+  const res = await apiFetch(`${BASE}/jurisdictions`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {

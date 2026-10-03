@@ -4,6 +4,8 @@
 // preview-centric-capture work). These types mirror the backend `documents.api` DTOs
 // (TemplateSummary / TemplateDetail) exposed by GET /api/templates and GET /api/templates/{id}.
 
+import { apiFetch } from "./http";
+
 /** A browse-list item: system-owned metadata only (no template body, no pointer). */
 export interface TemplateSummary {
   id: string;
@@ -48,7 +50,7 @@ export async function listTemplates(
   if (filters.type) params.set("type", filters.type);
   if (filters.q) params.set("q", filters.q);
   const query = params.toString();
-  const res = await fetch(`${BASE}/templates${query ? `?${query}` : ""}`);
+  const res = await apiFetch(`${BASE}/templates${query ? `?${query}` : ""}`);
   if (!res.ok) throw new Error(`Failed to load templates (${res.status}).`);
   return res.json();
 }
@@ -58,7 +60,7 @@ export async function listTemplates(
  * gives the same response for both, so a draft/deprecated entry's existence cannot be probed).
  */
 export async function getTemplate(id: string): Promise<TemplateDetail> {
-  const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}`);
+  const res = await apiFetch(`${BASE}/templates/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Failed to load template (${res.status}).`);
   return res.json();
 }

@@ -7,6 +7,8 @@ import * as documentPreview from "../api/documentPreview";
 import * as payments from "../api/payments";
 import * as templateForm from "../api/templateForm";
 import * as jurisdictions from "../api/jurisdictions";
+import * as authStore from "../api/authStore";
+import type { Ref } from "vue";
 import type { FormSchema } from "../api/templateForm";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import ContactConfirmation, {
@@ -33,6 +35,15 @@ vi.mock("../api/templateForm", async (importOriginal) => {
 // The pre-payment path. AgreementHttpError stays REAL: the component distinguishes a 409 by
 // instanceof, so a stubbed error class would make the test agree with itself instead of with the
 // code.
+// Signed out and already ready: the create path awaits whenReady() before deciding on auto-claim,
+// so a never-resolving promise here would hang every save test.
+vi.mock("../api/authStore", async () => {
+  const { ref } = await import("vue");
+  return {
+    isSignedIn: ref(false),
+    whenReady: vi.fn(() => Promise.resolve()),
+  };
+});
 vi.mock("../api/agreements", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/agreements")>();
   return {
@@ -409,7 +420,9 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
 
   it("enforces required and bounds client-side (modal error + incomplete section)", async () => {
     const wrapper = await mountReady();
-    await wrapper.find('[data-testid="section-financial-terms"]').trigger("click");
+    await wrapper
+      .find('[data-testid="section-financial-terms"]')
+      .trigger("click");
     // Out-of-range rent surfaces a bound error and leaves the section incomplete. (The duration
     // used to carry this assertion; it is now a derived read-only display with no bounds of its
     // own, so the check moved to a field the customer actually types into.)
@@ -518,6 +531,34 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
       (c) => c[3] === "AM-A5E4D7-010126",
     );
     expect(carriedTheNumber).toBe(true);
+  });
+
+  it("auto-claim waits for the sign-in check, then claims for a signed-in user", async () => {
+    const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
+    let markReady!: () => void;
+    vi.mocked(authStore.whenReady).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        markReady = resolve;
+      }),
+    );
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    vi.mocked(agreements.claimAgreement)
+      .mockReset()
+      .mockResolvedValue(fakeAgreement());
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+    expect(agreements.claimAgreement).not.toHaveBeenCalled();
+
+    signedIn.value = true;
+    markReady();
+    await flushPromises();
+    expect(agreements.claimAgreement).toHaveBeenCalledWith(fakeAgreement().id);
+    signedIn.value = false;
+    wrapper.unmount();
   });
 
   it("keeps the working draft in localStorage and clears it after a successful save", async () => {
@@ -1049,8 +1090,12 @@ describe("CaptureForm: derived tenancy term", () => {
     const wrapper = await openTermWith("2026-01-08", "2028-01-08");
 
     // The reported case: 24 whole months. Not 11.
-    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toContain("24");
-    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).not.toContain("11");
+    expect(
+      wrapper.find('[data-testid="field-durationMonths"]').text(),
+    ).toContain("24");
+    expect(
+      wrapper.find('[data-testid="field-durationMonths"]').text(),
+    ).not.toContain("11");
   });
 
   it("renders the duration as a display, not an input the user can type into", async () => {
@@ -1072,11 +1117,15 @@ describe("CaptureForm: derived tenancy term", () => {
 
   it("keeps the derived duration in step as the dates change", async () => {
     const wrapper = await openTermWith("2026-01-01", "2026-12-01");
-    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toContain("11");
+    expect(
+      wrapper.find('[data-testid="field-durationMonths"]').text(),
+    ).toContain("11");
 
     await wrapper.find('[data-testid="field-endDate"]').setValue("2027-01-01");
     await flushPromises();
-    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toContain("12");
+    expect(
+      wrapper.find('[data-testid="field-durationMonths"]').text(),
+    ).toContain("12");
   });
 
   it("never sends the derived duration to the server", async () => {
@@ -1133,27 +1182,37 @@ describe("CaptureForm: registration warning", () => {
     // ignore the warning.
     const wrapper = await openTermWith("2026-01-01", "2026-12-01");
 
-    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(
+      false,
+    );
   });
 
   it("does not warn while the term is undetermined", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="section-term"]').trigger("click");
-    await wrapper.find('[data-testid="field-startDate"]').setValue("2026-01-08");
+    await wrapper
+      .find('[data-testid="field-startDate"]')
+      .setValue("2026-01-08");
     await flushPromises();
 
-    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(
+      false,
+    );
   });
 
   it("is advisory: the section still saves and counts as complete", async () => {
     const wrapper = await openTermWith("2026-01-08", "2028-01-08");
-    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(
+      true,
+    );
 
     await wrapper.find('[data-testid="modal-save"]').trigger("click");
     await flushPromises();
 
     expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="status-term"]').text()).not.toBe("Needs input");
+    expect(wrapper.find('[data-testid="status-term"]').text()).not.toBe(
+      "Needs input",
+    );
   });
 });
 
@@ -1173,7 +1232,9 @@ describe("CaptureForm: tenancy date range", () => {
   it("reports an end date on or before the start date, against the end field", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="section-term"]').trigger("click");
-    await wrapper.find('[data-testid="field-startDate"]').setValue("2026-06-01");
+    await wrapper
+      .find('[data-testid="field-startDate"]')
+      .setValue("2026-06-01");
     await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
     await flushPromises();
 
@@ -1181,19 +1242,27 @@ describe("CaptureForm: tenancy date range", () => {
     expect(wrapper.find('[data-testid="field-error-endDate"]').text()).toMatch(
       /after the start date/i,
     );
-    expect(wrapper.find('[data-testid="field-error-startDate"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="field-error-startDate"]').exists()).toBe(
+      false,
+    );
   });
 
   it("clears the error once the range is valid", async () => {
     const wrapper = await mountReady();
     await wrapper.find('[data-testid="section-term"]').trigger("click");
-    await wrapper.find('[data-testid="field-startDate"]').setValue("2026-06-01");
+    await wrapper
+      .find('[data-testid="field-startDate"]')
+      .setValue("2026-06-01");
     await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
     await flushPromises();
-    expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(
+      true,
+    );
 
     await wrapper.find('[data-testid="field-endDate"]').setValue("2027-06-01");
     await flushPromises();
-    expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(
+      false,
+    );
   });
 });

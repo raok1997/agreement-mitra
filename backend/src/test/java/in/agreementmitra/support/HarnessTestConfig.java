@@ -18,6 +18,7 @@ import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.jdbc.JdbcConnectionDetails;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.web.client.RestTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.MinIOContainer;
@@ -222,6 +223,16 @@ public class HarnessTestConfig {
       registry.add("storage.secret-key", MINIO::getPassword);
       registry.add("storage.bucket", () -> "harness-test-" + contextOrdinal);
     };
+  }
+
+  /**
+   * Supplies a valid double-submit CSRF token on every unsafe {@code TestRestTemplate} call
+   * (cookie-session-auth D9), so suites that are not about CSRF keep exercising their own contract.
+   * Tests never turn CSRF off; the enforcement tests use {@link RawClient}, which bypasses this.
+   */
+  @Bean
+  RestTemplateCustomizer csrfTestInterceptorCustomizer() {
+    return restTemplate -> restTemplate.getInterceptors().add(new CsrfTestInterceptor());
   }
 
   @Bean
