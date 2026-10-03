@@ -7,7 +7,7 @@ import {
   refreshMe,
 } from "./authStore";
 
-// The store holds the opaque session in memory and attaches it as a Bearer header. These tests drive
+// The store holds the opaque session (mirrored to sessionStorage) and attaches it as a Bearer header. These tests drive
 // the real store against a stubbed fetch, asserting the two invariants the CR cares about: a Bearer
 // header is attached only when signed in, and any 401 clears the session.
 
@@ -25,6 +25,7 @@ describe("authStore", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson({})));
     await logout();
     vi.unstubAllGlobals();
+    sessionStorage.clear();
   });
 
   it("attaches no Authorization header while signed out (anonymous drafting path)", () => {
@@ -79,6 +80,36 @@ describe("authStore", () => {
 
     expect(isAuthenticated()).toBe(false);
     expect(authHeader()).toEqual({});
+    expect(sessionStorage.getItem("am.session")).toBeNull();
+  });
+
+  it("keeps the session in the tab's storage so a reload stays signed in", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okJson({
+          session: "opaque-keep",
+          me: {
+            identityId: "id-3",
+            displayName: null,
+            email: null,
+            role: "CUSTOMER",
+          },
+        }),
+      ),
+    );
+    await completeLogin("handoff-3");
+    expect(sessionStorage.getItem("am.session")).toBe("opaque-keep");
+
+    // A reload re-evaluates the module: it must pick the session back up, without an identity
+    // until refreshMe re-fetches one.
+    vi.resetModules();
+    const reloaded = await import("./authStore");
+    expect(reloaded.isAuthenticated()).toBe(true);
+    expect(reloaded.authHeader()).toEqual({
+      Authorization: "Bearer opaque-keep",
+    });
+    expect(reloaded.auth.me).toBeNull();
   });
 
   it("logout clears the session and calls the revoke endpoint", async () => {
@@ -104,6 +135,7 @@ describe("authStore", () => {
     await logout();
 
     expect(isAuthenticated()).toBe(false);
+    expect(sessionStorage.getItem("am.session")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/auth/logout",
       expect.objectContaining({ method: "POST" }),

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import App from "./App.vue";
 import * as catalog from "./api/templateCatalog";
@@ -469,7 +469,12 @@ describe("App agreement link", () => {
 // at all, so the switch must also return to the app route or the click does nothing visible.
 vi.mock("./api/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/auth")>();
-  return { ...actual, exchangeHandoff: vi.fn(), logout: vi.fn() };
+  return {
+    ...actual,
+    exchangeHandoff: vi.fn(),
+    fetchMe: vi.fn(),
+    logout: vi.fn(),
+  };
 });
 vi.mock("./api/staffQueue", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/staffQueue")>();
@@ -517,5 +522,35 @@ describe("App header navigation from the staff console", () => {
     wrapper.unmount();
     const store = await import("./api/authStore");
     await store.logout();
+  });
+});
+
+describe("App reload with a stored session", () => {
+  afterEach(() => sessionStorage.clear());
+
+  it("restores the signed-in header from the tab's storage via /auth/me", async () => {
+    sessionStorage.setItem("am.session", "s-restored");
+    // A reload re-evaluates every module, including the auth store that reads the storage.
+    vi.resetModules();
+    const auth = await import("./api/auth");
+    vi.mocked(auth.fetchMe).mockResolvedValue({
+      identityId: "id-r",
+      displayName: "Restored User",
+      email: null,
+      role: "CUSTOMER",
+    });
+    const catalogR = await import("./api/templateCatalog");
+    vi.mocked(catalogR.listTemplates).mockResolvedValue(catalogRows());
+    const { default: ReloadedApp } = await import("./App.vue");
+    window.history.replaceState({}, "", "/start");
+    const wrapper = mount(ReloadedApp);
+    await flushPromises();
+
+    expect(auth.fetchMe).toHaveBeenCalledWith("s-restored");
+    expect(wrapper.find('[data-testid="nav-my-agreements"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.text()).toContain("Restored User");
+    wrapper.unmount();
   });
 });

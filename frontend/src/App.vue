@@ -11,7 +11,7 @@ import StaffConsole from "./views/StaffConsole.vue";
 import AgreementStatus from "./views/AgreementStatus.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./views/linkCopy";
 import wordmark from "./assets/logo-wordmark.svg";
-import { auth, logout } from "./api/authStore";
+import { auth, logout, refreshMe } from "./api/authStore";
 import { googleStartUrl } from "./api/auth";
 import { getAgreement } from "./api/agreements";
 import type { AgreementView } from "./api/client";
@@ -91,6 +91,8 @@ function syncRoute(): void {
 let linkResolution = 0;
 onMounted(() => {
   window.addEventListener("popstate", syncRoute);
+  // A session restored from the tab's storage carries no identity yet; fetch it (a 401 signs out).
+  if (auth.session && !auth.me) void refreshMe().catch(() => {});
   // A recovery link resolves on arrival: the customer clicked a link to their agreement, so it
   // should open, not present another step.
   if (route.value === "openLink") void openFromLink();
