@@ -271,8 +271,20 @@ describe("requiresRegistration", () => {
 
 describe("sectionErrors", () => {
   const dateFields = [
-    field({ key: "startDate", label: "Start", widget: "date", type: "date", required: true }),
-    field({ key: "endDate", label: "End", widget: "date", type: "date", required: true }),
+    field({
+      key: "startDate",
+      label: "Start",
+      widget: "date",
+      type: "date",
+      required: true,
+    }),
+    field({
+      key: "endDate",
+      label: "End",
+      widget: "date",
+      type: "date",
+      required: true,
+    }),
   ];
 
   it("reports an end date before the start date, against the END field", () => {
@@ -287,7 +299,10 @@ describe("sectionErrors", () => {
   it("reports an end date less than a month before the start date", () => {
     // Zero whole months either way, so a month-count check alone would let it through.
     for (const endDate of ["2026-05-31", "2026-05-15"]) {
-      const errors = sectionErrors(dateFields, { startDate: "2026-06-01", endDate });
+      const errors = sectionErrors(dateFields, {
+        startDate: "2026-06-01",
+        endDate,
+      });
       expect(errors.endDate).toMatch(/after the start date/i);
     }
   });
@@ -320,7 +335,13 @@ describe("sectionErrors", () => {
   it("still reports every per-field error fieldErrors did", () => {
     const fields = [
       ...dateFields,
-      field({ key: "rent", label: "Rent", widget: "money", type: "money", required: true }),
+      field({
+        key: "rent",
+        label: "Rent",
+        widget: "money",
+        type: "money",
+        required: true,
+      }),
     ];
     const data = { startDate: "2026-06-01", endDate: "2026-01-01", rent: "" };
     // The cross-field layer ADDS to the per-field errors; it never replaces or masks them.
@@ -333,7 +354,9 @@ describe("sectionErrors", () => {
   });
 
   it("leaves a section without both date fields alone", () => {
-    const fields = [field({ key: "ownerName", label: "Owner", required: true })];
+    const fields = [
+      field({ key: "ownerName", label: "Owner", required: true }),
+    ];
     expect(sectionErrors(fields, { ownerName: "Asha" })).toEqual({});
   });
 });
@@ -355,8 +378,15 @@ describe("read-only (server-derived) fields", () => {
   });
 
   it("does not mask a genuinely incomplete required field alongside it", () => {
-    const fields = [derived, field({ key: "ownerName", label: "Owner", required: true })];
-    expect(isSectionComplete(fields, { durationMonths: "", ownerName: "" })).toBe(false);
-    expect(isSectionComplete(fields, { durationMonths: "", ownerName: "Asha" })).toBe(true);
+    const fields = [
+      derived,
+      field({ key: "ownerName", label: "Owner", required: true }),
+    ];
+    expect(
+      isSectionComplete(fields, { durationMonths: "", ownerName: "" }),
+    ).toBe(false);
+    expect(
+      isSectionComplete(fields, { durationMonths: "", ownerName: "Asha" }),
+    ).toBe(true);
   });
 });
