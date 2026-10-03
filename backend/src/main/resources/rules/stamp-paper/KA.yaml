@@ -1,0 +1,49 @@
+# KARNATAKA stamp paper catalog (ka-rental-and-commercial-templates, design D5).
+#
+# Sources (researched 2026-09-18):
+#   [C1] Karnataka issues e-stamp certificates for an arbitrary amount, through the Kaveri Online
+#        portal (Dept of Stamps & Registration) and through SHCIL. Widely and consistently reported;
+#        the pages found are SECONDARY. Confidence MEDIUM on the capability, LOW on the mechanics.
+#   [C2] Physical non-judicial stamp paper denominations: NO primary source located. The values below
+#        are the commonly-cited set. UNVERIFIED, LOW.
+#
+# WHY THIS DIFFERS FROM TELANGANA. Telangana's catalog offers a single INR 100 paper because
+# Telangana cannot issue a certificate for an arbitrary amount -- the single-paper policy is a
+# workaround for a missing capability, not a preference. Karnataka has the capability [C1], so it
+# uses the DEFAULT planned policy: the exact legal duty is planned by the e-stamp medium and becomes
+# the recommended, pre-selected option, and the paper denominations below the duty remain on offer as
+# choices the customer may deliberately take, each carrying the audited under-stamping warning.
+#
+# THE DENOMINATIONS MEDIUM IS LOAD-BEARING, NOT DECORATIVE. Under the planned policy StampOptions
+# builds the below-duty options from DENOMINATIONS media ONLY. Remove this medium and Karnataka
+# offers exactly one value and the customer cannot choose a lesser one. Its UNVERIFIED values [C2]
+# therefore affect only which override options appear -- never the legal duty, and never the
+# recommended value, both of which come from the duty rule and the e-stamp medium.
+#
+# *** NO OPS PROCUREMENT CHANNEL EXISTS FOR KARNATAKA E-STAMPS. This file describes what the STATE
+# *** issues, which is a fact about Karnataka; it is not a claim that we can buy one. Paid fulfilment
+# *** is separately gated by the counsel review on the duty rules (both are counselReview: null), so
+# *** Karnataka is priced and drafted but not fulfilled until both exist. Tracked in the follow-up
+# *** register in docs/ROADMAP.md.
+state: KA
+# Provenance, not commencement -- the vintage of the Art. 30 source the duty rules were read from.
+# Kept equal to the rules' effectiveFrom so a catalog and a rule are never in effect for disjoint
+# windows.
+effectiveFrom: "2017-04-20"
+effectiveTo: null
+source: "Kaveri Online / SHCIL e-stamp (SECONDARY, 2026-09-18); paper denominations UNVERIFIED"
+# Stated explicitly rather than left to the default, so that the policy is a recorded decision: a
+# reader comparing this file with TG.yaml sees two choices, not one choice and one omission.
+offer:
+  mode: PLANNED
+media:
+  # Any amount, so the exact legal duty is always plannable and is always the recommendation.
+  - id: e-stamp
+    kind: ANY_AMOUNT
+    minimumAmount: "0"
+  # Below-duty override options only; see the note above. maxPapers 5 matches the Telangana catalog's
+  # figure and is equally UNVERIFIED -- no official per-instrument limit was found.
+  - id: stamp-paper
+    kind: DENOMINATIONS
+    denominations: ["20", "50", "100", "200", "500"]
+    maxPapers: 5

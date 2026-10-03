@@ -68,13 +68,22 @@ record RuleSet(
   /**
    * A term band. Exactly one of {@code ratePercent} (applied to the summed consideration) or {@code
    * fixedAmount} (consideration empty) is set.
+   *
+   * <p>{@code bounds} bound the duty computed from THIS slab only, and are applied before the
+   * rule-level bounds (design D1 of ka-rental-and-commercial-templates). A rate table can cap one
+   * band and leave the rest open -- Karnataka Stamp Act 1957 Sch. Art. 30(1)(i) caps the
+   * residential under-one-year band at INR 500 while the 1-10 year band is uncapped -- and
+   * expressing that as the RULE's maximum would silently bound every other band too, understating
+   * the duty on a longer term. Either bound may be null; a slab that declares neither carries
+   * {@link Bounds#NONE}.
    */
   record Slab(
       int minMonths,
       int maxMonths,
       List<String> consideration,
       BigDecimal ratePercent,
-      BigDecimal fixedAmount) {
+      BigDecimal fixedAmount,
+      Bounds bounds) {
     Slab {
       consideration = List.copyOf(consideration);
     }
@@ -85,7 +94,15 @@ record RuleSet(
   }
 
   /** Either bound may be null (absent). */
-  record Bounds(BigDecimal minimum, BigDecimal maximum) {}
+  record Bounds(BigDecimal minimum, BigDecimal maximum) {
+
+    /** Neither bound declared. Used by slabs, which almost never declare one. */
+    static final Bounds NONE = new Bounds(null, null);
+
+    boolean isEmpty() {
+      return minimum == null && maximum == null;
+    }
+  }
 
   record Surcharge(String name, BigDecimal percentOfDuty) {}
 

@@ -10,12 +10,13 @@ import java.util.List;
  * java.math.BigDecimal}/{@code String} per the field type); {@code options} is non-null only for
  * {@code enum}; {@code validation} and {@code group} are optional metadata.
  *
- * <p>{@code source} is {@link FieldSource#SYSTEM} for a system-sourced field and {@code null} for
- * an ordinary user-sourced one. {@code placeholder} (nullable) is the text a blank value renders
- * as, inside the usual brackets, instead of the label -- for example a system-sourced amount reads
- * {@code [ Provision for stamp duty ]} in a draft until the server supplies it. Both are omitted
- * from the canonical JSON when {@code null}, so adding them left the content hash of every template
- * that does not use them unchanged.
+ * <p>{@code source} is {@link FieldSource#SYSTEM} for a system-sourced field, {@link
+ * FieldSource#DERIVED} for a server-computed one, and {@code null} for an ordinary user-sourced
+ * one. {@code placeholder} (nullable) is the text a blank value renders as, inside the usual
+ * brackets, instead of the label -- for example a system-sourced amount reads {@code [ Provision
+ * for stamp duty ]} in a draft until the server supplies it. Both are omitted from the canonical
+ * JSON when {@code null}, so adding them left the content hash of every template that does not use
+ * them unchanged.
  */
 record Field(
     String key,
@@ -49,5 +50,14 @@ record Field(
   /** True when the server, never the submitted data, supplies this field's value. */
   boolean systemSourced() {
     return source == FieldSource.SYSTEM;
+  }
+
+  /**
+   * True when the server computes this field's value from other captured values. Unlike a
+   * system-sourced field it stays in the FormSchema -- projected read-only, so the capture surface
+   * displays the computed value without offering it for capture.
+   */
+  boolean derived() {
+    return source == FieldSource.DERIVED;
   }
 }

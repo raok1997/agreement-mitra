@@ -126,4 +126,115 @@ class StampDutyCalculatorIntegrationTest {
                 assertThat(context.getBean(StampDutyCalculator.class).chargeableStates())
                     .containsExactly("TG"));
   }
+
+  /** Only what main resources ship for Karnataka: base + KA rules + the KA catalog. */
+  private static ApplicationContextRunner shippedKarnataka() {
+    return new ApplicationContextRunner()
+        .withUserConfiguration(StampDutyConfiguration.class)
+        .withPropertyValues(
+            "rules.stamp-duty.locations=classpath*:rules/stamp-duty/base.yaml,"
+                + "classpath*:rules/stamp-duty/KA/*.yaml",
+            "rules.stamp-paper.locations=classpath*:rules/stamp-paper/KA.yaml");
+  }
+
+  private static DutyBasis karnataka(DutyBasis.Usage usage, int term, String rent, String deposit) {
+    return DutyBasis.builder(
+            "KA",
+            DutyBasis.InstrumentKind.LEASE,
+            usage,
+            LocalDate.of(2025, 6, 1),
+            term,
+            new BigDecimal(rent))
+        .refundableDeposit(new BigDecimal(deposit))
+        .build();
+  }
+
+  @Test
+  void shippedKarnatakaRulesQuoteAndAreNotChargeableByDefault() {
+    shippedKarnataka()
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              StampDutyCalculator calculator = context.getBean(StampDutyCalculator.class);
+
+              // 11 months at 20,000 with a 100,000 deposit: average annual rent 240,000 + 100,000 =
+              // 340,000, 0.5% = 1,700, capped by Art. 30(1)(i) to 500.
+              assertThat(
+                      calculator.quote(
+                          karnataka(DutyBasis.Usage.RESIDENTIAL, 11, "20000", "100000")))
+                  .isInstanceOfSatisfying(
+                      DutyOutcome.Quoted.class,
+                      q -> {
+                        assertThat(q.amountPaise()).isEqualTo(50000);
+                        assertThat(q.rule().id()).isEqualTo("KA-lease-residential");
+                        assertThat(q.rule().reviewed()).isFalse();
+                        assertThat(calculator.isChargeable(q.rule())).isFalse();
+                      });
+              assertThat(calculator.chargeableStates()).isEmpty();
+            });
+
+    shippedKarnataka()
+        .withPropertyValues("rules.stamp-duty.allow-unreviewed=true")
+        .run(
+            context ->
+                assertThat(context.getBean(StampDutyCalculator.class).chargeableStates())
+                    .containsExactly("KA"));
+  }
+
+  @Test
+  void theKarnatakaCatalogPlansTheExactDutyAndOffersLowerPapers() {
+    shippedKarnataka()
+        .run(
+            context -> {
+              StampDutyCalculator calculator = context.getBean(StampDutyCalculator.class);
+
+              // Commercial at 12 months is uncapped: 0.5% of 340,000 = 1,700. No single Telangana
+              // -style paper reaches that; Karnataka's any-amount e-stamp plans it exactly, which
+              // is
+              // the whole reason Karnataka does not use the single-papers offer policy.
+              assertThat(
+                      calculator.quote(
+                          karnataka(DutyBasis.Usage.COMMERCIAL, 12, "20000", "100000")))
+                  .isInstanceOfSatisfying(
+                      DutyOutcome.Quoted.class,
+                      q -> {
+                        assertThat(q.amountPaise()).isEqualTo(170000);
+                        assertThat(q.stampPlans())
+                            .extracting(StampPlan::mediumId)
+                            .containsExactly("e-stamp", "stamp-paper");
+                        StampPlan eStamp = q.stampPlans().get(0);
+                        assertThat(eStamp.result())
+                            .isInstanceOfSatisfying(
+                                StampPlan.Planned.class,
+                                p -> {
+                                  assertThat(p.totalPaise()).isEqualTo(170000);
+                                  assertThat(p.excessPaise()).isZero();
+                                });
+                        // The denominations medium is what supplies the below-duty override options
+                        // the customer may choose instead; without it Karnataka would offer one
+                        // value and no override.
+                        assertThat(q.stampPlans().get(1).denominationsPaise())
+                            .contains(50000L, 20000L, 10000L, 5000L, 2000L);
+                      });
+            });
+  }
+
+  @Test
+  void karnatakaReportsRegistrationOnlyAboveTwelveMonths() {
+    shippedKarnataka()
+        .run(
+            context -> {
+              StampDutyCalculator calculator = context.getBean(StampDutyCalculator.class);
+
+              // Registration Act 1908 s.17(1)(d), unamended in Karnataka -- unlike Telangana, where
+              // a state amendment makes every lease registrable.
+              assertThat(calculator.quote(karnataka(DutyBasis.Usage.RESIDENTIAL, 12, "5000", "0")))
+                  .isInstanceOfSatisfying(
+                      DutyOutcome.Quoted.class,
+                      q -> assertThat(q.registrationRequired()).isFalse());
+              assertThat(calculator.quote(karnataka(DutyBasis.Usage.RESIDENTIAL, 13, "5000", "0")))
+                  .isInstanceOfSatisfying(
+                      DutyOutcome.Quoted.class, q -> assertThat(q.registrationRequired()).isTrue());
+            });
+  }
 }

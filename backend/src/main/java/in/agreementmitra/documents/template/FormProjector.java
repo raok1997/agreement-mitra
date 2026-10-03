@@ -52,6 +52,9 @@ final class FormProjector {
           if (field.systemSourced()) {
             continue; // the server supplies it; never ask the customer for it
           }
+          // A DERIVED field deliberately does NOT hit that skip: the server computes it, but the
+          // capture surface still shows it (read-only), so it stays in the schema. That is the
+          // whole difference between the two server-supplied provenances -- see FieldSource.
           fields.add(projectField(field));
         }
       }
@@ -91,14 +94,21 @@ final class FormProjector {
         field.label(),
         widgetFor(field.type()),
         typeToken(field.type()),
-        field.required(),
+        // A DERIVED field is never required OF THE CUSTOMER: the server computes it, so a template
+        // that declares it required is making a statement about the document, not about capture.
+        // Normalizing here (rather than rejecting in the validator) keeps a required-but-
+        // uncollectable field from blocking every section's completeness.
+        !field.derived() && field.required(),
         field.defaultValue(),
         field.type() == FieldType.ENUM ? projectOptions(field.options()) : null,
         field.group(),
         projectValidation(field.validation()),
         // showWhen sits on clauses, not fields, in this model -- the field-level slot is reserved
         // and carried through unevaluated. There is no field condition to carry today.
-        null);
+        null,
+        // Boxed, and null rather than FALSE for an ordinary field, so NON_NULL omits the member and
+        // schemas without a derived field serialize exactly as they did before it existed.
+        field.derived() ? Boolean.TRUE : null);
   }
 
   /**

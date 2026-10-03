@@ -59,7 +59,14 @@ final class RuleSetLoader {
               "cases"),
           INHERITABLE);
   private static final Set<String> SLAB_KEYS =
-      Set.of("minMonths", "maxMonths", "consideration", "ratePercent", "fixedAmount");
+      Set.of(
+          "minMonths",
+          "maxMonths",
+          "consideration",
+          "ratePercent",
+          "fixedAmount",
+          "minimumAmount",
+          "maximumAmount");
   private static final Set<String> CASE_KEYS = Set.of("name", "basis", "expect");
   private static final Set<String> BASIS_KEYS =
       Set.of(
@@ -292,7 +299,9 @@ final class RuleSetLoader {
           throw f.defect(name + " requires params." + Quantities.DEPOSIT_INTEREST_RATE_PARAM);
         }
       }
-      slabs.add(new RuleSet.Slab(min, max, consideration, rate, fixed));
+      slabs.add(
+          new RuleSet.Slab(
+              min, max, consideration, rate, fixed, slabBounds(f, s, min, max, fixed != null)));
     }
     slabs.sort(Comparator.comparingInt(RuleSet.Slab::minMonths));
     for (int i = 1; i < slabs.size(); i++) {
@@ -320,6 +329,31 @@ final class RuleSetLoader {
       }
     }
     return slabs;
+  }
+
+  /**
+   * The selected slab's own bounds, which bound the duty computed from that slab only and are
+   * applied before the rule-level bounds. Absent on almost every slab; see {@link RuleSet.Slab}.
+   *
+   * <p>Declaring one on a {@code fixedAmount} slab is rejected rather than ignored: a fixed amount
+   * IS the duty, so bounding it means the rule file contradicts itself, and silently honouring the
+   * narrower of the two would hide the contradiction behind a plausible number.
+   */
+  private static RuleSet.Bounds slabBounds(
+      YamlFields f, JsonNode slab, int min, int max, boolean hasFixedAmount) {
+    BigDecimal minimum = f.nonNegativeDecimal(slab, "minimumAmount");
+    BigDecimal maximum = f.nonNegativeDecimal(slab, "maximumAmount");
+    if (minimum == null && maximum == null) {
+      return RuleSet.Bounds.NONE;
+    }
+    String label = "slab " + min + "-" + max;
+    if (hasFixedAmount) {
+      throw f.defect(label + " has a fixedAmount and a slab minimumAmount/maximumAmount");
+    }
+    if (minimum != null && maximum != null && minimum.compareTo(maximum) > 0) {
+      throw f.defect(label + " minimumAmount exceeds maximumAmount");
+    }
+    return new RuleSet.Bounds(minimum, maximum);
   }
 
   private static List<RuleSet.Surcharge> surcharges(YamlFields f, JsonNode merged) {

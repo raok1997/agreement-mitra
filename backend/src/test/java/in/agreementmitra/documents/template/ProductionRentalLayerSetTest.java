@@ -102,10 +102,28 @@ class ProductionRentalLayerSetTest {
     data.put("propertyAddress", "Plot 7, Jubilee Hills, Hyderabad");
     data.put("monthlyRent", new BigDecimal("25000.00"));
     data.put("securityDeposit", new BigDecimal("100000.00"));
+    // durationMonths is DERIVED: whatever is put here is discarded and recomputed from the dates.
+    // It is left in deliberately, and left DISAGREEING with them (these dates span 10 whole months,
+    // one day short of 11), so any regression that lets a submitted term reach the document shows
+    // up as a rendered "11 month(s)" instead of "10".
     data.put("durationMonths", 11);
     data.put("startDate", "2026-08-01");
     data.put("endDate", "2027-06-30");
     return data;
+  }
+
+  @Test
+  void theRenderedTermFollowsTheDatesNotTheSubmittedDuration() {
+    EffectiveTemplate eff = resolve("IN", "residential");
+
+    Map<String, Object> data =
+        DocumentProjectionService.withSystemValues(eff, aggregateBackedData(), Map.of());
+    String html =
+        new TemplateCompiler()
+            .compile(
+                eff, SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.GENERATE));
+
+    assertThat(html).contains("a term of 10 month(s)").doesNotContain("a term of 11 month(s)");
   }
 
   @Test
@@ -377,20 +395,26 @@ class ProductionRentalLayerSetTest {
   }
 
   @Test
-  void theAlwaysOnJurisdictionCovenantIsUnfilledOutsideTelangana() {
+  void theAlwaysOnJurisdictionCovenantIsUnfilledOnlyOnTheNationalDeed() {
     // KNOWN GAP, pinned deliberately -- see the follow-up register in docs/ROADMAP.md.
     //
     // disputeClause/disputeAlternativeClause sit in the MANDATORY witnesseth list, gated only on
     // disputeResolution (base default "courts"), so one of them renders on EVERY deed. The city it
     // names, jurisdictionCity, is declared required:false with NO national default and lives in the
-    // OPTIONAL "Dispute Resolution" section. TG patches the default to "Hyderabad"; nothing patches
+    // OPTIONAL "Dispute Resolution" section. Every STATE layer patches the default; nothing patches
     // the base. So a deed generated without that optional section renders an operative
     // exclusive-jurisdiction covenant naming a placeholder instead of a court:
     //
     //     "...exclusive jurisdiction of the courts at [ Jurisdiction city ]."
     //
-    // That reaches KARNATAKA, not just a hypothetical "IN" deed: KA matches no state patch, so a
-    // Karnataka agreement resolves to this base alone.
+    // SCOPE OF THE GAP, CORRECTED 2026-09-18 (ka-rental-and-commercial-templates). This comment
+    // used
+    // to say the gap "reaches KARNATAKA ... KA matches no state patch, so a Karnataka agreement
+    // resolves to this base alone". That was true when it was written and is now FALSE: Karnataka
+    // has its own state + state_type layers, which default the city to Bengaluru. The gap is today
+    // confined to the NATIONAL (IN) deed and to any future state shipped without a layer -- which
+    // is why the Karnataka assertion below is here, not only in the Karnataka test: it is this
+    // test's own statement of how far the hole reaches.
     //
     // This test asserts the CURRENT behaviour so the gap is visible and cannot regress silently. It
     // is expected to be rewritten by the CR that fixes it (the likely fix is a fallback clause
@@ -417,6 +441,21 @@ class ProductionRentalLayerSetTest {
     assertThat(telanganaHtml)
         .as("Telangana names a court")
         .contains("exclusive jurisdiction of the courts at Hyderabad.")
+        .doesNotContain("[ Jurisdiction city ]");
+
+    // Karnataka is likewise unaffected as of 2026-09-18. Asserted here rather than only in the
+    // Karnataka test so that this test -- the one that DEFINES how far the gap reaches -- fails if
+    // the Karnataka layers are ever removed, instead of silently widening the hole again.
+    EffectiveTemplate karnataka = resolve("KA", "residential");
+    String karnatakaHtml =
+        new TemplateCompiler()
+            .compile(
+                karnataka,
+                SubmittedDataValidator.validateAndCoerce(
+                    karnataka, aggregateBackedData(), ProjectionMode.GENERATE));
+    assertThat(karnatakaHtml)
+        .as("Karnataka names a court")
+        .contains("exclusive jurisdiction of the courts at Bengaluru.")
         .doesNotContain("[ Jurisdiction city ]");
   }
 

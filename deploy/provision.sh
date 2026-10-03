@@ -6,6 +6,7 @@
 #   ./provision.sh harden      OS updates, swap, fail2ban, auto-updates
 #   ./provision.sh docker      Docker CE + compose plugin, deploy user
 #   ./provision.sh firewall    ufw: deny inbound except SSH and Cloudflare-only 80/443
+#   ./provision.sh secrets     generate deploy/env/*.env (idempotent, never rotates)
 #   ./provision.sh ssh-keyonly DEFERRED: disable SSH password auth (see below)
 #   ./provision.sh all         harden + docker + firewall (NOT ssh-keyonly)
 #
@@ -297,16 +298,221 @@ UNIT
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# secrets
+#
+# Generates deploy/env/{postgres,minio,backend}.env on the SERVER. Secrets are
+# created here and never travel from a workstation -- see docs/DEPLOYMENT.md
+# section 3.
+#
+# IDEMPOTENT AND NON-DESTRUCTIVE BY DESIGN. An existing value is never
+# overwritten; only blank GENERATED keys are filled. This matters more than it
+# looks:
+#
+#   - `postgres:17` honours POSTGRES_PASSWORD only at first initdb. Rotating it
+#     in the env file after the volume exists does NOT change the database
+#     password -- it just makes the app's DB_PASSWORD wrong, and the backend
+#     fails authentication against a database you can no longer reach with the
+#     credentials on disk. Rotation needs an `ALTER USER ... PASSWORD`.
+#   - The two peppers key data AT REST. Rotating AUTH_HASH_PEPPER invalidates
+#     every live session; rotating ESIGN_WEBHOOK_KEY_PEPPER makes the stored
+#     per-transaction webhook keys undecryptable, so in-flight signings can no
+#     longer accept their callbacks.
+#
+# So re-running this is always safe, and it will never silently rotate anything.
+# ---------------------------------------------------------------------------
+
+readonly ENV_DIR="env"
+
+gen_secret() {
+  # 32 chars, alphanumeric only. Punctuation is deliberately stripped: these
+  # land in a compose env_file (parsed literally to end of line) and in a JDBC
+  # URL password, where `#`, `$` and `:` have each caused a bad day.
+  openssl rand -base64 48 | tr -d '/+=' | cut -c1-32
+}
+
+# set_if_blank <file> <key> <value>
+# Fills KEY= only when it is present-and-empty or absent. Leaves a set value be.
+set_if_blank() {
+  local file="$1" key="$2" value="$3"
+  if grep -qE "^${key}=.+" "$file" 2>/dev/null; then
+    return 1
+  fi
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    # Present but blank. Use a non-/ delimiter: generated values contain none,
+    # but file paths and URLs in other callers would.
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+  return 0
+}
+
+# merge_template_defaults
+#
+# Adds any assignment present in backend.env.example but ABSENT from backend.env,
+# carrying the template's value across. Existing values are never touched.
+#
+# This is what makes `secrets` an upgrade path and not just a first-run tool. A
+# backend.env written against an older runbook is missing whole features' worth
+# of [FIXED] values -- PUBLIC_BASE_URL, PAYMENT_MODE, MAIL_*, ZOOP_*,
+# RULES_STAMP_DUTY_ALLOW_UNREVIEWED -- and every one of them fails SILENTLY on
+# the application default rather than at boot. Generating the secrets while
+# leaving those absent would report success and fix nothing.
+merge_template_defaults() {
+  local template="${ENV_DIR}/backend.env.example"
+  local target="${ENV_DIR}/backend.env"
+  local key line added=0
+  local -a added_keys=()
+
+  [ -f "$template" ] || return 0
+
+  while IFS= read -r line; do
+    case "$line" in
+      '#'*|'') continue ;;
+      *'='*) ;;
+      *) continue ;;
+    esac
+    key="${line%%=*}"
+    if ! grep -qE "^${key}=" "$target" 2>/dev/null; then
+      if [ "$added" -eq 0 ]; then
+        printf '\n# --- Added by `provision.sh secrets` from backend.env.example ---\n' \
+          >>"$target"
+      fi
+      printf '%s\n' "$line" >>"$target"
+      added_keys+=("$key")
+      added=$((added + 1))
+    fi
+  done <"$template"
+
+  if [ "$added" -eq 0 ]; then
+    log "backend.env already carries every variable in the template"
+    return 0
+  fi
+
+  log "Added ${added} missing variable(s) to backend.env from the template:"
+  printf '  %s\n' "${added_keys[@]}"
+  warn "Review these before restarting -- the template's values are correct for"
+  warn "this compose stack, but PAYMENT_MODE and"
+  warn "RULES_STAMP_DUTY_ALLOW_UNREVIEWED are deliberate business decisions."
+}
+
+secrets() {
+  [ -d "$ENV_DIR" ] || die "run this from the deploy/ directory (no ./${ENV_DIR})"
+  command -v openssl >/dev/null 2>&1 || die "openssl not found -- run './provision.sh harden' first"
+
+  log "Generating service env files in ${ENV_DIR}/"
+
+  local pg_password minio_user minio_password
+  local filled=0 skipped=0 key
+
+  # --- postgres.env -------------------------------------------------------
+  touch "${ENV_DIR}/postgres.env"
+  set_if_blank "${ENV_DIR}/postgres.env" POSTGRES_DB   agreementmitra >/dev/null || true
+  set_if_blank "${ENV_DIR}/postgres.env" POSTGRES_USER agreementmitra >/dev/null || true
+  pg_password="$(gen_secret)"
+  if set_if_blank "${ENV_DIR}/postgres.env" POSTGRES_PASSWORD "$pg_password"; then
+    filled=$((filled + 1))
+  else
+    skipped=$((skipped + 1))
+    pg_password="$(grep -E '^POSTGRES_PASSWORD=' "${ENV_DIR}/postgres.env" | cut -d= -f2-)"
+    log "POSTGRES_PASSWORD already set -- reusing it for backend.env"
+  fi
+
+  # --- minio.env ----------------------------------------------------------
+  touch "${ENV_DIR}/minio.env"
+  minio_user="$(gen_secret)"
+  if set_if_blank "${ENV_DIR}/minio.env" MINIO_ROOT_USER "$minio_user"; then
+    filled=$((filled + 1))
+  else
+    skipped=$((skipped + 1))
+    minio_user="$(grep -E '^MINIO_ROOT_USER=' "${ENV_DIR}/minio.env" | cut -d= -f2-)"
+  fi
+  minio_password="$(gen_secret)"
+  if set_if_blank "${ENV_DIR}/minio.env" MINIO_ROOT_PASSWORD "$minio_password"; then
+    filled=$((filled + 1))
+  else
+    skipped=$((skipped + 1))
+    minio_password="$(grep -E '^MINIO_ROOT_PASSWORD=' "${ENV_DIR}/minio.env" | cut -d= -f2-)"
+  fi
+
+  # --- backend.env --------------------------------------------------------
+  # Seeded from the tracked template so every FIXED value and every explanatory
+  # comment comes across, and the VENDOR keys are left blank to be pasted in.
+  if [ ! -f "${ENV_DIR}/backend.env" ]; then
+    [ -f "${ENV_DIR}/backend.env.example" ] \
+      || die "${ENV_DIR}/backend.env.example missing -- is this an old checkout?"
+    cp "${ENV_DIR}/backend.env.example" "${ENV_DIR}/backend.env"
+    log "Created ${ENV_DIR}/backend.env from the template"
+  fi
+
+  merge_template_defaults
+
+  # Credentials that must MATCH the two files above.
+  set_if_blank "${ENV_DIR}/backend.env" DB_PASSWORD   "$pg_password"     >/dev/null || true
+  set_if_blank "${ENV_DIR}/backend.env" S3_ACCESS_KEY "$minio_user"      >/dev/null || true
+  set_if_blank "${ENV_DIR}/backend.env" S3_SECRET_KEY "$minio_password"  >/dev/null || true
+
+  # Peppers: application-side only, nothing else needs to agree with them.
+  for key in AUTH_HASH_PEPPER ESIGN_WEBHOOK_KEY_PEPPER; do
+    if set_if_blank "${ENV_DIR}/backend.env" "$key" "$(gen_secret)"; then
+      filled=$((filled + 1))
+    else
+      skipped=$((skipped + 1))
+    fi
+  done
+
+  chmod 600 "${ENV_DIR}"/*.env
+  log "secrets: ${filled} value(s) generated, ${skipped} left as already set"
+
+  report_missing_vendor_keys
+}
+
+# The generated files are complete except for third-party credentials, which
+# cannot be generated. Name them explicitly rather than letting the operator
+# discover them from a request-time failure three features later.
+report_missing_vendor_keys() {
+  local key missing=()
+  for key in ZOOP_APP_ID ZOOP_API_KEY RAZORPAY_KEY_ID RZP_KEY_SECRET \
+             RZP_WEBHOOK_SECRET MAIL_SMTP_PASSWORD \
+             GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_SECRET; do
+    grep -qE "^${key}=.+" "${ENV_DIR}/backend.env" 2>/dev/null || missing+=("$key")
+  done
+
+  if [ ${#missing[@]} -eq 0 ]; then
+    log "All vendor credentials are set."
+    return
+  fi
+
+  warn "Vendor credentials still blank in ${ENV_DIR}/backend.env:"
+  printf '  %s\n' "${missing[@]}" >&2
+  cat >&2 <<'NOTE'
+
+  These are issued by third parties and cannot be generated. Paste them in with
+  `nano env/backend.env`. What each blank actually costs:
+
+    ZOOP_APP_ID / ZOOP_API_KEY    eSign fails at request time (not at boot)
+    RAZORPAY_* / RZP_*            checkout fails while PAYMENT_MODE=REQUIRED;
+                                  set PAYMENT_MODE=DISABLED to bring the box up
+                                  without a gateway account
+    MAIL_SMTP_PASSWORD            no mail is sent; delivery reports success
+    GOOGLE_OAUTH_*                Sign in with Google disabled (WARN at boot);
+                                  anonymous use is unaffected
+
+NOTE
+}
+
 main() {
   require_root
   case "${1:-}" in
     harden)      harden ;;
     docker)      docker_install ;;
     firewall)    firewall ;;
+    secrets)     secrets ;;
     ssh-keyonly) harden_ssh ;;
     # Deliberately excludes ssh-keyonly; see the header comment.
     all)         harden; docker_install; firewall ;;
-    *)           die "usage: $0 {harden|docker|firewall|ssh-keyonly|all}" ;;
+    *)           die "usage: $0 {harden|docker|firewall|secrets|ssh-keyonly|all}" ;;
   esac
 }
 

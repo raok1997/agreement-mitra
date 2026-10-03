@@ -37,6 +37,11 @@ final class RuleHasher {
       s.put("consideration", slab.consideration());
       s.put("ratePercent", CanonicalHash.decimal(slab.ratePercent()));
       s.put("fixedAmount", CanonicalHash.decimal(slab.fixedAmount()));
+      // A slab bound decides the duty just as much as the rate does, so it belongs in the hash:
+      // without it, relaxing a cap from 500 to 1000 would leave the hash -- and therefore a counsel
+      // review pinned to that hash -- reading as still valid over a rule that now charges twice.
+      s.put("slabMinimumAmount", CanonicalHash.decimal(slab.bounds().minimum()));
+      s.put("slabMaximumAmount", CanonicalHash.decimal(slab.bounds().maximum()));
       slabs.add(s);
     }
     content.put("slabs", slabs);

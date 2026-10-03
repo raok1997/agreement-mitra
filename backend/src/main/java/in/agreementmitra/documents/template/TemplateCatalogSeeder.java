@@ -46,7 +46,7 @@ class TemplateCatalogSeeder implements ApplicationRunner {
 
   /** Human-readable names for the state dimension; unmapped codes fall back to the raw code. */
   private static final Map<String, String> STATE_DISPLAY_NAMES =
-      Map.of("IN", "National", "TG", "Telangana");
+      Map.of("IN", "National", "TG", "Telangana", "KA", "Karnataka");
 
   private final TemplateCatalogRepository repository;
   private final TemplateDefinitionLoader definitionLoader = new TemplateDefinitionLoader();

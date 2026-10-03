@@ -29,7 +29,13 @@ meta:
   dimensions:
     state: IN
     type: commercial
-  version: 1
+  # v2 (2026-09-18): durationMonths became `source: derived` -- the term stated in the lease now
+  # always follows startDate/endDate. Before this the live preview compiled the TYPED term while the
+  # generated draft compiled the date-derived one, so one lease could preview and sign with
+  # different terms. Bumped because the rendered output changes for any lease whose typed term
+  # disagreed with its dates, and Agreement.pinEffectiveTemplate must keep "which wording did this
+  # deed render?" answerable.
+  version: 2
   status: published
   document:
     title: "Commercial Lease Agreement"
@@ -63,8 +69,10 @@ fields:
   - { key: agreementDate,    label: "Agreement date",                     type: date,     required: false }
   - { key: startDate,        label: "Lease commencement date",            type: date,     required: true }
   - { key: endDate,          label: "Lease expiry date",                  type: date,     required: true }
-  - { key: durationMonths,   label: "Lease term (months)",                type: int,      required: true,
-      default: 36, validation: { min: 1, max: 240 } }
+  # DERIVED -- see the matching note in sets/rental/base.yaml. Computed from startDate/endDate on
+  # every render path, shown read-only, never collected; no default and no input bounds.
+  - { key: durationMonths,   label: "Lease term (months)",                type: int,      required: false,
+      source: derived }
   - { key: lockInMonths,     label: "Lock-in (months)",                   type: int,      required: false,
       default: 12, validation: { min: 0, max: 120 } }
   - { key: noticePeriodMonths, label: "Notice period (months)",           type: int,      required: false,

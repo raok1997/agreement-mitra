@@ -71,7 +71,7 @@
             }
           },
           "group": { "type": "string" },
-          "source": { "type": "string", "enum": ["system"] },
+          "source": { "type": "string", "enum": ["system", "derived"] },
           "placeholder": { "type": "string", "minLength": 1 }
         }
       }

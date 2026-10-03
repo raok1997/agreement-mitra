@@ -6,6 +6,7 @@ import {
   onMounted,
   onBeforeUnmount,
   nextTick,
+  watch,
 } from "vue";
 import {
   createAgreement,
@@ -50,12 +51,15 @@ import {
 import FieldWidget from "../components/widgets/FieldWidget.vue";
 import {
   emptyWorking,
-  fieldErrors,
   isSectionComplete,
   isSectionMandatory,
   reconcileActiveSections,
+  REGISTRABLE_OVER_MONTHS,
+  requiresRegistration,
+  sectionErrors,
   sectionIcon,
   sectionId,
+  tenancyMonths,
   type SectionData,
   type WorkingSet,
 } from "./formModel";
@@ -367,7 +371,36 @@ const activeSection = computed(() =>
 );
 const modalForm = reactive<SectionData>({});
 const modalErrors = computed(() =>
-  activeSection.value ? fieldErrors(activeSection.value.fields, modalForm) : {},
+  activeSection.value ? sectionErrors(activeSection.value.fields, modalForm) : {},
+);
+
+// --- Derived tenancy term -------------------------------------------------------------------
+// durationMonths is a DERIVED field: the server recomputes it from the dates on every render path,
+// so the form must show the same count rather than collect one. Before this, the form offered it as
+// an editable box seeded to 11, and a 24-month date span previewed as 11 months but SIGNED as 24.
+// Null = not yet determined (a date is missing or incomplete), which the widget shows as such.
+const modalTermMonths = computed(() =>
+  tenancyMonths(modalForm.startDate ?? "", modalForm.endDate ?? ""),
+);
+
+/** Keep the displayed duration in step with the dates as the user edits them, inside the modal. */
+watch(modalTermMonths, (months) => {
+  if (!("durationMonths" in modalForm)) return;
+  modalForm.durationMonths = months === null ? "" : String(months);
+});
+
+/**
+ * True when the term being captured crosses the registrability line, so the Term section warns.
+ * Advisory only -- a term over eleven months is a lawful choice, and the platform's job is to make
+ * sure it is not made unknowingly.
+ */
+const modalNeedsRegistration = computed(() =>
+  requiresRegistration(modalTermMonths.value),
+);
+
+/** The Term section is the one that captures the dates; only it carries the warning. */
+const modalShowsTerm = computed(() =>
+  (activeSection.value?.fields ?? []).some((f) => f.key === "durationMonths"),
 );
 const dialogRef = ref<HTMLElement | null>(null);
 let lastFocused: HTMLElement | null = null;
@@ -381,6 +414,12 @@ function openSection(id: string): void {
   for (const key of Object.keys(modalForm)) delete modalForm[key];
   const slice = working[id] || {};
   for (const f of s.fields) modalForm[f.key] = slice[f.key] ?? "";
+  // Seed the derived duration from the dates the modal just loaded, so it is correct on open and
+  // not only after the user touches a date (the watcher fires on CHANGE, not on mount).
+  if ("durationMonths" in modalForm) {
+    const months = tenancyMonths(modalForm.startDate ?? "", modalForm.endDate ?? "");
+    modalForm.durationMonths = months === null ? "" : String(months);
+  }
   void nextTick(() => {
     const first = dialogRef.value?.querySelector<HTMLElement>(
       "input,textarea,select",
@@ -397,9 +436,17 @@ function closeModal(): void {
 function saveSection(): void {
   const id = activeSectionId.value;
   if (!id) return;
+  // Read-only (server-derived) keys are NOT committed: the server strips them from captureData as
+  // anti-mass-assignment and recomputes them at render, so persisting one would only create a
+  // second, drifting copy of a value the server owns.
+  const derivedKeys = new Set(
+    (activeSection.value?.fields ?? []).filter((f) => f.readOnly).map((f) => f.key),
+  );
   const slice: SectionData = {};
-  for (const key of Object.keys(modalForm))
+  for (const key of Object.keys(modalForm)) {
+    if (derivedKeys.has(key)) continue;
     slice[key] = (modalForm[key] ?? "").toString();
+  }
   working[id] = slice;
   closeModal();
   persistDraft();
@@ -1460,6 +1507,21 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
+      <!--
+        Registration warning. Advisory and NON-BLOCKING: a term over eleven months is a lawful
+        choice, so this exists to stop the parties making it unknowingly, not to refuse it. The
+        threshold is the national default; Telangana requires registration at ANY term and is still
+        caught by the state-aware notice at the stamp-quote step (see the follow-up register).
+      -->
+      <p
+        v-if="modalShowsTerm && modalNeedsRegistration"
+        class="mx-5 mb-4 rounded bg-amber-50 px-3 py-2 text-xs text-amber-900"
+        data-testid="registration-warning"
+      >
+        A term of more than {{ REGISTRABLE_OVER_MONTHS }} months must be
+        registered with the Sub-Registrar. Registration is separate from stamp
+        duty and is not included in what you pay here.
+      </p>
       <footer
         class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4"
       >

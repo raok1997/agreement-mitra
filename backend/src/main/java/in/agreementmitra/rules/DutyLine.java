@@ -13,10 +13,20 @@ import java.util.Objects;
  */
 public record DutyLine(Kind kind, String label, BigDecimal amount) {
 
-  /** What a line represents; see the replay semantics on the record. */
+  /**
+   * What a line represents; see the replay semantics on the record.
+   *
+   * <p>{@code SLAB_MINIMUM} / {@code SLAB_MAXIMUM} are the selected term slab's own bounds and are
+   * applied before the rule-level {@code MINIMUM} / {@code MAXIMUM}. They are separate kinds rather
+   * than a relabelled MINIMUM/MAXIMUM because a customer shown a duty of INR 500 against a
+   * consideration of INR 340,000 is owed the reason, and "this band is capped" is a different fact
+   * from "this rule is capped".
+   */
   public enum Kind {
     QUANTITY,
     BASE,
+    SLAB_MINIMUM,
+    SLAB_MAXIMUM,
     MINIMUM,
     MAXIMUM,
     EXTENSION,

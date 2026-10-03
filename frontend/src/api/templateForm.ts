@@ -49,6 +49,15 @@ export interface FormField {
   validation?: FormFieldValidation;
   /** Opaque conditional-visibility expression, carried verbatim and NOT evaluated in this CR. */
   showWhen?: string;
+  /**
+   * True when the server COMPUTES this field's value from other captured values (a `derived` field,
+   * e.g. `durationMonths` from the tenancy dates). The client displays it read-only and never
+   * collects it -- a submitted value would be discarded server-side anyway.
+   *
+   * Absent (not `false`) on an ordinary field: the backend omits the member entirely so schema
+   * payloads without a derived field are unchanged, so always test truthiness, never `=== false`.
+   */
+  readOnly?: boolean;
 }
 
 /** One ordered group of form inputs. Clause-id entries of the source section are not present here. */

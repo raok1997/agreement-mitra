@@ -157,13 +157,15 @@ function sampleSchema(): FormSchema {
             type: "date",
             required: true,
           },
+          // DERIVED: the server computes this from the dates, so it is projected read-only, not
+          // required, and with no default -- the shape FormProjector now emits for `source: derived`.
           {
             key: "durationMonths",
             label: "Duration",
             widget: "number",
             type: "int",
-            required: true,
-            validation: { min: 1, max: 60 },
+            required: false,
+            readOnly: true,
           },
         ],
       },
@@ -326,10 +328,12 @@ async function fillAllRequired(wrapper: ReturnType<typeof mount>) {
   });
   await fillSection(wrapper, "financial-terms", { monthlyRent: "25000" });
   await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
+  // No durationMonths: it is DERIVED from these dates (11 whole months) and rendered as a display,
+  // not an input -- there is nothing to set, and setting it would be setting a value the server
+  // discards anyway.
   await fillSection(wrapper, "term", {
     startDate: "2026-01-01",
     endDate: "2026-12-01",
-    durationMonths: "11",
   });
 }
 
@@ -405,16 +409,18 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
 
   it("enforces required and bounds client-side (modal error + incomplete section)", async () => {
     const wrapper = await mountReady();
-    await wrapper.find('[data-testid="section-term"]').trigger("click");
-    // Out-of-range duration surfaces a bound error and leaves the section incomplete.
-    await wrapper.find('[data-testid="field-durationMonths"]').setValue("99");
+    await wrapper.find('[data-testid="section-financial-terms"]').trigger("click");
+    // Out-of-range rent surfaces a bound error and leaves the section incomplete. (The duration
+    // used to carry this assertion; it is now a derived read-only display with no bounds of its
+    // own, so the check moved to a field the customer actually types into.)
+    await wrapper.find('[data-testid="field-monthlyRent"]').setValue("0");
     await flushPromises();
     expect(
-      wrapper.find('[data-testid="field-error-durationMonths"]').text(),
-    ).toMatch(/at most 60/);
+      wrapper.find('[data-testid="field-error-monthlyRent"]').text(),
+    ).toMatch(/at least 1/);
     await wrapper.find('[data-testid="modal-save"]').trigger("click");
     await flushPromises();
-    expect(wrapper.find('[data-testid="status-term"]').text()).toBe(
+    expect(wrapper.find('[data-testid="status-financial-terms"]').text()).toBe(
       "Needs input",
     );
   });
@@ -529,10 +535,10 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
 
     await fillSection(wrapper, "financial-terms", { monthlyRent: "25000" });
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
+    // durationMonths is derived from these dates, not typed -- see fillAllRequired.
     await fillSection(wrapper, "term", {
       startDate: "2026-01-01",
       endDate: "2026-12-01",
-      durationMonths: "11",
     });
 
     await wrapper.find('[data-testid="save-continue"]').trigger("click");
@@ -1004,5 +1010,190 @@ describe("CaptureForm: capture-state persistence (M5)", () => {
     expect(
       wrapper.find('[data-testid="draft-only-jurisdiction"]').exists(),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Derived tenancy term + the registration warning.
+//
+// The bug this covers: the Term section offered "Duration (months)" as an editable box seeded to
+// 11, while the server derived the term from the dates and overwrote it at render. A 2026-01-08 to
+// 2028-01-08 tenancy previewed as 11 months and SIGNED as 24.
+// ---------------------------------------------------------------------------------------------
+
+describe("CaptureForm: derived tenancy term", () => {
+  beforeEach(() => {
+    mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedPreviewHtml.mockReset();
+    mockedGetForm.mockResolvedValue(sampleSchema());
+    mockedEligible.mockResolvedValue(["TG"]);
+    mockedPreviewHtml.mockResolvedValue("<p>preview</p>");
+    // The shell resumes a draft from localStorage on mount, so a leftover draft from an earlier
+    // test would silently supply dates this test never set.
+    localStorage.clear();
+  });
+
+  async function openTermWith(startDate: string, endDate: string) {
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    if (startDate)
+      await wrapper.find('[data-testid="field-startDate"]').setValue(startDate);
+    if (endDate)
+      await wrapper.find('[data-testid="field-endDate"]').setValue(endDate);
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("shows the duration derived from the dates, not the template default", async () => {
+    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+
+    // The reported case: 24 whole months. Not 11.
+    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toContain("24");
+    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).not.toContain("11");
+  });
+
+  it("renders the duration as a display, not an input the user can type into", async () => {
+    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+
+    const duration = wrapper.find('[data-testid="field-durationMonths"]');
+    // A derived field is not an input at all -- there is nothing to focus or type in.
+    expect(duration.element.tagName).not.toBe("INPUT");
+    expect(duration.attributes("aria-readonly")).toBe("true");
+  });
+
+  it("shows the term as undetermined when only the start date is set", async () => {
+    const wrapper = await openTermWith("2026-01-08", "");
+
+    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toMatch(
+      /not yet determined/i,
+    );
+  });
+
+  it("keeps the derived duration in step as the dates change", async () => {
+    const wrapper = await openTermWith("2026-01-01", "2026-12-01");
+    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toContain("11");
+
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2027-01-01");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toContain("12");
+  });
+
+  it("never sends the derived duration to the server", async () => {
+    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await new Promise((r) => setTimeout(r, 300)); // debounced preview refresh
+    await flushPromises();
+
+    // The server strips durationMonths as anti-mass-assignment and recomputes it; sending one would
+    // only create a second, drifting copy of a value the server owns.
+    const [sentData] = mockedPreviewHtml.mock.calls.at(-1) ?? [];
+    expect(sentData).not.toHaveProperty("durationMonths");
+    expect(sentData).toMatchObject({
+      startDate: "2026-01-08",
+      endDate: "2028-01-08",
+    });
+  });
+});
+
+describe("CaptureForm: registration warning", () => {
+  beforeEach(() => {
+    mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedPreviewHtml.mockReset();
+    mockedGetForm.mockResolvedValue(sampleSchema());
+    mockedEligible.mockResolvedValue(["TG"]);
+    mockedPreviewHtml.mockResolvedValue("<p>preview</p>");
+    // The shell resumes a draft from localStorage on mount, so a leftover draft from an earlier
+    // test would silently supply dates this test never set.
+    localStorage.clear();
+  });
+
+  async function openTermWith(startDate: string, endDate: string) {
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper.find('[data-testid="field-startDate"]').setValue(startDate);
+    await wrapper.find('[data-testid="field-endDate"]').setValue(endDate);
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("warns above eleven months, naming the Sub-Registrar and excluding stamp duty", async () => {
+    const wrapper = await openTermWith("2026-01-08", "2028-01-08"); // 24 months
+
+    const warning = wrapper.find('[data-testid="registration-warning"]');
+    expect(warning.exists()).toBe(true);
+    expect(warning.text()).toMatch(/Sub-Registrar/);
+    expect(warning.text()).toMatch(/not included/i);
+  });
+
+  it("does not warn at exactly eleven months", async () => {
+    // The registrability line is "MORE than eleven months" (Registration Act 1908 s.17(1)(d)), so
+    // the common 11-month Indian tenancy must stay silent -- warning on it would train users to
+    // ignore the warning.
+    const wrapper = await openTermWith("2026-01-01", "2026-12-01");
+
+    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(false);
+  });
+
+  it("does not warn while the term is undetermined", async () => {
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper.find('[data-testid="field-startDate"]').setValue("2026-01-08");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(false);
+  });
+
+  it("is advisory: the section still saves and counts as complete", async () => {
+    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(true);
+
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="status-term"]').text()).not.toBe("Needs input");
+  });
+});
+
+describe("CaptureForm: tenancy date range", () => {
+  beforeEach(() => {
+    mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedPreviewHtml.mockReset();
+    mockedGetForm.mockResolvedValue(sampleSchema());
+    mockedEligible.mockResolvedValue(["TG"]);
+    mockedPreviewHtml.mockResolvedValue("<p>preview</p>");
+    // The shell resumes a draft from localStorage on mount, so a leftover draft from an earlier
+    // test would silently supply dates this test never set.
+    localStorage.clear();
+  });
+
+  it("reports an end date on or before the start date, against the end field", async () => {
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper.find('[data-testid="field-startDate"]').setValue("2026-06-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+    await flushPromises();
+
+    // Pre-empts the 400 the server already returns for this, correcting the user in place.
+    expect(wrapper.find('[data-testid="field-error-endDate"]').text()).toMatch(
+      /after the start date/i,
+    );
+    expect(wrapper.find('[data-testid="field-error-startDate"]').exists()).toBe(false);
+  });
+
+  it("clears the error once the range is valid", async () => {
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper.find('[data-testid="field-startDate"]').setValue("2026-06-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(true);
+
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2027-06-01");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(false);
   });
 });

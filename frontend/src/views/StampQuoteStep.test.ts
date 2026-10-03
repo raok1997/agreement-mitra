@@ -127,6 +127,36 @@ describe("StampQuoteStep", () => {
     ]);
   });
 
+  it("names an e-stamp certificate as itself rather than as stamp paper", async () => {
+    // The Karnataka shape: an any-amount e-stamp plans the exact duty, so it is the recommended,
+    // pre-selected option on every Karnataka quote. An unlabelled medium falls through to the
+    // "Stamp paper" default, which would mislabel the most prominent option on the screen.
+    const wrapper = await mountStep(
+      quote({
+        options: [
+          {
+            stampValueMinorUnits: 170000,
+            belowDuty: false,
+            recommended: true,
+            totalMinorUnits: 219900,
+            medium: "e-stamp",
+          },
+          {
+            stampValueMinorUnits: 50000,
+            belowDuty: true,
+            recommended: false,
+            totalMinorUnits: 49900,
+            medium: "stamp-paper",
+          },
+        ],
+      }),
+    );
+
+    const text = wrapper.text();
+    expect(text).toContain("e-Stamp certificate");
+    expect(text).toContain("Single stamp paper");
+  });
+
   it("says stamping is unavailable and offers no payment when the quote is not available", async () => {
     const wrapper = await mountStep(
       quote({

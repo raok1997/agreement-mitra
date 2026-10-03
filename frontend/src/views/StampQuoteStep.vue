@@ -83,8 +83,13 @@ function money(minorUnits: number | null | undefined): string {
     : formatMinorUnits(minorUnits, quote.value?.currency ?? "INR");
 }
 
+// The medium id comes from the jurisdiction's stamp paper catalog, so this must name every medium
+// any catalog declares -- an unlabelled medium falls through to "Stamp paper" and mislabels itself.
+// Karnataka's e-stamp is the pre-selected option on every Karnataka quote, so getting it wrong would
+// be the most visible label on the screen.
 function mediumLabel(option: StampQuoteOption): string {
   if (option.medium === "challan") return "Paid by challan";
+  if (option.medium === "e-stamp") return "e-Stamp certificate";
   if (option.belowDuty) return "Single stamp paper";
   return "Stamp paper";
 }

@@ -99,6 +99,54 @@ class StampOptionsTest {
   }
 
   @Test
+  void aPlannedJurisdictionPreSelectsTheExactDutyAndOffersLowerPapersAsOverrides() {
+    // The Karnataka shape (ka-rental-and-commercial-templates): an any-amount e-stamp medium plans
+    // the exact duty, so the recommended option IS the legal duty and is not marked below it, while
+    // the paper denominations below it stay on offer as choices the customer may deliberately take.
+    // This is the contrast with the Telangana single-papers case two tests above, where the
+    // pre-selected option is BELOW the duty and the exact duty is not offered at all.
+    in.agreementmitra.rules.CatalogRef karnataka =
+        new in.agreementmitra.rules.CatalogRef(
+            "KA", "Kaveri / SHCIL", "c".repeat(64), in.agreementmitra.rules.StampOffer.PLANNED);
+    in.agreementmitra.rules.StampPlan eStamp =
+        new in.agreementmitra.rules.StampPlan(
+            "e-stamp",
+            java.util.List.of(),
+            new in.agreementmitra.rules.StampPlan.Planned(
+                java.util.List.of(new in.agreementmitra.rules.StampPlan.Paper(170000, 1)),
+                170000,
+                0));
+    in.agreementmitra.rules.StampPlan papers =
+        new in.agreementmitra.rules.StampPlan(
+            "stamp-paper",
+            java.util.List.of(50000L, 20000L, 10000L, 5000L, 2000L),
+            new in.agreementmitra.rules.StampPlan.Planned(
+                java.util.List.of(new in.agreementmitra.rules.StampPlan.Paper(50000, 4)),
+                200000,
+                30000));
+
+    StampOptions options =
+        StampOptions.of(StampQuoteFixtures.quoted(karnataka, 170000, eStamp, papers));
+
+    assertThat(options.recommended())
+        .hasValueSatisfying(
+            o -> {
+              assertThat(o.stampValuePaise()).isEqualTo(170000);
+              assertThat(o.mediumId()).isEqualTo("e-stamp");
+              assertThat(o.belowDuty()).isFalse();
+            });
+    assertThat(options.options())
+        .extracting(StampOptions.Option::stampValuePaise)
+        .containsExactly(170000L, 50000L, 20000L, 10000L, 5000L, 2000L);
+    assertThat(options.options().subList(1, options.options().size()))
+        .allSatisfy(
+            o -> {
+              assertThat(o.belowDuty()).isTrue();
+              assertThat(o.recommended()).isFalse();
+            });
+  }
+
+  @Test
   void findMatchesOnlyOfferedValues() {
     StampOptions options = StampOptions.of(quoted(84000, paperUnplannable(), challan(84000)));
 

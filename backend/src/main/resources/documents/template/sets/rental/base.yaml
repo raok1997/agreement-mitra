@@ -46,7 +46,14 @@ meta:
   # Bumped 1 -> 2 because agreements already generated pin `base: 1` and rendered the old wording;
   # leaving it at 1 would make two materially different deeds report one authored version, which is
   # exactly what Agreement.pinEffectiveTemplate exists to keep answerable.
-  version: 2
+  #
+  # v3 (2026-09-18): durationMonths became `source: derived`. The term stated in the deed now always
+  # follows startDate/endDate. Before this, the live preview compiled the TYPED duration while the
+  # generated draft compiled the date-derived one, so the same agreement could preview as an
+  # 11-month term and sign as a 24-month one. Bumped for the same reason as v2: the rendered output
+  # changes for any agreement whose typed term disagreed with its dates, and two materially
+  # different deeds must not report one authored version.
+  version: 3
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -83,8 +90,14 @@ fields:
   - { key: agreementDate,    label: "Agreement date",                    type: date,     required: false }
   - { key: startDate,        label: "Tenancy start date",                type: date,     required: true }
   - { key: endDate,          label: "Tenancy end date",                  type: date,     required: true }
-  - { key: durationMonths,   label: "Duration (months)",                 type: int,      required: true,
-      default: 11, validation: { min: 1, max: 60 } }
+  # DERIVED: the server computes this from startDate/endDate on every render path, so it is shown
+  # read-only in the capture form and never collected. It carries no `default` (a default is what
+  # made the form display 11 against a 24-month date span) and no `validation` bounds: those were
+  # INPUT bounds for a typed field, and applying them to a computed value would reject a lawful
+  # long tenancy with an error against a field nobody can edit. The dates are the source of truth,
+  # and they are validated in their own right.
+  - { key: durationMonths,   label: "Duration (months)",                 type: int,      required: false,
+      source: derived }
   # Lock-in / notice add-ons: defaulted-optional here (each individually addable via its showWhen
   # clause), so gating them out of a generated draft never trips required-validation.
   - { key: lockInMonths,     label: "Lock-in (months)",                  type: int,      required: false,

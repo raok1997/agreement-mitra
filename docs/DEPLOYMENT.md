@@ -107,8 +107,9 @@ chmod +x backend/gradlew deploy/provision.sh
 Cloning directly on the server avoids this entirely and is the better long-term
 answer -- it requires the `deploy/` artifacts to be committed.
 
-`provision.sh` is idempotent and splits into `harden`, `docker` and `firewall`
-subcommands if you want to run them separately. It:
+`provision.sh` is idempotent and splits into `harden`, `docker`, `firewall` and
+`secrets` subcommands if you want to run them separately. `all` covers the first
+three; run `secrets` separately (section 3). It:
 
 - applies OS updates and enables unattended **security** upgrades;
 - adds a 4 GB swapfile with `vm.swappiness=10` (insurance against the OOM killer
@@ -196,62 +197,121 @@ exposed by the same mechanism. Use an SSH tunnel (section 7).
 Each service reads its own gitignored env file from `deploy/env/`, so no service
 receives another's credentials:
 
-| File | Consumed by |
-|---|---|
-| `deploy/env/postgres.env` | `postgres` |
-| `deploy/env/minio.env` | `minio` |
-| `deploy/env/backend.env` | `backend` |
+| File | Consumed by | Template |
+|---|---|---|
+| `deploy/env/postgres.env` | `postgres` | `postgres.env.example` |
+| `deploy/env/minio.env` | `minio` | `minio.env.example` |
+| `deploy/env/backend.env` | `backend` | `backend.env.example` |
 
-Generate the random values on the server (never on a workstation, never in a
-chat window, never committed):
+Generate them **on the server**:
 
 ```sh
-openssl rand -base64 32 | tr -d '/+=' | cut -c1-32
+cd /opt/agreementmitra/deploy
+./provision.sh secrets
 ```
+
+That seeds all three files, generates every random value, keeps the three
+cross-file credential pairs in agreement (`POSTGRES_PASSWORD`/`DB_PASSWORD`,
+`MINIO_ROOT_USER`/`S3_ACCESS_KEY`, `MINIO_ROOT_PASSWORD`/`S3_SECRET_KEY`),
+`chmod 600`s them, and then prints the vendor credentials still blank with what
+each blank actually costs. Paste those in with `nano env/backend.env`.
+
+Secrets are generated **on the server** and never anywhere else -- not on a
+workstation, not in a chat window, never committed.
+
+### `secrets` is also the upgrade path for an existing box
+
+Run it on a server that already has a `backend.env` and it backfills every
+variable the template carries but that file is missing, using the template's
+value -- then reports what it added. Existing values are never touched.
+
+This matters because a `backend.env` written against an older version of this
+runbook is missing whole features' worth of `[FIXED]` values (`PUBLIC_BASE_URL`,
+`PAYMENT_MODE`, `MAIL_*`, `ZOOP_*`, `RULES_STAMP_DUTY_ALLOW_UNREVIEWED`), and
+every one of them fails **silently** on the application default rather than at
+boot. Generating the secrets while leaving those absent would report success and
+fix nothing.
+
+Two of the backfilled values are business decisions rather than stack facts --
+`PAYMENT_MODE` and `RULES_STAMP_DUTY_ALLOW_UNREVIEWED` -- so the command warns
+about them explicitly. Review both before restarting.
+
+### Re-running `secrets` never rotates anything
+
+It is idempotent and deliberately non-destructive: a value already set is left
+alone, and only blank generated keys are filled. This is a correctness
+requirement, not politeness.
+
+- `postgres:17` honours `POSTGRES_PASSWORD` **only at first initdb**. Rotating
+  it in the env file after the volume exists does not change the database
+  password -- it only makes `DB_PASSWORD` wrong, and the backend then fails
+  authentication against a database the on-disk credentials can no longer reach.
+  Rotation needs an `ALTER USER ... PASSWORD`.
+- Both peppers key data **at rest**. Rotating `AUTH_HASH_PEPPER` invalidates
+  every live session; rotating `ESIGN_WEBHOOK_KEY_PEPPER` makes stored
+  per-transaction webhook keys undecryptable, so in-flight signings can no
+  longer accept their callbacks.
 
 ### Variables
 
-`postgres.env` -- names fixed by the `postgres:17` image:
+**`deploy/env/backend.env.example` is the authoritative list** -- it carries
+every variable that needs a non-default value in production, annotated inline.
+It is deliberately not duplicated here: the table that used to live in this
+section documented 27 of the 83 variables the app reads, and the gap is what
+let the traps below go unnoticed.
 
-| Variable | Value |
+Each entry in the template is tagged with its class:
+
+| Class | Meaning |
 |---|---|
-| `POSTGRES_DB` | `agreementmitra` |
-| `POSTGRES_USER` | `agreementmitra` |
-| `POSTGRES_PASSWORD` | generated |
+| `[FIXED]` | Correct as written for this compose stack. Do not change. |
+| `[GENERATED]` | Created on the server by `provision.sh secrets`. Never copied from a laptop. |
+| `[VENDOR]` | Issued by a third party. The only class legitimately copied in from elsewhere. |
 
-`minio.env` -- names fixed by the MinIO image:
+The `[VENDOR]` distinction is the one that matters when porting config from a
+development machine. Vendor credentials (ZOOP, Razorpay, Zoho, Google) cannot be
+regenerated and must be copied; infrastructure credentials must **not** be --
+local `S3_ACCESS_KEY`/`S3_SECRET_KEY` are `minioadmin`/`minioadmin`, hardcoded in
+`backend/start_local.sh`, and both peppers have published dev defaults.
 
-| Variable | Value |
-|---|---|
-| `MINIO_ROOT_USER` | generated |
-| `MINIO_ROOT_PASSWORD` | generated |
+### Things that fail silently if unset
 
-`backend.env`:
+Every item below boots green and passes the section 4 smoke tests. None of them
+fails at startup; they fail later, at request time, or not visibly at all. This
+is the part of the configuration that actually needs reviewing.
 
-| Variable | Value | Notes |
+| Variable | Default | What the default does in production |
 |---|---|---|
-| `DB_URL` | `jdbc:postgresql://postgres:5432/agreementmitra` | compose network hostname |
-| `DB_USER` | `agreementmitra` | must match `postgres.env` |
-| `DB_PASSWORD` | generated | must match `postgres.env` |
-| `S3_ENDPOINT` | `http://minio:9000` | |
-| `S3_BUCKET` | `agreements` | created by the app on first use |
-| `S3_ACCESS_KEY` | generated | must match `MINIO_ROOT_USER` |
-| `S3_SECRET_KEY` | generated | must match `MINIO_ROOT_PASSWORD` |
-| `GOTENBERG_URL` | `http://gotenberg:3000` | |
-| `AUTH_HASH_PEPPER` | generated | **must** override the `dev-only-...-change-me` default in `application.yml` |
-| `GOOGLE_OAUTH_CLIENT_ID` | blank or real | blank disables login; see below |
-| `GOOGLE_OAUTH_SECRET` | blank or real | blank disables login |
-| `GOOGLE_OAUTH_REDIRECT_URI` | `https://agreementmitra.com/api/auth/google/callback` | register verbatim in Google Cloud |
-| `GOOGLE_OAUTH_SPA_CALLBACK_URI` | `https://agreementmitra.com/auth/callback` | |
-| `LEEGALITY_BASE_URL` | blank | no sandbox account yet |
-| `LEEGALITY_PROFILE_ID` | blank | |
-| `LEEGALITY_AUTH_TOKEN` | blank | |
-| `LEEGALITY_WEBHOOK_SECRET` | blank | |
-| `DOCUMENT_FOOTER_PLATFORM_URL` | `agreementmitra.com` | non-secret |
-| `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `INFO` | overrides the `DEBUG` dev default |
-| `SPRING_PROFILES_ACTIVE` | `sandbox` | **required** -- see below |
+| `AUTH_HASH_PEPPER` | `dev-only-identity-pepper-change-me` | Session/handoff/login-state hashes keyed by a published value. |
+| `ESIGN_WEBHOOK_KEY_PEPPER` | `dev-only-webhook-key-pepper-change-me` | Per-transaction eSign webhook keys encrypted at rest under a published value, so a database read yields a working credential. That key authenticates inbound state changes. |
+| `PUBLIC_BASE_URL` | `http://localhost:5173` | Recovery links emailed to the parties point at localhost. Unusable, and nothing warns. |
+| `RULES_STAMP_DUTY_ALLOW_UNREVIEWED` | `false` | **No state is chargeable at all** -- see below. |
+| `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `DISABLED` to bring the box up before the gateway account exists. |
+| `MAIL_PROVIDER` | `stub` | The email channel is enabled by default, so delivery reports success and sends nothing. |
+| `ESIGN_PROVIDER` | `zoop` | Correct, but `ZOOP_RESPONSE_URL`/`ZOOP_REDIRECT_URL` default **blank**: the callback never arrives and signatures complete only via the reconciliation job. |
+| `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `DEBUG` | Debug logging in production, on identity/legal infra. |
 
-Lock the files down: `chmod 600 deploy/env/*.env`.
+### Paid fulfilment is off by default, and that is easy to miss
+
+`rules` is the only source of paid-fulfilment eligibility (there is no
+allowlist). A state is chargeable when its rule carries a counsel review
+matching its hash, **or** `rules.stamp-duty.allow-unreviewed=true`.
+
+Both shipped rule sets are unreviewed -- `rules/stamp-duty/TG/lease-residential.yaml`
+and `.../KA/lease-residential.yaml` both carry the "sandbox / founding-team beta
+only" marker. `application-local.yml` defaults the flag to `true`; the root
+`application.yml` defaults it to `false`, and **there is no
+`application-sandbox.yml`**, so the `sandbox` profile this deployment runs under
+inherits `false`.
+
+Net effect: with the runbook followed exactly, no state is chargeable and paid
+fulfilment is blocked for every customer -- while the app boots clean and the
+smoke tests pass. `backend.env.example` sets it to `true` to match the
+founding-team-beta posture the rule files describe. Confirm that is what you
+want before going live, and revisit it when counsel review lands.
+
+Lock the files down (`provision.sh secrets` already does this):
+`chmod 600 deploy/env/*.env`.
 
 ### Why the `sandbox` profile is required
 
@@ -281,18 +341,30 @@ reviewed templates loaded through a deliberate mechanism, not a dev seeder.
 
 ### What blank credentials actually do
 
-Both vendor integrations tolerate absent credentials at startup, which is what
+Every vendor integration tolerates absent credentials at startup, which is what
 makes a production bring-up possible before any vendor account exists:
 
 - **Google login:** `OauthConfig` logs a one-line WARN and disables the
   handshake. The app boots and everything else works. (The comment in
   `application.yml` claiming it "fails fast" is stale -- the code does not.)
-- **Leegality:** the adapter reads its config only at request time, so startup is
-  unaffected. Signing requests will fail until a developer sandbox account
-  exists. Repo policy is sandbox and dummy data only.
+- **ZOOP** (the default `ESIGN_PROVIDER`): the adapter reads its config only at
+  request time, so startup is unaffected. Signing requests fail until a sandbox
+  account exists. `ZOOP_BASE_URL` defaults to the free self-serve **test** host
+  and should stay there -- the production host is never a default, so a
+  misconfigured deployment talks to the sandbox rather than burning real
+  signature credit.
+- **Leegality** is the rollback adapter, wired but unused while
+  `ESIGN_PROVIDER=zoop`. Its four variables can stay blank.
+- **Razorpay:** blank keys do not block startup either, but `PAYMENT_MODE`
+  defaults to `REQUIRED`, so checkout fails at request time. Set
+  `PAYMENT_MODE=DISABLED` to bring the box up before the gateway account exists.
 
-`AUTH_HASH_PEPPER` is different: it has a working dev default, so a missing value
-fails silently into a known-weak pepper. It must be set.
+Repo policy remains sandbox and dummy data only.
+
+The peppers are the exception to all of this: they have working dev defaults, so
+a missing value does not fail at all -- it falls back to a published value. See
+"Things that fail silently if unset" above, which covers both of them along with
+the other defaults that are wrong for production.
 
 ---
 
