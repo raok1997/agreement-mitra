@@ -19,6 +19,7 @@ import {
   getStampQuote,
   selectionFor,
   type StampQuote,
+  type StampQuoteLine,
   type StampQuoteOption,
   type StampSelection,
 } from "../api/stampQuote";
@@ -83,6 +84,57 @@ function money(minorUnits: number | null | undefined): string {
     : formatMinorUnits(minorUnits, quote.value?.currency ?? "INR");
 }
 
+// The breakdown is display-only formatting of the server's lines -- no amount is derived here except
+// the closing total, which is the server's dutyMinorUnits. QUANTITY and BASE lines are absolute;
+// every later kind is a signed delta on the running duty (DutyLine replay semantics), so deltas
+// carry an explicit sign and are never mistaken for a total.
+const QUANTITY_LABELS: Record<string, string> = {
+  TOTAL_RENT: "Total rent for the term",
+  AVERAGE_ANNUAL_RENT: "Average annual rent",
+  MONTHLY_RENT: "Monthly rent",
+  REFUNDABLE_DEPOSIT: "Refundable deposit",
+  NON_REFUNDABLE_DEPOSIT: "Non-refundable deposit",
+  ADVANCE_RENT: "Advance rent",
+  PREMIUM: "Premium",
+  DEPOSIT_NOTIONAL_INTEREST: "Notional interest on the deposit",
+};
+
+const rupees = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+const grouped = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+
+function isDelta(line: StampQuoteLine): boolean {
+  return line.kind !== "QUANTITY" && line.kind !== "BASE";
+}
+
+function lineLabel(line: StampQuoteLine): string {
+  if (line.kind === "QUANTITY") {
+    return QUANTITY_LABELS[line.label] ?? sentenceCase(line.label);
+  }
+  const label = line.label
+    .replace(/\d{4,}(\.\d+)?/g, (n) => grouped.format(Number(n)))
+    .replace(
+      /\brounded (UP|DOWN|HALF_UP)\b/,
+      (_, mode: string) => `rounded ${mode.replace("_", " ").toLowerCase()}`,
+    );
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function lineAmount(line: StampQuoteLine): string {
+  const value = Number(line.amount);
+  if (!isDelta(line)) return rupees.format(value);
+  return `${value < 0 ? "−" : "+"}${rupees.format(Math.abs(value))}`;
+}
+
+function sentenceCase(name: string): string {
+  const words = name.toLowerCase().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 // The medium id comes from the jurisdiction's stamp paper catalog, so this must name every medium
 // any catalog declares -- an unlabelled medium falls through to "Stamp paper" and mislabels itself.
 // Karnataka's e-stamp is the pre-selected option on every Karnataka quote, so getting it wrong would
@@ -145,8 +197,20 @@ function confirm(): void {
             :key="i"
             class="flex flex-wrap justify-between gap-2"
           >
-            <span>{{ line.label }}</span>
-            <span class="tabular-nums">{{ line.amount }}</span>
+            <span>{{ lineLabel(line) }}</span>
+            <span class="tabular-nums" data-testid="breakdown-amount">{{
+              lineAmount(line)
+            }}</span>
+          </li>
+          <li
+            v-if="quote.dutyMinorUnits != null"
+            class="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-1 font-medium text-slate-900"
+            data-testid="breakdown-total"
+          >
+            <span>Stamp duty</span>
+            <span class="tabular-nums">{{
+              rupees.format(quote.dutyMinorUnits / 100)
+            }}</span>
           </li>
         </ul>
         <p v-if="quote.rule" class="mt-2 text-xs text-slate-500">

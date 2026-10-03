@@ -174,4 +174,43 @@ describe("StampQuoteStep", () => {
       false,
     );
   });
+
+  it("formats the breakdown readably, signs every adjustment and closes with the server's duty", async () => {
+    // The Karnataka capped shape: a zero rounding delta used to render as a bare "0" last line,
+    // which reads as a total of nothing.
+    const wrapper = await mountStep(
+      quote({
+        dutyMinorUnits: 50000,
+        breakdown: [
+          { kind: "QUANTITY", label: "AVERAGE_ANNUAL_RENT", amount: "558000" },
+          { kind: "QUANTITY", label: "REFUNDABLE_DEPOSIT", amount: "150000" },
+          {
+            kind: "BASE",
+            label: "0.5% of 708000 (term 1-12 months)",
+            amount: "3540",
+          },
+          {
+            kind: "SLAB_MAXIMUM",
+            label: "maximum 500 for term 1-12 months",
+            amount: "-3040",
+          },
+          {
+            kind: "ROUNDING",
+            label: "rounded UP to 1 rupee(s)",
+            amount: "0",
+          },
+        ],
+      }),
+    );
+
+    const rows = wrapper.findAll("details li").map((li) => li.text());
+    expect(rows).toEqual([
+      "Average annual rent₹5,58,000",
+      "Refundable deposit₹1,50,000",
+      "0.5% of 7,08,000 (term 1-12 months)₹3,540",
+      "Maximum 500 for term 1-12 months−₹3,040",
+      "Rounded up to 1 rupee(s)+₹0",
+      "Stamp duty₹500",
+    ]);
+  });
 });
