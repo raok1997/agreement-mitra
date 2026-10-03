@@ -54,6 +54,15 @@
 #   Those overrides are load-bearing: do NOT drop them on the next Boot upgrade
 #   without first confirming the new BOM manages each artifact at or above these
 #   versions, or the fixes silently regress.
+# - 2026-10-04 (dependency-advisories-2026-10, direct change, no CR): 9 new
+#   advisories (1 Critical) against the unchanged lockfile, REMEDIATED BY UPGRADE —
+#   zero suppressions added, baseline still EMPTY:
+#     jackson-bom  2.21.5 → 2.21.7   GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89 (core),
+#                                    GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54,
+#                                    GHSA-q4xh-88c3-wmh7, GHSA-gx83-3vf8-gh7j,
+#                                    GHSA-wjgm-6hv5-3cvf (databind)
+#     bcprov-jdk18on 1.84 → 1.85     GHSA-9pwp-9qqc-pr26 (9.3), GHSA-qp49-qgx5-5m26
+#                                    (8.7) — a direct shipping `implementation` dep.
 #
 # (No [[IgnoredVulns]] entries — the baseline is empty. Add one only for a genuine,
 #  in-scope, currently-unremediable finding, with a reason and a short expiry.)

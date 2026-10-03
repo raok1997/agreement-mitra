@@ -171,8 +171,10 @@ the cost is invisible to whoever is only watching for the green tick.
   from the backend's
   exclude-build-tooling scope. To accept a finding, add an `[[IgnoredVulns]]` entry
   to `frontend/osv-scanner.toml` with a `reason` AND an `ignoreUntil` expiry —
-  justified and time-boxed, never permanent or wildcard. The baseline is currently
-  **empty** (graph is clean). It **is** coupled to the build: `npm run build` chains
+  justified and time-boxed, never permanent or wildcard. The baseline holds **one**
+  entry: `braces` 3.0.3 (dev-only via tailwindcss, no fixed release; expires
+  2026-11-04). `ignoreUntil` is an **unquoted** TOML date (`2026-11-04`) — a quoted
+  string fails to parse and breaks the gate. It **is** coupled to the build: `npm run build` chains
   `security:scan && test && vue-tsc -b && vite build`, so a passing build implies a
   passing scan (note `build` does **not** run eslint — `npm run lint` is separate).
   Still **not wired into CI** (local-only today, so a clean local run is not proof any
@@ -197,7 +199,7 @@ the cost is invisible to whoever is only watching for the green tick.
   tool-classpath findings via the scan-scope policy above.
 - **Boot 3.5.15 is NOT clean on its own.** As of 2026-09-05 four of its BOM-managed
   versions carry open advisories and are **overridden** in `build.gradle.kts`:
-  `tomcat` 10.1.59, `postgresql` 42.7.12, `jackson-bom` 2.21.5, `log4j2` 2.25.5
+  `tomcat` 10.1.59, `postgresql` 42.7.12, `jackson-bom` 2.21.7 (bumped 2026-10-04), `log4j2` 2.25.5
   (a Boot bump could not fix these — 3.5.16 manages the identical versions). Those
   `extra[...]` overrides are load-bearing: **on the next Boot upgrade, drop one only
   after confirming the new BOM manages that artifact at or above the pinned version**,

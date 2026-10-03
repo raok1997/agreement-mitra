@@ -18,12 +18,23 @@
 # lifecycle install scripts and typosquatting execute on developer/build hosts. So
 # the full graph is in scope, strictest-reading, matching the fail-on-any posture.
 #
-# Baseline is EMPTY: the graph is currently clean (0 known vulnerabilities). Add an
-# entry only for a genuine, currently-unremediable finding, with a reason and a
-# short expiry.
+# Baseline: ONE entry (braces, below). Add an entry only for a genuine,
+# currently-unremediable finding, with a reason and a short expiry.
+#
+# REMEDIATION HISTORY:
+# - 2026-10-04 (dependency-advisories-2026-10, direct change, no CR):
+#   `brace-expansion` 1.1.18 / 2.1.4 / 5.0.9 (GHSA-6j4f-fj2g-mc7p, -qhr7-859c-m2p7,
+#   -q2hr-2g5m-vwhr) REMEDIATED BY UPGRADE to 1.1.21 / 2.1.7 / 5.0.12 (in-range
+#   lockfile bump, no overrides). `braces` 3.0.3 has no fixed release, so it is
+#   suppressed below.
 #
 # Example (do not leave uncommented without a real, expiring finding):
 # [[IgnoredVulns]]
 # id = "GHSA-xxxx-xxxx-xxxx"
-# ignoreUntil = "2026-07-20"
+# ignoreUntil = 2026-07-20   # TOML date literal, unquoted (a quoted string fails to parse)
 # reason = "No fixed release yet; dev-only transitive of <tool>; tracking <link>."
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-11-04
+reason = "braces <=3.0.3 stack-exhaustion DoS on deeply nested patterns (CVE-2026-93687); no fixed release exists (3.0.3 is latest). Dev-only: reached via tailwindcss 3.4 -> chokidar/micromatch, which expand only the glob patterns in our own tailwind.config content list at build time - no untrusted input reaches it, and it is not in the browser bundle. Worst case is a crashed local build. Re-check for a braces release (or a tailwind/micromatch path off braces) at expiry; remove this entry as soon as a fix ships."
