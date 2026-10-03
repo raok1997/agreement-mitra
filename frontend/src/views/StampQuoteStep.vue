@@ -102,7 +102,7 @@ const QUANTITY_LABELS: Record<string, string> = {
 const rupees = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
-  minimumFractionDigits: 0,
+  minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 const grouped = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -208,9 +208,7 @@ function confirm(): void {
             data-testid="breakdown-total"
           >
             <span>Stamp duty</span>
-            <span class="tabular-nums">{{
-              rupees.format(quote.dutyMinorUnits / 100)
-            }}</span>
+            <span class="tabular-nums">{{ money(quote.dutyMinorUnits) }}</span>
           </li>
         </ul>
         <p v-if="quote.rule" class="mt-2 text-xs text-slate-500">

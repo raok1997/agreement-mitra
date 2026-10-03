@@ -68,14 +68,12 @@ describe("StampQuoteStep", () => {
   it("shows the server's duty, registration notice and totals, with the recommended option pre-selected", async () => {
     const wrapper = await mountStep();
 
-    expect(wrapper.get('[data-testid="stamp-duty"]').text()).toBe(
-      "INR 1300.00",
-    );
+    expect(wrapper.get('[data-testid="stamp-duty"]').text()).toBe("₹1,300.00");
     expect(wrapper.find('[data-testid="registration-notice"]').exists()).toBe(
       true,
     );
     const recommended = wrapper.get('[data-testid="stamp-option-130000"]');
-    expect(recommended.text()).toContain("INR 1717.17");
+    expect(recommended.text()).toContain("₹1,717.17");
     expect(recommended.text()).toContain("Recommended");
     expect((recommended.get("input").element as HTMLInputElement).checked).toBe(
       true,
@@ -205,12 +203,12 @@ describe("StampQuoteStep", () => {
 
     const rows = wrapper.findAll("details li").map((li) => li.text());
     expect(rows).toEqual([
-      "Average annual rent₹5,58,000",
-      "Refundable deposit₹1,50,000",
-      "0.5% of 7,08,000 (term 1-12 months)₹3,540",
-      "Maximum 500 for term 1-12 months−₹3,040",
-      "Rounded up to 1 rupee(s)+₹0",
-      "Stamp duty₹500",
+      "Average annual rent₹5,58,000.00",
+      "Refundable deposit₹1,50,000.00",
+      "0.5% of 7,08,000 (term 1-12 months)₹3,540.00",
+      "Maximum 500 for term 1-12 months−₹3,040.00",
+      "Rounded up to 1 rupee(s)+₹0.00",
+      "Stamp duty₹500.00",
     ]);
   });
 });

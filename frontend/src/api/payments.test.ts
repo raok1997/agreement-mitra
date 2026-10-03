@@ -323,9 +323,12 @@ describe("paying for an agreement", () => {
 
 describe("amount display", () => {
   it("formats integer minor units without floating-point arithmetic", () => {
-    expect(formatMinorUnits(49900, "INR")).toBe("INR 499.00");
-    expect(formatMinorUnits(1, "INR")).toBe("INR 0.01");
-    expect(formatMinorUnits(100000, "INR")).toBe("INR 1000.00");
-    expect(formatMinorUnits(120050, "INR")).toBe("INR 1200.50");
+    expect(formatMinorUnits(49900, "INR")).toBe("₹499.00");
+    expect(formatMinorUnits(1, "INR")).toBe("₹0.01");
+    expect(formatMinorUnits(100000, "INR")).toBe("₹1,000.00");
+    expect(formatMinorUnits(120050, "INR")).toBe("₹1,200.50");
+    expect(formatMinorUnits(12000050, "INR")).toBe("₹1,20,000.50");
+    expect(formatMinorUnits(-50, "INR")).toBe("-₹0.50");
+    expect(formatMinorUnits(49900, "USD")).toBe("USD 499.00");
   });
 });

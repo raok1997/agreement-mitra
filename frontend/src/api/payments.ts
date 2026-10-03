@@ -281,14 +281,20 @@ export async function payForAgreement(
   return settled.kind === "failed" ? "FAILED" : "DISMISSED";
 }
 
-/** Minor units (paise) to a rupee string for display. Integer arithmetic only - never a float. */
+const indianGrouping = new Intl.NumberFormat("en-IN");
+
+/**
+ * Minor units (paise) to a display string with Indian digit grouping and paise always shown, e.g.
+ * "₹1,20,000.50". Integer arithmetic only - never a float. A currency other than INR keeps its code.
+ */
 export function formatMinorUnits(
   amountMinorUnits: number,
   currency: string,
 ): string {
-  const whole = Math.trunc(amountMinorUnits / 100);
-  const fraction = Math.abs(amountMinorUnits % 100)
-    .toString()
-    .padStart(2, "0");
-  return `${currency} ${whole}.${fraction}`;
+  const sign = amountMinorUnits < 0 ? "-" : "";
+  const abs = Math.abs(amountMinorUnits);
+  const whole = indianGrouping.format(Math.trunc(abs / 100));
+  const fraction = (abs % 100).toString().padStart(2, "0");
+  const symbol = currency === "INR" ? "₹" : `${currency} `;
+  return `${sign}${symbol}${whole}.${fraction}`;
 }

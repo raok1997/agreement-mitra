@@ -457,7 +457,7 @@ describe("StaffConsole and the payment gate", () => {
     ]);
 
     const badge = wrapper.get('[data-testid="queue-stamp-value-ag-1"]').text();
-    expect(badge).toContain("INR 100.00");
+    expect(badge).toContain("₹100.00");
     expect(badge).toContain("below duty");
   });
 

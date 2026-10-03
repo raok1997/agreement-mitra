@@ -8,7 +8,7 @@ import PaymentConfirmation from "./PaymentConfirmation.vue";
 describe("PaymentConfirmation", () => {
   const base = {
     reference: "AM3G3VXSAKD",
-    amountLabel: "INR 499.00",
+    amountLabel: "₹499.00",
     linkSent: true,
   };
 
@@ -21,7 +21,7 @@ describe("PaymentConfirmation", () => {
 
   it("shows the amount the server confirmed", () => {
     const wrapper = mount(PaymentConfirmation, { props: base });
-    expect(wrapper.text()).toContain("INR 499.00");
+    expect(wrapper.text()).toContain("₹499.00");
   });
 
   it("omits the amount rather than inventing one when it could not be read back", () => {
