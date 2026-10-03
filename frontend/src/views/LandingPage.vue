@@ -93,7 +93,7 @@ const faqs = [
   },
   {
     q: "Which cities do you serve?",
-    a: "You can build, preview and download an agreement for Telangana or Karnataka today, residential or commercial, with the stamp duty computed for your own rent and deposit. Stamping and eSign are live for Telangana first; Karnataka follows once its duty figures clear legal review and we can buy its certificates. There is also a general India template you can draft from anywhere. If your state is not covered yet, write to us and we will tell you where you sit in the queue.",
+    a: "You can build, preview and download an agreement for Telangana or Karnataka today, residential or commercial, with the stamp duty computed for your own rent and deposit. Stamping and eSign are live for Telangana first; Karnataka follows once its duty figures clear legal review and we can buy its certificates. If your state is not covered yet, write to us and we will tell you where you sit in the queue.",
   },
 ];
 

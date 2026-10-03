@@ -20,6 +20,15 @@ const emit = defineEmits<{
 // choose their state, and every listed state carries its own template.
 const NATIONAL_STATE = "IN";
 
+const STATE_NAMES: Record<string, string> = {
+  KA: "Karnataka",
+  TG: "Telangana",
+};
+
+function stateName(code: string): string {
+  return STATE_NAMES[code.trim().toUpperCase()] ?? code;
+}
+
 const rows = ref<TemplateSummary[]>([]);
 // null = "we could not find out", which marks NOTHING rather than marking everything draft-only.
 // Enforcement is server-side either way; falsely telling an eligible customer they cannot be
@@ -179,51 +188,66 @@ onMounted(load);
         class="flex flex-col gap-2"
         :data-testid="`state-row-${g.state}`"
       >
-        <h3 class="text-sm font-semibold text-slate-700">{{ g.state }}</h3>
-        <div class="flex gap-3 overflow-x-auto pb-1">
-          <div
+        <h3
+          class="flex items-baseline gap-2 text-sm font-semibold text-slate-800"
+        >
+          {{ stateName(g.state) }}
+          <span class="text-xs font-normal text-slate-400">{{ g.state }}</span>
+        </h3>
+        <div class="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+          <article
             v-for="r in g.templates"
             :key="r.id"
-            class="flex w-64 shrink-0 flex-col gap-2 rounded-md border border-slate-200 p-4"
+            class="flex w-72 shrink-0 flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
             :data-testid="`template-card-${r.id}`"
           >
-            <div class="flex items-start justify-between gap-2">
-              <h4 class="text-sm font-semibold text-slate-800">{{ r.name }}</h4>
+            <div class="flex items-center justify-between gap-2">
+              <span
+                class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600"
+                >{{ r.type }}</span
+              >
+              <span class="text-xs text-slate-400">v{{ r.version }}</span>
             </div>
-            <p v-if="r.description" class="text-xs text-slate-500">
+            <h4 class="mt-3 text-sm font-semibold leading-snug text-slate-900">
+              {{ r.name }}
+            </h4>
+            <p v-if="r.description" class="mt-1 text-xs text-slate-500">
               {{ r.description }}
             </p>
-            <div class="flex flex-wrap gap-1 text-xs text-slate-500">
-              <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.type }}</span>
-              <span class="rounded bg-slate-100 px-2 py-0.5"
-                >v{{ r.version }}</span
-              >
-              <span
-                v-if="isDraftOnly(r)"
-                class="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
-                :data-testid="`draft-only-${r.id}`"
-              >
-                Draft &amp; download only
-              </span>
-            </div>
-            <p
+            <div
               v-if="isDraftOnly(r)"
-              class="text-xs text-amber-700"
-              :data-testid="`draft-only-note-${r.id}`"
+              class="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-800"
             >
-              You can fill this in, preview it and download it. Stamping and
-              eSign are not yet available for this jurisdiction, so it cannot be
-              paid for or signed here.
-            </p>
-            <button
-              type="button"
-              class="mt-1 rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-              :data-testid="`select-${r.id}`"
-              @click="choose(r)"
-            >
-              {{ isDraftOnly(r) ? "Draft this template" : "Use this template" }}
-            </button>
-          </div>
+              <span class="font-medium" :data-testid="`draft-only-${r.id}`"
+                >Draft &amp; download only</span
+              >
+              <p
+                class="mt-0.5 text-amber-700"
+                :data-testid="`draft-only-note-${r.id}`"
+              >
+                You can fill this in, preview it and download it. Stamping and
+                eSign are not yet available for this jurisdiction, so it cannot
+                be paid for or signed here.
+              </p>
+            </div>
+            <div class="mt-auto pt-4">
+              <button
+                type="button"
+                class="w-full rounded-md px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+                :class="
+                  isDraftOnly(r)
+                    ? 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                    : 'bg-slate-900 text-white hover:bg-slate-700'
+                "
+                :data-testid="`select-${r.id}`"
+                @click="choose(r)"
+              >
+                {{
+                  isDraftOnly(r) ? "Draft this template" : "Use this template"
+                }}
+              </button>
+            </div>
+          </article>
         </div>
       </section>
     </div>
