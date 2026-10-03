@@ -89,7 +89,9 @@ Previously generated agreements keep their pinned version and re-render as they 
 ### 4. The client recomputes the month count; the server remains authoritative
 
 `formModel.ts` gains a `tenancyMonths(start, end)` helper mirroring `Period.between(...)
-.toTotalMonths()`: whole months, end-exclusive, trailing partial month truncated.
+.toTotalMonths()`: whole months, trailing partial month truncated. (Originally end-exclusive;
+corrected to end-INCLUSIVE -- `Period.between(start, end + 1 day)` -- on 2026-10-03, after 1 Sep to
+31 Jul rendered as 10 months.)
 
 This is a deliberate duplication, accepted because the alternative is worse. The options were: (a)
 round-trip the preview for every keystroke to learn the term -- the capture surface debounces preview

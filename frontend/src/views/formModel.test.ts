@@ -204,17 +204,26 @@ describe("tenancyMonths", () => {
   it.each([
     // The reported case: a two-year span against a form still showing 11.
     ["2026-01-08", "2028-01-08", 24],
+    // The end date is the tenancy's LAST DAY (inclusive): 1 Sep to 31 Jul is eleven months,
+    // not ten -- the reported case for the end-exclusive count.
+    ["2026-09-01", "2027-07-31", 11],
+    ["2026-01-01", "2026-11-30", 11],
+    ["2026-01-01", "2026-12-31", 12],
     // Exactly eleven months -- the registrability line, and the common Indian tenancy.
     ["2026-01-01", "2026-12-01", 11],
     ["2026-01-01", "2027-01-01", 12],
+    // Just past a twelve-month registration threshold (KA): thirteen, not twelve.
+    ["2026-01-01", "2027-01-31", 13],
     // A trailing partial month is truncated, never rounded up.
     ["2026-01-01", "2026-12-20", 11],
-    ["2026-01-01", "2026-01-31", 0],
-    // Month-end clamping: 31 Jan to 28 Feb is zero whole months, and must not overflow to March.
-    ["2026-01-31", "2026-02-28", 0],
+    ["2026-01-01", "2026-01-30", 0],
+    ["2026-01-01", "2026-01-31", 1],
+    // Month-end clamping: 31 Jan to 28 Feb is one month (and must not overflow to March).
+    ["2026-01-31", "2026-02-27", 0],
+    ["2026-01-31", "2026-02-28", 1],
     ["2026-01-31", "2026-03-31", 2],
-    // Leap years.
-    ["2028-02-29", "2029-02-28", 11],
+    // Leap years: 29 Feb to 28 Feb the following year is a full year.
+    ["2028-02-29", "2029-02-28", 12],
     ["2024-02-29", "2025-03-01", 12],
     // Same day is a zero-month term.
     ["2026-06-01", "2026-06-01", 0],
@@ -224,7 +233,7 @@ describe("tenancyMonths", () => {
 
   it("does not overflow the way Date month arithmetic would", () => {
     // new Date(2026, 0, 31) with a month added rolls over to 3 March, which would make this 1.
-    expect(tenancyMonths("2026-01-31", "2026-02-28")).toBe(0);
+    expect(tenancyMonths("2026-01-31", "2026-02-27")).toBe(0);
     expect(tenancyMonths("2026-01-31", "2026-03-01")).toBe(1);
   });
 
@@ -240,7 +249,8 @@ describe("tenancyMonths", () => {
   });
 
   it("counts a backwards range as negative rather than throwing", () => {
-    expect(tenancyMonths("2026-06-01", "2026-01-01")).toBe(-5);
+    // Matches java.time.Period (end + 1 day = 2 Jan): -4, as the server computes it.
+    expect(tenancyMonths("2026-06-01", "2026-01-01")).toBe(-4);
   });
 });
 
@@ -272,6 +282,14 @@ describe("sectionErrors", () => {
     });
     expect(errors.endDate).toMatch(/after the start date/i);
     expect(errors.startDate).toBeUndefined();
+  });
+
+  it("reports an end date less than a month before the start date", () => {
+    // Zero whole months either way, so a month-count check alone would let it through.
+    for (const endDate of ["2026-05-31", "2026-05-15"]) {
+      const errors = sectionErrors(dateFields, { startDate: "2026-06-01", endDate });
+      expect(errors.endDate).toMatch(/after the start date/i);
+    }
   });
 
   it("reports an end date equal to the start date", () => {

@@ -116,17 +116,19 @@ export function fieldErrors(
 
 /**
  * The tenancy term in WHOLE months between two ISO (`yyyy-mm-dd`) dates, or null when either is
- * missing or unparseable. Complete months only, measured exclusive of the end date, with a trailing
- * partial month truncated -- 2026-01-01 to 2026-12-01 is 11, and so is 2026-01-01 to 2026-12-20.
+ * missing or unparseable. Complete months only, counting the end date as the tenancy's LAST DAY
+ * (inclusive), with a trailing partial month truncated -- 2026-09-01 to 2027-07-31 is 11, and so
+ * are 2026-01-01 to 2026-12-01 and 2026-01-01 to 2026-12-20.
  *
- * This mirrors the server's count (java.time.Period.between(...).toTotalMonths()), which is what the
- * rendered document and the stored agreement both use. The server stays authoritative: this exists
- * so the capture form can show the term as the user tabs between the two date fields, without a
- * round-trip. A drift here would show a wrong number on screen but could never sign a wrong term.
+ * This mirrors the server's count (java.time.Period.between(start, end + 1 day).toTotalMonths()),
+ * which is what the rendered document and the stored agreement both use. The server stays
+ * authoritative: this exists so the capture form can show the term as the user tabs between the two
+ * date fields, without a round-trip. A drift here would show a wrong number on screen but could
+ * never sign a wrong term.
  *
- * Deliberately does NOT go through Date arithmetic: `new Date(2026, 0, 31)` plus a month silently
- * rolls over to 3 March. Comparing y/m/d components directly is the only way to get month-end
- * clamping right (31 Jan to 28 Feb is 0 whole months, not 1).
+ * Month arithmetic compares y/m/d components, never Date month addition: `new Date(2026, 0, 31)`
+ * plus a month silently rolls over to 3 March. Date is used only for the one-day step past the end
+ * date, where its rollover is exactly the calendar rule wanted (31 Jan + 1 day = 1 Feb).
  */
 export function tenancyMonths(
   startIso: string,
@@ -136,10 +138,16 @@ export function tenancyMonths(
   const end = parseIsoDate(endIso);
   if (!start || !end) return null;
 
-  let months =
-    (end.year - start.year) * 12 + (end.month - start.month);
-  // The final month is only COMPLETE once the end day reaches the start day.
-  if (end.day < start.day) months -= 1;
+  const dayAfterEnd = new Date(Date.UTC(end.year, end.month - 1, end.day + 1));
+  const endYear = dayAfterEnd.getUTCFullYear();
+  const endMonth = dayAfterEnd.getUTCMonth() + 1;
+  const endDay = dayAfterEnd.getUTCDate();
+
+  let months = (endYear - start.year) * 12 + (endMonth - start.month);
+  const days = endDay - start.day;
+  // Period.between: a month only counts once complete, in either direction.
+  if (months > 0 && days < 0) months -= 1;
+  else if (months < 0 && days > 0) months += 1;
   return months;
 }
 
@@ -206,12 +214,10 @@ export function sectionErrors(
     const end = parseIsoDate(data.endDate ?? "");
     // Only when both parse and neither already has an error of its own.
     if (start && end && !errors.startDate && !errors.endDate) {
-      const months = tenancyMonths(data.startDate ?? "", data.endDate ?? "");
-      const sameDay =
-        start.year === end.year &&
-        start.month === end.month &&
-        start.day === end.day;
-      if (months !== null && (months < 0 || sameDay)) {
+      const endNotAfterStart =
+        end.year * 10000 + end.month * 100 + end.day <=
+        start.year * 10000 + start.month * 100 + start.day;
+      if (endNotAfterStart) {
         errors.endDate = "The end date must be after the start date.";
       }
     }

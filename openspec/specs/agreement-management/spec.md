@@ -172,7 +172,8 @@ detail. A syntactically invalid id (not a UUID) SHALL respond `400 Bad Request` 
 
 The tenancy SHALL be defined by its **start and end dates**, which are the source of truth.
 The system SHALL derive, on the server, the **tenancy duration in whole months** (the number
-of complete months between the start and end dates, exclusive of the end date) and SHALL
+of complete months between the start and end dates, counting the end date as the tenancy's
+last day, i.e. inclusive of the end date) and SHALL
 include it in create and retrieve responses as the value shown to the user. The duration
 SHALL NOT be accepted from the client; it SHALL be recomputed from the dates so it cannot
 drift from them. A legacy `termMonths` value MAY be retained internally, but it SHALL be
@@ -182,6 +183,11 @@ the same server-derived whole-month count, never a client-supplied field.
 
 - **WHEN** an agreement runs from a start date to an end date eleven whole months later
 - **THEN** the response reports the duration as eleven months
+
+#### Scenario: The end date counts as the last day of the tenancy
+
+- **WHEN** an agreement runs from 1 September 2026 to 31 July 2027
+- **THEN** the response reports the duration as eleven months, not ten
 
 #### Scenario: Duration is recomputed, never client-supplied
 

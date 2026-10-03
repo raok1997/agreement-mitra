@@ -147,17 +147,26 @@ class DerivedFieldTest {
   @CsvSource({
     // The reported case: a two-year span against a form still showing 11.
     "2026-01-08, 2028-01-08, 24",
+    // The end date is the tenancy's LAST DAY (inclusive): 1 Sep to 31 Jul is eleven months,
+    // not ten -- the reported case for the end-exclusive count.
+    "2026-09-01, 2027-07-31, 11",
+    "2026-01-01, 2026-11-30, 11",
+    "2026-01-01, 2026-12-31, 12",
     // Exactly eleven months -- the registrability line, and the common Indian tenancy.
     "2026-01-01, 2026-12-01, 11",
     "2026-01-01, 2027-01-01, 12",
+    // Just past a twelve-month registration threshold (KA): thirteen, not twelve.
+    "2026-01-01, 2027-01-31, 13",
     // A trailing partial month is truncated, never rounded up.
     "2026-01-01, 2026-12-20, 11",
-    "2026-01-01, 2026-01-31, 0",
-    // Month-end clamping: 31 Jan to 28 Feb is one month, not zero (and must not overflow).
-    "2026-01-31, 2026-02-28, 0",
+    "2026-01-01, 2026-01-30, 0",
+    "2026-01-01, 2026-01-31, 1",
+    // Month-end clamping: 31 Jan to 28 Feb is one month (and must not overflow to March).
+    "2026-01-31, 2026-02-27, 0",
+    "2026-01-31, 2026-02-28, 1",
     "2026-01-31, 2026-03-31, 2",
-    // Leap years.
-    "2028-02-29, 2029-02-28, 11",
+    // Leap years: 29 Feb to 28 Feb the following year is a full year.
+    "2028-02-29, 2029-02-28, 12",
     "2024-02-29, 2025-03-01, 12",
     // Same day is a zero-month term.
     "2026-06-01, 2026-06-01, 0",
@@ -222,6 +231,17 @@ class DerivedFieldTest {
   }
 
   // --- 5.8 parity: the case this change exists to close --------------------------------
+
+  @Test
+  void theDeedCountsTheEndDateAsTheLastDayOfTheTerm() {
+    Map<String, Object> data = aggregateBackedData();
+    data.put("startDate", "2026-09-01");
+    data.put("endDate", "2027-07-31");
+
+    String preview = service(RENTAL).previewHtml(request(data));
+
+    assertThat(preview).contains("a term of 11 month(s)").doesNotContain("a term of 10 month(s)");
+  }
 
   @Test
   void previewAndGenerateStateTheSameTerm() {

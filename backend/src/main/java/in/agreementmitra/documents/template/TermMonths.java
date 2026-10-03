@@ -5,8 +5,11 @@ import java.time.Period;
 
 /**
  * Derives a term in whole months from a start and an end date: the number of COMPLETE months
- * between them, measured exclusive of the end date, with a trailing partial month truncated (1 Jan
- * to 1 Dec is 11 months; 1 Jan to 20 Dec is still 11).
+ * between them, counting the end date as the tenancy's last day (inclusive), with a trailing
+ * partial month truncated (1 Sep to 31 Jul is 11 months; 1 Jan to 1 Dec and 1 Jan to 20 Dec are
+ * also 11). Inclusive because a deed's end date is the last day of occupation -- measuring
+ * exclusive of it drops a month from every term that ends the day before an anniversary, and the
+ * term feeds stamp duty and the registration threshold.
  *
  * <p>This deliberately mirrors {@code signing}'s {@code TenancyDuration}, which computes the same
  * count for the persisted aggregate. The duplication is not an oversight: {@code TenancyDuration}
@@ -31,7 +34,7 @@ final class TermMonths {
     if (start == null || end == null) {
       return null;
     }
-    return Period.between(start, end).toTotalMonths();
+    return Period.between(start, end.plusDays(1)).toTotalMonths();
   }
 
   /** Parse an ISO date, or {@code null} for anything that is not one. Never throws. */

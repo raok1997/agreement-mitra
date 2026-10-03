@@ -7,7 +7,7 @@ value**, and SHALL NOT accept keyboard entry for it, include it in the section's
 count it toward section completeness.
 
 For the tenancy term specifically, the displayed value SHALL be the term in whole months computed from
-the captured start and end dates, using the same whole-month, end-exclusive, truncating count the
+the captured start and end dates, using the same whole-month, end-inclusive, truncating count the
 server uses, so the value on screen matches the value the rendered document states. While either date
 is missing, the surface SHALL show that the term is not yet determined rather than show a default or a
 stale number.

@@ -9,7 +9,8 @@ stateless preview and the generated draft alike -- so that a preview and the doc
 state the same term.
 
 The term SHALL be the number of **complete** months between the start date and the end date, measured
-exclusive of the end date, with a trailing partial month truncated. This is the same whole-month count
+inclusive of the end date (the end date is the tenancy's last day, so 1 Sep to 31 Jul is eleven
+months), with a trailing partial month truncated. This is the same whole-month count
 the `agreement-management` capability requires the server to derive, so a rendered document and the
 agreement record can never report different terms.
 

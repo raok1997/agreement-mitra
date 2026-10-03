@@ -178,23 +178,3 @@ export async function requestSignature(
   if (!res.ok) throw new Error(`Sign request failed: ${res.status}`);
   return res.json();
 }
-
-/**
- * Whole months between two ISO dates, exclusive of the end date — mirrors the server's
- * java.time.Period semantics (1 Jan to 1 Dec is 11 months). Returns null for an incomplete or
- * non-positive range so the UI can hide the duration until both dates are valid.
- */
-export function durationMonths(
-  startDate: string,
-  endDate: string,
-): number | null {
-  if (!startDate || !endDate) return null;
-  const s = new Date(startDate);
-  const e = new Date(endDate);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e <= s)
-    return null;
-  let months =
-    (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
-  if (e.getDate() < s.getDate()) months -= 1;
-  return months;
-}

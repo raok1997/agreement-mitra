@@ -103,10 +103,10 @@ class ProductionRentalLayerSetTest {
     data.put("monthlyRent", new BigDecimal("25000.00"));
     data.put("securityDeposit", new BigDecimal("100000.00"));
     // durationMonths is DERIVED: whatever is put here is discarded and recomputed from the dates.
-    // It is left in deliberately, and left DISAGREEING with them (these dates span 10 whole months,
-    // one day short of 11), so any regression that lets a submitted term reach the document shows
-    // up as a rendered "11 month(s)" instead of "10".
-    data.put("durationMonths", 11);
+    // It is left in deliberately, and left DISAGREEING with them: these dates span 11 whole months
+    // counting the end date as the last day, and 10 is what the old end-exclusive count produced,
+    // so a regression to either a submitted term or that count renders "10 month(s)", not "11".
+    data.put("durationMonths", 10);
     data.put("startDate", "2026-08-01");
     data.put("endDate", "2027-06-30");
     return data;
@@ -123,7 +123,7 @@ class ProductionRentalLayerSetTest {
             .compile(
                 eff, SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.GENERATE));
 
-    assertThat(html).contains("a term of 10 month(s)").doesNotContain("a term of 11 month(s)");
+    assertThat(html).contains("a term of 11 month(s)").doesNotContain("a term of 10 month(s)");
   }
 
   @Test
