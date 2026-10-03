@@ -16,6 +16,10 @@ const emit = defineEmits<{
   (e: "select", dimensions: { state: string; type: string }): void;
 }>();
 
+// The national ("IN") templates stay published server-side but are hidden from the picker: customers
+// choose their state, and every listed state carries its own template.
+const NATIONAL_STATE = "IN";
+
 const rows = ref<TemplateSummary[]>([]);
 // null = "we could not find out", which marks NOTHING rather than marking everything draft-only.
 // Enforcement is server-side either way; falsely telling an eligible customer they cannot be
@@ -46,6 +50,18 @@ const filtered = computed(() => {
   });
 });
 
+const byState = computed(() => {
+  const groups = new Map<string, TemplateSummary[]>();
+  for (const r of filtered.value) {
+    const group = groups.get(r.state) ?? [];
+    group.push(r);
+    groups.set(r.state, group);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([state, templates]) => ({ state, templates }));
+});
+
 /**
  * Whether this template can be stamped and eSigned, or only drafted and downloaded. Joined on the
  * state code with case normalised on both sides, so the join cannot fail on casing.
@@ -73,7 +89,9 @@ async function load(): Promise<void> {
       listTemplates(),
       fetchEligibleOrNone(),
     ]);
-    rows.value = templates;
+    rows.value = templates.filter(
+      (t) => t.state.trim().toUpperCase() !== NATIONAL_STATE,
+    );
     eligibleStates.value = eligible;
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Could not load templates.";
@@ -154,53 +172,60 @@ onMounted(load);
       No templates match your search.
     </p>
 
-    <div
-      v-else
-      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
-      data-testid="picker-list"
-    >
-      <div
-        v-for="r in filtered"
-        :key="r.id"
-        class="flex flex-col gap-2 rounded-md border border-slate-200 p-4"
-        :data-testid="`template-card-${r.id}`"
+    <div v-else class="flex flex-col gap-4" data-testid="picker-list">
+      <section
+        v-for="g in byState"
+        :key="g.state"
+        class="flex flex-col gap-2"
+        :data-testid="`state-row-${g.state}`"
       >
-        <div class="flex items-start justify-between gap-2">
-          <h3 class="text-sm font-semibold text-slate-800">{{ r.name }}</h3>
-        </div>
-        <p v-if="r.description" class="text-xs text-slate-500">
-          {{ r.description }}
-        </p>
-        <div class="flex flex-wrap gap-1 text-xs text-slate-500">
-          <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.state }}</span>
-          <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.type }}</span>
-          <span class="rounded bg-slate-100 px-2 py-0.5">v{{ r.version }}</span>
-          <span
-            v-if="isDraftOnly(r)"
-            class="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
-            :data-testid="`draft-only-${r.id}`"
+        <h3 class="text-sm font-semibold text-slate-700">{{ g.state }}</h3>
+        <div class="flex gap-3 overflow-x-auto pb-1">
+          <div
+            v-for="r in g.templates"
+            :key="r.id"
+            class="flex w-64 shrink-0 flex-col gap-2 rounded-md border border-slate-200 p-4"
+            :data-testid="`template-card-${r.id}`"
           >
-            Draft &amp; download only
-          </span>
+            <div class="flex items-start justify-between gap-2">
+              <h4 class="text-sm font-semibold text-slate-800">{{ r.name }}</h4>
+            </div>
+            <p v-if="r.description" class="text-xs text-slate-500">
+              {{ r.description }}
+            </p>
+            <div class="flex flex-wrap gap-1 text-xs text-slate-500">
+              <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.type }}</span>
+              <span class="rounded bg-slate-100 px-2 py-0.5"
+                >v{{ r.version }}</span
+              >
+              <span
+                v-if="isDraftOnly(r)"
+                class="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
+                :data-testid="`draft-only-${r.id}`"
+              >
+                Draft &amp; download only
+              </span>
+            </div>
+            <p
+              v-if="isDraftOnly(r)"
+              class="text-xs text-amber-700"
+              :data-testid="`draft-only-note-${r.id}`"
+            >
+              You can fill this in, preview it and download it. Stamping and
+              eSign are not yet available for this jurisdiction, so it cannot be
+              paid for or signed here.
+            </p>
+            <button
+              type="button"
+              class="mt-1 rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white"
+              :data-testid="`select-${r.id}`"
+              @click="choose(r)"
+            >
+              {{ isDraftOnly(r) ? "Draft this template" : "Use this template" }}
+            </button>
+          </div>
         </div>
-        <p
-          v-if="isDraftOnly(r)"
-          class="text-xs text-amber-700"
-          :data-testid="`draft-only-note-${r.id}`"
-        >
-          You can fill this in, preview it and download it. Stamping and eSign
-          are not yet available for this jurisdiction, so it cannot be paid for
-          or signed here.
-        </p>
-        <button
-          type="button"
-          class="mt-1 rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-          :data-testid="`select-${r.id}`"
-          @click="choose(r)"
-        >
-          {{ isDraftOnly(r) ? "Draft this template" : "Use this template" }}
-        </button>
-      </div>
+      </section>
     </div>
   </div>
 </template>

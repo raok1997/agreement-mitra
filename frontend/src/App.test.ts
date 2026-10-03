@@ -37,11 +37,11 @@ const mockedGenerate = vi.mocked(client.generateAgreementDocument);
 function catalogRows(): TemplateSummary[] {
   return [
     {
-      id: "in-res",
-      name: "Residential Rental Agreement (National)",
+      id: "tg-res",
+      name: "TG Residential Rental",
       description: "home rental",
       type: "residential",
-      state: "IN",
+      state: "TG",
       language: "en",
       version: 1,
     },
@@ -50,7 +50,7 @@ function catalogRows(): TemplateSummary[] {
 
 function schema(): FormSchema {
   return {
-    dimensions: { state: "IN", type: "residential" },
+    dimensions: { state: "TG", type: "residential" },
     templateId: "rental-base",
     version: 1,
     contentHash: "h1",
@@ -156,10 +156,10 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
     expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="section-rail"]').exists()).toBe(false);
 
-    // Step 2: choose the selectable (default) template -> capture mounts for (IN, residential).
-    await wrapper.find('[data-testid="select-in-res"]').trigger("click");
+    // Step 2: choose the selectable (default) template -> capture mounts for (TG, residential).
+    await wrapper.find('[data-testid="select-tg-res"]').trigger("click");
     await flushPromises();
-    expect(mockedGetForm).toHaveBeenCalledWith("IN", "residential");
+    expect(mockedGetForm).toHaveBeenCalledWith("TG", "residential");
     expect(wrapper.find('[data-testid="section-rail"]').exists()).toBe(true);
 
     // Step 3: fill the required sections.
@@ -179,7 +179,7 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
     // Step 4: the live preview refreshed with the picked dimensions.
     expect(mockedPreviewHtml).toHaveBeenCalled();
     expect(mockedPreviewHtml.mock.calls.at(-1)?.[1]).toEqual({
-      state: "IN",
+      state: "TG",
       type: "residential",
     });
 
@@ -209,7 +209,7 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
 
     const wrapper = mount(App);
     await flushPromises();
-    await wrapper.find('[data-testid="select-in-res"]').trigger("click");
+    await wrapper.find('[data-testid="select-tg-res"]').trigger("click");
     await flushPromises();
 
     const save = () => wrapper.find('[data-testid="save-continue"]');
@@ -252,7 +252,7 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
   it("Change template returns to the picker", async () => {
     const wrapper = mount(App);
     await flushPromises();
-    await wrapper.find('[data-testid="select-in-res"]').trigger("click");
+    await wrapper.find('[data-testid="select-tg-res"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[data-testid="section-rail"]').exists()).toBe(true);
 

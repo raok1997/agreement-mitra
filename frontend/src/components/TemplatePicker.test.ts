@@ -69,12 +69,12 @@ describe("TemplatePicker", () => {
     const w = mount(TemplatePicker);
     await flushPromises();
 
-    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(true);
-    expect(w.find('[data-testid="draft-only-note-in-res"]').text()).toContain(
+    expect(w.find('[data-testid="draft-only-ka-res"]').exists()).toBe(true);
+    expect(w.find('[data-testid="draft-only-note-ka-res"]').text()).toContain(
       "Stamping and eSign are not yet available",
     );
     // The wording must not imply the template is unusable: it can still be drafted.
-    expect(w.find('[data-testid="select-in-res"]').text()).toBe(
+    expect(w.find('[data-testid="select-ka-res"]').text()).toBe(
       "Draft this template",
     );
   });
@@ -97,7 +97,7 @@ describe("TemplatePicker", () => {
     const w = mount(TemplatePicker);
     await flushPromises();
 
-    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(false);
+    expect(w.find('[data-testid="draft-only-ka-res"]').exists()).toBe(false);
     expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
   });
 
@@ -108,23 +108,50 @@ describe("TemplatePicker", () => {
     await flushPromises();
 
     expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
-    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(true);
+    expect(w.find('[data-testid="draft-only-ka-res"]').exists()).toBe(true);
   });
 
   it("lists published templates from the catalog", async () => {
     const wrapper = await mountReady();
     expect(mockedList).toHaveBeenCalledOnce();
-    for (const id of ["in-res", "tg-res", "tg-com", "ka-res"]) {
+    for (const id of ["tg-res", "tg-com", "ka-res"]) {
       expect(wrapper.find(`[data-testid="template-card-${id}"]`).exists()).toBe(
         true,
       );
     }
   });
 
+  it("hides the national (IN) templates", async () => {
+    const wrapper = await mountReady();
+    expect(wrapper.find('[data-testid="template-card-in-res"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.find('[data-testid="state-row-IN"]').exists()).toBe(false);
+    const stateOptions = wrapper
+      .findAll('[data-testid="filter-state"] option')
+      .map((o) => o.text());
+    expect(stateOptions).not.toContain("IN");
+  });
+
+  it("groups templates into one row per state, sorted by state", async () => {
+    const wrapper = await mountReady();
+    const rowsRendered = wrapper.findAll('[data-testid^="state-row-"]');
+    expect(rowsRendered.map((r) => r.attributes("data-testid"))).toEqual([
+      "state-row-KA",
+      "state-row-TG",
+    ]);
+    const tg = wrapper.find('[data-testid="state-row-TG"]');
+    expect(tg.find('[data-testid="template-card-tg-res"]').exists()).toBe(true);
+    expect(tg.find('[data-testid="template-card-tg-com"]').exists()).toBe(true);
+    expect(tg.find('[data-testid="template-card-ka-res"]').exists()).toBe(
+      false,
+    );
+  });
+
   it("every published template is selectable and none shows Coming soon (constraint lifted)", async () => {
     const wrapper = await mountReady();
-    // generate-as-draft is dimension-aware now, so IN + TG (and any other published pair) all select.
-    for (const id of ["in-res", "tg-res", "tg-com", "ka-res"]) {
+    // generate-as-draft is dimension-aware now, so every listed published pair selects.
+    for (const id of ["tg-res", "tg-com", "ka-res"]) {
       expect(
         wrapper.find(`[data-testid="select-${id}"]`).attributes("disabled"),
       ).toBeUndefined();
@@ -134,11 +161,11 @@ describe("TemplatePicker", () => {
     }
   });
 
-  it("emits select with the chosen (state, type) for the default template", async () => {
+  it("emits select with the chosen (state, type)", async () => {
     const wrapper = await mountReady();
-    await wrapper.find('[data-testid="select-in-res"]').trigger("click");
+    await wrapper.find('[data-testid="select-ka-res"]').trigger("click");
     expect(wrapper.emitted("select")?.[0]).toEqual([
-      { state: "IN", type: "residential" },
+      { state: "KA", type: "residential" },
     ]);
   });
 
