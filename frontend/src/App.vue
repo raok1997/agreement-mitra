@@ -106,7 +106,12 @@ function navigate(path: string, mode: "push" | "replace" = "push"): void {
 // The landing page's CTAs all funnel here: enter the app at the template picker.
 function enterApp(): void {
   goToCreate();
-  navigate("/start");
+}
+
+// `mode` only picks a view inside the app route; from /staff (or any other route) the template
+// never reaches it, so a mode switch must also bring the address bar back to the app.
+function ensureAppRoute(): void {
+  if (route.value !== "app") navigate("/start");
 }
 
 function onSelect(dimensions: { state: string; type: string }): void {
@@ -146,12 +151,14 @@ function showMyAgreements(): void {
   editTarget.value = null;
   editError.value = null;
   mode.value = "list";
+  ensureAppRoute();
 }
 
 function goToCreate(): void {
   mode.value = "create";
   selection.value = null;
   editTarget.value = null;
+  ensureAppRoute();
 }
 
 // --- recovery link landing ---------------------------------------------------------------------
@@ -204,7 +211,6 @@ async function openFromLink(): Promise<void> {
 
 /** From the link page: the signed-in customer's list, via the app route. */
 function openMyAgreementsFromLink(): void {
-  navigate("/start");
   showMyAgreements();
 }
 

@@ -376,7 +376,7 @@ describe("App route switch", () => {
 // edit form, and the address bar keeps the link so a reload or a bookmark comes back here.
 vi.mock("./api/agreements", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/agreements")>();
-  return { ...actual, getAgreement: vi.fn() };
+  return { ...actual, getAgreement: vi.fn(), listMyAgreements: vi.fn() };
 });
 vi.mock("./api/payments", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/payments")>();
@@ -462,5 +462,60 @@ describe("App agreement link", () => {
     expect(wrapper.text()).toContain("Sign in");
     expect(window.location.pathname).toBe(LINK);
     wrapper.unmount();
+  });
+});
+
+// The header's "My agreements" switches the in-app view; from /staff that view is not on the page
+// at all, so the switch must also return to the app route or the click does nothing visible.
+vi.mock("./api/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/auth")>();
+  return { ...actual, exchangeHandoff: vi.fn(), logout: vi.fn() };
+});
+vi.mock("./api/staffQueue", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/staffQueue")>();
+  return { ...actual, listStampQueue: vi.fn() };
+});
+
+describe("App header navigation from the staff console", () => {
+  beforeEach(async () => {
+    const auth = await import("./api/auth");
+    const agreements = await import("./api/agreements");
+    const staffQueue = await import("./api/staffQueue");
+    vi.mocked(auth.exchangeHandoff)
+      .mockReset()
+      .mockResolvedValue({
+        session: "s-1",
+        me: {
+          identityId: "id-1",
+          displayName: "Staff",
+          email: null,
+          role: "STAFF",
+        },
+      });
+    vi.mocked(auth.logout).mockReset().mockResolvedValue();
+    vi.mocked(agreements.listMyAgreements).mockReset().mockResolvedValue([]);
+    vi.mocked(staffQueue.listStampQueue).mockReset().mockResolvedValue([]);
+    mockedList.mockReset().mockResolvedValue(catalogRows());
+    const store = await import("./api/authStore");
+    await store.completeLogin("handoff");
+  });
+
+  it("opens My agreements from /staff", async () => {
+    window.history.replaceState({}, "", "/staff");
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="my-agreements"]').exists()).toBe(false);
+
+    await wrapper.find('[data-testid="nav-my-agreements"]').trigger("click");
+    await flushPromises();
+
+    expect(window.location.pathname).toBe("/start");
+    expect(wrapper.find('[data-testid="my-agreements"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="staff-forbidden"]').exists()).toBe(
+      false,
+    );
+    wrapper.unmount();
+    const store = await import("./api/authStore");
+    await store.logout();
   });
 });
