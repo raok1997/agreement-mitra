@@ -2,6 +2,7 @@ package in.agreementmitra.documents.template;
 
 import in.agreementmitra.DocumentDataInvalidException;
 import in.agreementmitra.FieldErrorDetail;
+import in.agreementmitra.PlausibleDates;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -145,11 +146,23 @@ final class SubmittedDataValidator {
 
   private static Object coerceDate(Field field, Object raw, List<FieldErrorDetail> errors) {
     if (raw instanceof String s) {
+      LocalDate date;
       try {
-        return LocalDate.parse(s.trim()).toString(); // normalize to ISO-8601, keep as String
+        date = LocalDate.parse(s.trim());
       } catch (DateTimeParseException e) {
         return typeError(field, errors);
       }
+      // ISO parsing accepts a signed >4-digit year; reject anything outside the product's range
+      // here, at the input boundary, rather than letting it reach date arithmetic downstream.
+      if (PlausibleDates.isTooEarly(date)) {
+        errors.add(new FieldErrorDetail(field.key(), "min"));
+        return null;
+      }
+      if (PlausibleDates.isTooLate(date)) {
+        errors.add(new FieldErrorDetail(field.key(), "max"));
+        return null;
+      }
+      return date.toString(); // normalize to ISO-8601, keep as String
     }
     return typeError(field, errors);
   }

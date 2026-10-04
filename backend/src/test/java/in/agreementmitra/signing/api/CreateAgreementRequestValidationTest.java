@@ -60,6 +60,44 @@ class CreateAgreementRequestValidationTest {
         signers);
   }
 
+  private static CreateAgreementRequest withDates(LocalDate start, LocalDate end) {
+    return new CreateAgreementRequest(
+        "12 MG Road, Bengaluru",
+        new BigDecimal("25000.00"),
+        new BigDecimal("50000.00"),
+        start,
+        end,
+        List.of(owner(), tenant()));
+  }
+
+  @Test
+  void anEndDateAtTheMaximumIsoYearFailsOnEndDate() {
+    // Without the bound this reached TenancyDuration, whose end-inclusive plusDays(1) overflows:
+    // a 500 on POST /api/agreements.
+    assertThat(validator.validate(withDates(START, LocalDate.MAX)))
+        .anySatisfy(v -> assertThat(v.getPropertyPath().toString()).isEqualTo("endDate"));
+  }
+
+  @Test
+  void aYearJustBelowTheMaximumFailsRatherThanWrappingTheTerm() {
+    // No overflow here -- but the term in months exceeds int range and TenancyDuration's cast
+    // would wrap it to an arbitrary, possibly negative, persisted termMonths.
+    assertThat(validator.validate(withDates(START, LocalDate.of(999_999_998, 12, 31))))
+        .anySatisfy(v -> assertThat(v.getPropertyPath().toString()).isEqualTo("endDate"));
+  }
+
+  @Test
+  void aStartDateBeforeTheAcceptedRangeFailsOnStartDate() {
+    assertThat(validator.validate(withDates(LocalDate.of(1899, 12, 31), END)))
+        .anySatisfy(v -> assertThat(v.getPropertyPath().toString()).isEqualTo("startDate"));
+  }
+
+  @Test
+  void theBoundaryYearsThemselvesPass() {
+    assertThat(validator.validate(withDates(LocalDate.of(1900, 1, 1), LocalDate.of(2199, 12, 31))))
+        .isEmpty();
+  }
+
   @Test
   void validRequestPasses() {
     assertThat(validator.validate(withSigners(List.of(owner(), tenant())))).isEmpty();

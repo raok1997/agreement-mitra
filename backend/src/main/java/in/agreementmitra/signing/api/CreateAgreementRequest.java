@@ -59,8 +59,8 @@ public record CreateAgreementRequest(
             fraction = 2,
             message = "Security deposit can have at most two decimals.")
         BigDecimal securityDeposit,
-    @NotNull(message = "Start date is required.") LocalDate startDate,
-    @NotNull(message = "End date is required.") LocalDate endDate,
+    @NotNull(message = "Start date is required.") @PlausibleDate LocalDate startDate,
+    @NotNull(message = "End date is required.") @PlausibleDate LocalDate endDate,
     @NotNull(message = "Add at least one owner and one tenant.")
         @Size(min = 1, max = 20, message = "An agreement can have between 1 and 20 people.")
         @Valid
