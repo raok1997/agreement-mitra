@@ -7,6 +7,7 @@ import {
   isSectionComplete,
   isSectionMandatory,
   isSectionRequired,
+  blocksSave,
   crossFieldErrors,
   reconcileActiveSections,
   sectionErrors,
@@ -485,5 +486,58 @@ describe("read-only (server-derived) fields", () => {
     expect(
       isSectionComplete(fields, { durationMonths: "", ownerName: "Asha" }),
     ).toBe(true);
+  });
+});
+
+describe("validateField -- dates", () => {
+  const start = field({
+    key: "startDate",
+    label: "Start date",
+    widget: "date",
+    type: "date",
+    required: true,
+  });
+
+  it("gives one message per failure reason, none restating the entry", () => {
+    const cases: [string, RegExp][] = [
+      ["08/0", /^Start date is incomplete -- enter it as dd\/mm\/yyyy\.$/],
+      ["03-02-2001", /^Start date must be a date in dd\/mm\/yyyy format\.$/],
+      ["31/02/2026", /^Start date is not a real date -- check the day and month\.$/],
+      ["01/01/2200", /^Start date must be between 1900 and 2199\.$/],
+      ["1800-01-01", /^Start date must be between 1900 and 2199\.$/],
+      ["2026-02-31", /not a real date/],
+    ];
+    for (const [entry, message] of cases) {
+      const error = validateField(start, entry);
+      expect(error).toMatch(message);
+      expect(error).not.toContain(entry);
+    }
+  });
+
+  it("accepts an in-range ISO value and reports an empty required date as required", () => {
+    expect(validateField(start, "2026-01-08")).toBeNull();
+    expect(validateField(start, "")).toBe("Start date is required.");
+  });
+
+  it("treats a well-formed dd/mm/yyyy model value as not storable (the widget emits ISO)", () => {
+    expect(validateField(start, "08/01/2026")).toMatch(/dd\/mm\/yyyy format/);
+  });
+
+  it("blocks saving a malformed date but not a missing one", () => {
+    expect(blocksSave([start], { startDate: "31/02/2026" })).toBe(true);
+    expect(blocksSave([start], { startDate: "" })).toBe(false);
+    expect(blocksSave([start], { startDate: "2026-01-08" })).toBe(false);
+  });
+
+  it("still blocks on a cross-field rule", () => {
+    const end = { ...start, key: "endDate", label: "End date" };
+    expect(
+      blocksSave([start, end], { startDate: "2026-06-01", endDate: "2026-01-01" }),
+    ).toBe(true);
+  });
+
+  it("counts a section with a malformed required date as incomplete", () => {
+    expect(isSectionComplete([start], { startDate: "31/02/2026" })).toBe(false);
+    expect(isSectionComplete([start], { startDate: "2026-01-08" })).toBe(true);
   });
 });

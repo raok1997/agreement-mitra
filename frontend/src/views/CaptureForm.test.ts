@@ -344,8 +344,8 @@ async function fillAllRequired(wrapper: ReturnType<typeof mount>) {
   // not an input -- there is nothing to set, and setting it would be setting a value the server
   // discards anyway.
   await fillSection(wrapper, "term", {
-    startDate: "2026-01-01",
-    endDate: "2026-12-01",
+    startDate: "01/01/2026",
+    endDate: "01/12/2026",
   });
 }
 
@@ -605,8 +605,8 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
     // durationMonths is derived from these dates, not typed -- see fillAllRequired.
     await fillSection(wrapper, "term", {
-      startDate: "2026-01-01",
-      endDate: "2026-12-01",
+      startDate: "01/01/2026",
+      endDate: "01/12/2026",
     });
 
     await wrapper.find('[data-testid="save-continue"]').trigger("click");
@@ -1114,7 +1114,7 @@ describe("CaptureForm: derived tenancy term", () => {
   }
 
   it("shows the duration derived from the dates, not the template default", async () => {
-    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+    const wrapper = await openTermWith("08/01/2026", "08/01/2028");
 
     // The reported case: 24 whole months. Not 11.
     expect(
@@ -1126,7 +1126,7 @@ describe("CaptureForm: derived tenancy term", () => {
   });
 
   it("renders the duration as a display, not an input the user can type into", async () => {
-    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+    const wrapper = await openTermWith("08/01/2026", "08/01/2028");
 
     const duration = wrapper.find('[data-testid="field-durationMonths"]');
     // A derived field is not an input at all -- there is nothing to focus or type in.
@@ -1135,7 +1135,7 @@ describe("CaptureForm: derived tenancy term", () => {
   });
 
   it("shows the term as undetermined when only the start date is set", async () => {
-    const wrapper = await openTermWith("2026-01-08", "");
+    const wrapper = await openTermWith("08/01/2026", "");
 
     expect(wrapper.find('[data-testid="field-durationMonths"]').text()).toMatch(
       /not yet determined/i,
@@ -1143,12 +1143,12 @@ describe("CaptureForm: derived tenancy term", () => {
   });
 
   it("keeps the derived duration in step as the dates change", async () => {
-    const wrapper = await openTermWith("2026-01-01", "2026-12-01");
+    const wrapper = await openTermWith("01/01/2026", "01/12/2026");
     expect(
       wrapper.find('[data-testid="field-durationMonths"]').text(),
     ).toContain("11");
 
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2027-01-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/01/2027");
     await flushPromises();
     expect(
       wrapper.find('[data-testid="field-durationMonths"]').text(),
@@ -1156,7 +1156,7 @@ describe("CaptureForm: derived tenancy term", () => {
   });
 
   it("never sends the derived duration to the server", async () => {
-    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
+    const wrapper = await openTermWith("08/01/2026", "08/01/2028");
     await wrapper.find('[data-testid="modal-save"]').trigger("click");
     await new Promise((r) => setTimeout(r, 650)); // debounced (~600ms) preview refresh
     await flushPromises();
@@ -1190,8 +1190,8 @@ describe("CaptureForm: tenancy date range", () => {
     await wrapper.find('[data-testid="section-term"]').trigger("click");
     await wrapper
       .find('[data-testid="field-startDate"]')
-      .setValue("2026-06-01");
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+      .setValue("01/06/2026");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/01/2026");
     await flushPromises();
 
     // Pre-empts the 400 the server already returns for this, correcting the user in place.
@@ -1217,8 +1217,8 @@ describe("CaptureForm: tenancy date range", () => {
     await wrapper.find('[data-testid="section-term"]').trigger("click");
     await wrapper
       .find('[data-testid="field-startDate"]')
-      .setValue("2026-06-01");
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+      .setValue("01/06/2026");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/01/2026");
     await flushPromises();
 
     expect(
@@ -1237,14 +1237,14 @@ describe("CaptureForm: tenancy date range", () => {
     await wrapper.find('[data-testid="section-term"]').trigger("click");
     await wrapper
       .find('[data-testid="field-startDate"]')
-      .setValue("2026-06-01");
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+      .setValue("01/06/2026");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/01/2026");
     await flushPromises();
     expect(
       wrapper.find('[data-testid="modal-save"]').attributes("disabled"),
     ).toBeDefined();
 
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2027-06-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/06/2027");
     await flushPromises();
 
     const save = wrapper.find('[data-testid="modal-save"]');
@@ -1261,7 +1261,7 @@ describe("CaptureForm: tenancy date range", () => {
     await wrapper.find('[data-testid="section-term"]').trigger("click");
     await wrapper
       .find('[data-testid="field-startDate"]')
-      .setValue("2026-01-01");
+      .setValue("01/01/2026");
     await flushPromises();
 
     const save = wrapper.find('[data-testid="modal-save"]');
@@ -1278,17 +1278,128 @@ describe("CaptureForm: tenancy date range", () => {
     await wrapper.find('[data-testid="section-term"]').trigger("click");
     await wrapper
       .find('[data-testid="field-startDate"]')
-      .setValue("2026-06-01");
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+      .setValue("01/06/2026");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/01/2026");
     await flushPromises();
     expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(
       true,
     );
 
-    await wrapper.find('[data-testid="field-endDate"]').setValue("2027-06-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("01/06/2027");
     await flushPromises();
     expect(wrapper.find('[data-testid="field-error-endDate"]').exists()).toBe(
       false,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// dd/mm/yyyy date entry. The native date input rendered in the host's order (month-first on a
+// US-set machine); these pin that what the user sees is what is saved, or the save is refused.
+// ---------------------------------------------------------------------------------------------
+
+describe("CaptureForm: dd/mm/yyyy date entry", () => {
+  const DRAFT_KEY = "am.preview.draft.v1.IN.residential";
+
+  beforeEach(() => {
+    mockedGetForm.mockReset();
+    mockedEligible.mockReset();
+    mockedPreviewHtml.mockReset();
+    mockedGetForm.mockResolvedValue(sampleSchema());
+    mockedEligible.mockResolvedValue(["TG"]);
+    mockedPreviewHtml.mockResolvedValue("<p>preview</p>");
+    localStorage.clear();
+  });
+
+  function storedTerm(): Record<string, string> | undefined {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}");
+    return draft.data?.term;
+  }
+
+  it("refuses to save an edit to an impossible date and keeps neither it nor the old date", async () => {
+    const wrapper = await mountReady();
+    await fillSection(wrapper, "term", { startDate: "08/01/2026" });
+    expect(storedTerm()?.startDate).toBe("2026-01-08");
+
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    const start = wrapper.find('[data-testid="field-startDate"]');
+    await start.trigger("focus");
+    await start.setValue("31/02/2026");
+    await start.trigger("blur");
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="field-error-startDate"]').text()).toMatch(
+      /not a real date/,
+    );
+    // Not saved: the stored value is untouched, and the field still shows the user's edit rather
+    // than having silently reverted to it.
+    expect(storedTerm()?.startDate).toBe("2026-01-08");
+    expect(
+      (start.element as HTMLInputElement).value,
+    ).toBe("31/02/2026");
+  });
+
+  it("drops a non-ISO date from a resumed draft", async () => {
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        savedAt: Date.now(),
+        data: { term: { startDate: "31/02/2026", endDate: "2026-12-01" } },
+      }),
+    );
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    expect(
+      (wrapper.find('[data-testid="field-startDate"]').element as HTMLInputElement)
+        .value,
+    ).toBe("");
+    expect(
+      (wrapper.find('[data-testid="field-endDate"]').element as HTMLInputElement)
+        .value,
+    ).toBe("01/12/2026");
+  });
+
+  it("shows a saved date day-first on the section card", async () => {
+    const wrapper = await mountReady();
+    await fillSection(wrapper, "term", { startDate: "08/01/2026" });
+    expect(wrapper.find('[data-testid="section-term"]').text()).toContain(
+      "08/01/2026",
+    );
+  });
+
+  it("still saves a section with a blank required date, reporting it as required", async () => {
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    expect(wrapper.find('[data-testid="field-error-startDate"]').text()).toBe(
+      "Start date is required.",
+    );
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
+  });
+
+  it("closes only the picker on Escape, leaving the section open", async () => {
+    const wrapper = mount(CaptureForm, { attachTo: document.body });
+    await flushPromises();
+    try {
+      await wrapper.find('[data-testid="section-term"]').trigger("click");
+      await wrapper.find('[data-testid="field-startDate"]').setValue("08/01/2026");
+      await wrapper
+        .find('[data-testid="date-picker-toggle-startDate"]')
+        .trigger("click");
+      await wrapper.find('[role="grid"]').trigger("keydown", { key: "Escape" });
+      await flushPromises();
+
+      expect(wrapper.find('[role="grid"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+      expect(
+        (wrapper.find('[data-testid="field-startDate"]').element as HTMLInputElement)
+          .value,
+      ).toBe("08/01/2026");
+    } finally {
+      wrapper.unmount();
+    }
   });
 });

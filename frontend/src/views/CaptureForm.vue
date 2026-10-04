@@ -50,7 +50,9 @@ import {
   type FormSchema,
 } from "../api/templateForm";
 import FieldWidget from "../components/widgets/FieldWidget.vue";
+import { formatIso, isAcceptedIso } from "./dateEntry";
 import {
+  blocksSave,
   emptyWorking,
   isSectionComplete,
   isSectionMandatory,
@@ -258,7 +260,8 @@ function summary(s: UiSection): string {
   const data = working[s.id] ?? {};
   for (const f of s.fields) {
     const v = (data[f.key] ?? "").trim();
-    if (v && f.widget !== "checkbox") return v.split("\n")[0];
+    if (!v || f.widget === "checkbox") continue;
+    return f.type === "date" ? formatIso(v) || v : v.split("\n")[0];
   }
   return "";
 }
@@ -382,8 +385,9 @@ const modalErrors = computed(() =>
 );
 
 /**
- * Whether the open section violates a CROSS-FIELD rule. This is what blocks the save (see
- * `saveSection`); per-field errors stay non-blocking so a section can be filled progressively.
+ * Whether the open section violates a CROSS-FIELD rule. Drives only the Save button's disabled state:
+ * a malformed date also blocks the save (`blocksSave`, in `saveSection`) but leaves the button live,
+ * because a dead button gives no reason -- the click blurs the field and reveals its error instead.
  */
 const hasModalCrossFieldErrors = computed(
   () =>
@@ -447,10 +451,13 @@ function saveSection(): void {
   const id = activeSectionId.value;
   if (!id) return;
   // A cross-field error (today: an end date not after the start) must block the save, or a
-  // reversed range reaches the preview and compiles a non-positive term into the document. Only
-  // the cross-field rules block: a per-field "required" error must still be saveable, because
-  // capture is progressive and a section may be filled over more than one visit.
-  if (hasModalCrossFieldErrors.value) return;
+  // reversed range reaches the preview and compiles a non-positive term into the document. A
+  // per-field "required" error must still be saveable, because capture is progressive and a
+  // section may be filled over more than one visit.
+  // A malformed date blocks too: saving its text would send garbage to the preview, and keeping the
+  // previous value would silently replace the user's edit. A blank date still saves.
+  if (activeSection.value && blocksSave(activeSection.value.fields, modalForm))
+    return;
   // Read-only (server-derived) keys are NOT committed: the server strips them from captureData as
   // anti-mass-assignment and recomputes them at render, so persisting one would only create a
   // second, drifting copy of a value the server owns.
@@ -584,6 +591,9 @@ function loadDraft(): void {
           !field.options.some((o) => o.value === value)
         ) {
           continue; // stored enum value is not an option for this template's field -- skip it.
+        }
+        if (field?.type === "date" && value !== "" && !isAcceptedIso(value)) {
+          continue; // a non-ISO date would reach the preview as raw text -- drop it.
         }
         working[id][key] = value;
       }

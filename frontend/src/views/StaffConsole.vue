@@ -9,6 +9,9 @@ import {
   type StampQueueEntry,
   type StampQueueParty,
 } from "../api/staffQueue";
+import type { FormField } from "../api/templateForm";
+import DateWidget from "../components/widgets/DateWidget.vue";
+import { validateField } from "./formModel";
 
 // The staff fulfilment console: every order awaiting an e-stamp, longest-waiting first, with the
 // upload form opening ON a row. The reference is carried by the row, never re-typed -- which removes
@@ -35,6 +38,16 @@ const lastResult = ref<string | null>(null);
 
 const certificateNumber = ref("");
 const issueDate = ref("");
+// The issue date goes through the capture form's date widget, so it reads dd/mm/yyyy whatever the
+// staff machine's regional settings. Not `required`: an empty date is gated by canSubmit, silently,
+// like the certificate number -- a "required" message under a field the operator just cleared is noise.
+const ISSUE_DATE_FIELD: FormField = {
+  key: "issue-date",
+  label: "Issue date",
+  type: "date",
+  widget: "date",
+  required: false,
+};
 const dutyAmount = ref("");
 const jurisdiction = ref("");
 const scan = ref<File | null>(null);
@@ -98,6 +111,11 @@ const certificateNumberError = computed<string | null>(() => {
   return null;
 });
 
+// The one validity decision for the issue date: it feeds the widget's error and gates the upload.
+const issueDateError = computed(() =>
+  validateField(ISSUE_DATE_FIELD, issueDate.value),
+);
+
 const canSubmit = computed(
   () =>
     !submitting.value &&
@@ -105,6 +123,7 @@ const canSubmit = computed(
     certificateNumber.value.trim().length >= 6 &&
     !certificateNumberError.value &&
     !!issueDate.value &&
+    !issueDateError.value &&
     !!dutyAmount.value &&
     jurisdiction.value.trim().length > 0,
 );
@@ -473,15 +492,17 @@ onMounted(load);
                 >Replace with the number on the purchased certificate.</span
               >
             </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-600">
-              Issue date
-              <input
+            <!-- A div, not a label: a label around the input, the picker toggle and the day grid would
+                 forward clicks to the wrong control. The widget names its input with aria-label. -->
+            <div class="flex flex-col gap-1 text-xs text-slate-600">
+              <span>Issue date</span>
+              <DateWidget
                 v-model="issueDate"
-                type="date"
-                class="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                data-testid="field-issue-date"
+                class="text-sm"
+                :field="ISSUE_DATE_FIELD"
+                :error="issueDateError"
               />
-            </label>
+            </div>
             <label class="flex flex-col gap-1 text-xs text-slate-600">
               Duty amount
               <input

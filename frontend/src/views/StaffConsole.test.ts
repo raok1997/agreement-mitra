@@ -103,7 +103,7 @@ describe("StaffConsole", () => {
       .setValue("IN-KA1234567890123");
     await wrapper
       .find('[data-testid="field-issue-date"]')
-      .setValue("2026-01-15");
+      .setValue("15/01/2026");
     await wrapper.find('[data-testid="field-duty-amount"]').setValue("500.00");
     await wrapper.find('[data-testid="field-jurisdiction"]').setValue("KA");
 
@@ -128,6 +128,8 @@ describe("StaffConsole", () => {
     expect(passedEntry.trackingReference).toBe("AM7K3QPW9Z4");
     expect(passedScan).toBe(file);
     expect(certificate.certificateNumber).toBe("IN-KA1234567890123");
+    // Typed day-first, uploaded as ISO -- and actually the typed date, not the today default.
+    expect(certificate.issueDate).toBe("2026-01-15");
     // The confirmation echoes only the redacted certificate number.
     expect(wrapper.find('[data-testid="queue-result"]').text()).toContain(
       "***234X",
@@ -230,7 +232,7 @@ describe("StaffConsole", () => {
       .setValue("IN-KA1234567890123");
     await wrapper
       .find('[data-testid="field-issue-date"]')
-      .setValue("2026-01-15");
+      .setValue("15/01/2026");
     await wrapper.find('[data-testid="field-duty-amount"]').setValue("500.00");
     await wrapper.find('[data-testid="field-jurisdiction"]').setValue("KA");
     const file = new File([new Uint8Array([1, 2, 3])], "certificate.png", {
@@ -261,7 +263,7 @@ describe("StaffConsole", () => {
       .setValue("IN-KA1234567890123");
     await wrapper
       .find('[data-testid="field-issue-date"]')
-      .setValue("2026-01-15");
+      .setValue("15/01/2026");
     await wrapper.find('[data-testid="field-duty-amount"]').setValue("500.00");
     await wrapper.find('[data-testid="field-jurisdiction"]').setValue("KA");
     // Still no scan -> still disabled.
@@ -290,11 +292,65 @@ describe("StaffConsole", () => {
     expect(value("field-duty-amount")).toBe("100");
     // Today, from the local calendar -- not toISOString(), which is yesterday in IST before 05:30.
     const now = new Date();
-    const expected = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(
-      2,
-      "0",
-    )}-${`${now.getDate()}`.padStart(2, "0")}`;
+    // Displayed day-first by the date widget, whatever the staff machine's regional settings.
+    const expected = `${`${now.getDate()}`.padStart(2, "0")}/${`${
+      now.getMonth() + 1
+    }`.padStart(2, "0")}/${now.getFullYear()}`;
     expect(value("field-issue-date")).toBe(expected);
+  });
+
+  it("will not upload an impossible issue date, and says why at the field", async () => {
+    mockedList.mockResolvedValue([entry()]);
+    const wrapper = await filledForm();
+    expect(
+      wrapper.find('[data-testid="queue-submit-ag-1"]').attributes("disabled"),
+    ).toBeUndefined();
+
+    await wrapper.find('[data-testid="field-issue-date"]').setValue("31/02/2026");
+    expect(
+      wrapper.find('[data-testid="queue-submit-ag-1"]').attributes("disabled"),
+    ).toBeDefined();
+    expect(wrapper.find('[data-testid="field-error-issue-date"]').text()).toMatch(
+      /Issue date is not a real date/,
+    );
+    await wrapper.find('[data-testid="queue-form-ag-1"]').trigger("submit");
+    await flushPromises();
+    expect(mockedUpload).not.toHaveBeenCalled();
+  });
+
+  it("uploads the typed issue date on Enter, with no blur in between", async () => {
+    mockedList.mockResolvedValue([entry()]);
+    mockedUpload.mockResolvedValue({
+      agreementId: "ag-1",
+      trackingReference: "AM7K3QPW9Z4",
+      propertyCity: "Bengaluru",
+      agreementStartDate: "2026-01-01",
+      certificateNumberRedacted: "***234X",
+    });
+    const wrapper = await filledForm();
+    // setValue fires input only -- no blur -- and a form submit is what Enter does.
+    await wrapper.find('[data-testid="field-issue-date"]').setValue("08/01/2026");
+    await wrapper.find('[data-testid="queue-form-ag-1"]').trigger("submit");
+    await flushPromises();
+
+    expect(mockedUpload).toHaveBeenCalledTimes(1);
+    expect(mockedUpload.mock.calls[0][2].issueDate).toBe("2026-01-08");
+  });
+
+  it("does not submit the form when the calendar is opened or a day is picked", async () => {
+    mockedList.mockResolvedValue([entry()]);
+    const wrapper = await filledForm();
+    await wrapper
+      .find('[data-testid="date-picker-toggle-issue-date"]')
+      .trigger("click");
+    await wrapper.find('[data-iso="2026-01-20"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedUpload).not.toHaveBeenCalled();
+    expect(
+      (wrapper.find('[data-testid="field-issue-date"]').element as HTMLInputElement)
+        .value,
+    ).toBe("20/01/2026");
   });
 
   it("leaves jurisdiction empty rather than guessing when the template is unresolvable", async () => {
@@ -374,7 +430,7 @@ describe("StaffConsole", () => {
       .setValue("IN-KA1234567890123");
     await wrapper
       .find('[data-testid="field-issue-date"]')
-      .setValue("2026-01-15");
+      .setValue("15/01/2026");
     await wrapper.find('[data-testid="field-duty-amount"]').setValue("500.00");
     await wrapper.find('[data-testid="field-jurisdiction"]').setValue("KA");
     const file = new File([new Uint8Array([1])], "c.png", {
@@ -499,7 +555,7 @@ describe("StaffConsole and the payment gate", () => {
       .setValue("IN-KA1234567890123");
     await wrapper
       .find('[data-testid="field-issue-date"]')
-      .setValue("2026-01-15");
+      .setValue("15/01/2026");
     await wrapper.find('[data-testid="field-duty-amount"]').setValue("500.00");
     await wrapper.find('[data-testid="field-jurisdiction"]').setValue("KA");
     const file = new File([new Uint8Array([1])], "c.png", {
