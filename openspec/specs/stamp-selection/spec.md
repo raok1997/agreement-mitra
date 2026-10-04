@@ -4,9 +4,7 @@
 The customer's view of stamp duty before paying: the quote, the bounded set of stamp values they may
 buy with a recommended default, the audited acknowledgement required to buy less than the legal duty,
 and fixing that choice once an order exists.
-
 ## Requirements
-
 ### Requirement: The customer is shown the stamp quote before paying
 
 The system SHALL show the owner of an agreement, before any payment order is created, the legal stamp duty, its line-by-line breakdown, whether registration is required, the source of the rule with its review status, and each stamp option with the total payable for it.
@@ -41,6 +39,11 @@ smallest plannable stamp value at or above the legal duty across the jurisdictio
 each single stamp paper denomination strictly below the legal duty; when no medium can plan the legal
 duty there SHALL be no recommended option and the agreement SHALL NOT be payable.
 
+Where a jurisdiction issues a stamp certificate for any amount, the planned policy therefore
+pre-selects the **exact legal duty**, and the lower denominations remain offered so the customer may
+deliberately choose a lesser value. A jurisdiction SHALL NOT be reduced to a fixed denomination when
+it can in fact issue the exact duty.
+
 Under the **single papers** offer policy, the options SHALL be exactly the single paper denominations
 the policy names, whether above or below the legal duty, with the policy's pre-selected denomination as
 the recommended option. The legal duty SHALL still be computed and shown.
@@ -58,6 +61,15 @@ the recommended option. The legal duty SHALL still be computed and shown.
 - **WHEN** an agreement with a legal duty of INR 832 is quoted
 - **THEN** the only option is a single INR 100 stamp paper, pre-selected and marked below the duty
 - **AND** no INR 832 option is offered
+
+#### Scenario: Karnataka pre-selects the exact duty and still offers an override
+
+- **GIVEN** the Karnataka catalog, whose offer policy is planned over an any-amount e-stamp medium and
+  physical paper denominations
+- **WHEN** an agreement with a legal duty of INR 1,700 is quoted
+- **THEN** the recommended, pre-selected option is INR 1,700 and is not marked below the duty
+- **AND** each physical paper denomination below INR 1,700 is offered as a further option marked below
+  the duty
 
 #### Scenario: A value not in the options is rejected
 
@@ -105,3 +117,4 @@ Once a payment order exists for an agreement, the system SHALL keep that order's
 - **WHEN** checkout is started again with a stamp value of INR 100
 - **THEN** the outstanding order with its INR 440 stamp value is returned
 - **AND** no second order is created
+
