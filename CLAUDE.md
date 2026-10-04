@@ -30,6 +30,51 @@ ROADMAP: *does it tell you something true about the system today that the archiv
 cannot?* Narrative about how the system currently behaves stays; "we finished X" does
 not.
 
+## Handling what a change uncovers — resolve where it is cheapest
+
+A review or an implementation will uncover real issues. They must be **addressed, not
+suppressed** — but most of the cost of an issue is in *deferring* it: a register row
+has to be written, read and understood by the user, and later reloaded into context,
+proposed, reviewed and applied. A three-line fix done now, while the context is loaded,
+is almost always cheaper. So triage every finding by **what it needs**, not by whether
+it is in scope:
+
+| The finding needs… | Do this |
+|---|---|
+| Nothing but a small change, context already loaded | **Fix it now.** If it is outside the CR, make it a separate change set with its own suggested commit — the CR stays clean and no backlog item is created |
+| A decision from someone outside (counsel, product) | Add it to **that person's existing list** — one counsel row per subject, not one row per question |
+| The same work as an existing register row | **Append a sentence** to that row |
+| Nothing, because the premise does not hold | Drop it with one line in the wrap-up |
+
+A **new** register row only when none of these fit, and it carries a recommended action
+so the user approves or rejects instead of analysing from scratch.
+
+**Fix the cause, not each symptom.** The most common cause of repeat findings is **the
+same fact in two places** — they drift, and every drift is a new finding. Before fixing
+a finding, ask whether it is one: two helpers computing the same count, a legal
+threshold in both a rules file and hand-typed clause text, a version pinned in the test
+harness but floating in compose. Remove the duplication, or put the rule at the boundary
+both copies share, and the whole class goes away instead of one instance.
+
+**Verify the premise before building the fix.** Is it actually a defect? A finding framed
+as a bug can be a misreading; a proposal that already descoped something usually did so
+for a reason.
+
+Worked example — `derived-tenancy-term-and-registration-warning` (since renamed `derived-tenancy-term`) (2026-10-04). A review
+flagged the capture warning as over-warning Karnataka. Three fix rounds made the threshold
+state-aware — a second copy of the rules engine in the frontend — then all of it was
+reverted on one fact: KA and TG both exempt a term below twelve months, the national line
+already. Five register rows were added along the way, every one a duplicate of an existing
+row or an issue cheap enough to fix on the spot. Final state: the overflow was fixed once at
+the input boundary (`PlausibleDates`) instead of in each date helper, the MinIO drift was
+fixed by one pin, the legal questions were appended to the existing counsel rows, and the
+CR's net register effect was one row *removed*.
+
+**`and` in a change name is a scope smell.** Two features in one CR means one of them is
+riding along without its own proposal, review or decision, and unrelated work is never
+co-shipped. That CR's `and` was a capture-time registration warning that duplicated the
+authoritative stamp-quote notice; it was split out.
+
 ## Architecture (decided — do not relitigate without a proposal)
 
 - **Backend**: Java 21 + Spring Boot 3.x, structured as a **modular monolith**
