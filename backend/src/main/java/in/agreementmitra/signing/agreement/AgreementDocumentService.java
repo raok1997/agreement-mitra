@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.RenderCapacityException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampRenderUnavailableException;
@@ -205,7 +206,7 @@ public class AgreementDocumentService {
   private static Optional<byte[]> fallBack(UUID agreementId, String reason) {
     log.info(
         "Stamping agreement {} onto its stored draft without a re-render (reason {})",
-        agreementId,
+        AgreementIds.redact(agreementId),
         reason);
     return Optional.empty();
   }
@@ -213,7 +214,10 @@ public class AgreementDocumentService {
   private Agreement find(UUID agreementId) {
     return repository
         .findById(agreementId)
-        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+        .orElseThrow(
+            () ->
+                new ResourceNotFoundException(
+                    "Agreement not found: " + AgreementIds.redact(agreementId)));
   }
 
   private DocumentProjectionResult render(UUID agreementId) {

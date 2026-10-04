@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.AgreementIds;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -78,7 +79,7 @@ public record StampQueueEntry(
   @Override
   public String toString() {
     return "StampQueueEntry{agreementId="
-        + agreementId
+        + AgreementIds.redact(agreementId)
         + ", trackingReference="
         + trackingReference
         + ", parties="

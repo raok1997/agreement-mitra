@@ -1,6 +1,7 @@
 package in.agreementmitra.signing.payment;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import in.agreementmitra.AgreementIds;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -180,6 +181,22 @@ class RazorpayClient {
     /** Whether the provider itself says this order has been paid for. */
     boolean paid() {
       return status != null && ORDER_STATUS_PAID.equalsIgnoreCase(status.trim());
+    }
+
+    /** The receipt is our agreement id: redacted, as is the order id. */
+    @Override
+    public String toString() {
+      return "ProviderOrder{id="
+          + redact(id)
+          + ", status="
+          + status
+          + ", amountMinorUnits="
+          + amountMinorUnits
+          + ", currency="
+          + currency
+          + ", receipt="
+          + AgreementIds.redactIn(receipt)
+          + "}";
     }
   }
 

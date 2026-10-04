@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
@@ -218,12 +219,15 @@ public class AgreementService {
         repository
             .findByIdForUpdate(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     try {
       agreement.claimBy(ownerIdentityId);
     } catch (IllegalStateException ownedByAnother) {
       // Owned by a different identity -> same 404 as unknown (no ownership oracle).
-      throw new ResourceNotFoundException("Agreement not found: " + agreementId);
+      throw new ResourceNotFoundException(
+          "Agreement not found: " + AgreementIds.redact(agreementId));
     }
     repository.save(agreement);
   }
@@ -258,7 +262,9 @@ public class AgreementService {
             .findByIdForUpdate(agreementId)
             .filter(a -> ownerIdentityId.equals(a.ownerIdentityId()))
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     if (signingRequestQuery.existsForAgreement(agreementId)) {
       throw ConflictException.draftFrozen();
     }
@@ -343,7 +349,9 @@ public class AgreementService {
             .findByIdForUpdate(agreementId)
             .filter(a -> a.ownerIdentityId() == null || a.ownerIdentityId().equals(identityId))
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     if (agreement.closureState() == ClosureState.CLOSED) {
       throw ConflictException.agreementClosed();
     }
@@ -568,11 +576,14 @@ public class AgreementService {
    * constraint on the certificate number rolls both back if the certificate was already spent.
    */
   @Transactional
-  public void attachStamp(UUID id, StampInfo stampInfo) {
+  public void attachStamp(UUID agreementId, StampInfo stampInfo) {
     Agreement agreement =
         repository
-            .findById(id)
-            .orElseThrow(() -> new IllegalStateException("Agreement vanished: " + id));
+            .findById(agreementId)
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Agreement vanished: " + AgreementIds.redact(agreementId)));
     agreement.attachStamp(stampInfo);
     repository.save(agreement);
   }
@@ -602,11 +613,14 @@ public class AgreementService {
 
   /** The agreement's payment state as the read/report view. 404 for an unknown agreement. */
   @Transactional(readOnly = true)
-  public PaymentStateResponse paymentView(UUID id) {
+  public PaymentStateResponse paymentView(UUID agreementId) {
     return repository
-        .findById(id)
+        .findById(agreementId)
         .map(AgreementService::toPaymentView)
-        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + id));
+        .orElseThrow(
+            () ->
+                new ResourceNotFoundException(
+                    "Agreement not found: " + AgreementIds.redact(agreementId)));
   }
 
   /**
@@ -617,11 +631,14 @@ public class AgreementService {
    */
   @Transactional
   public PaymentStateResponse recordPayment(
-      UUID id, PaymentConfirmation confirmation, UUID actorIdentityId) {
+      UUID agreementId, PaymentConfirmation confirmation, UUID actorIdentityId) {
     Agreement agreement =
         repository
-            .findByIdForUpdate(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + id));
+            .findByIdForUpdate(agreementId)
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     agreement.recordPayment(confirmation, actorIdentityId);
     return toPaymentView(repository.save(agreement));
   }
@@ -632,11 +649,14 @@ public class AgreementService {
    * invented.
    */
   @Transactional
-  public PaymentStateResponse waivePayment(UUID id, UUID actorIdentityId) {
+  public PaymentStateResponse waivePayment(UUID agreementId, UUID actorIdentityId) {
     Agreement agreement =
         repository
-            .findByIdForUpdate(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + id));
+            .findByIdForUpdate(agreementId)
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     agreement.waivePayment(actorIdentityId, Instant.now());
     return toPaymentView(repository.save(agreement));
   }
@@ -721,7 +741,10 @@ public class AgreementService {
                     agreement.closureState().name(),
                     agreement.closureReason() == null ? null : agreement.closureReason().name(),
                     agreement.closedAt()))
-        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+        .orElseThrow(
+            () ->
+                new ResourceNotFoundException(
+                    "Agreement not found: " + AgreementIds.redact(agreementId)));
   }
 
   private static PaymentStateResponse toPaymentView(Agreement agreement) {
@@ -752,7 +775,10 @@ public class AgreementService {
     Agreement agreement =
         repository
             .findById(agreementId)
-            .orElseThrow(() -> new IllegalStateException("Agreement vanished: " + agreementId));
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Agreement vanished: " + AgreementIds.redact(agreementId)));
     agreement.selectTemplate(templateId);
     repository.save(agreement);
   }

@@ -11,13 +11,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import ch.qos.logback.classic.Level;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.support.LogCapture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Webhook intake: what verifies, what does not, and what happens afterwards.
@@ -30,6 +29,9 @@ class RazorpayWebhookServiceTest {
   private static final String WEBHOOK_KEY = "wh-mac-1";
   private static final String ORDER_ID = "order_RZP9f3k1";
   private static final String PAYMENT_ID = "pay_RZP8b2j0";
+
+  @RegisterExtension
+  final LogCapture logs = LogCapture.of(RazorpayWebhookService.class, Level.DEBUG);
 
   private RazorpayClient razorpay;
   private PaymentOrderService orderService;
@@ -192,25 +194,17 @@ class RazorpayWebhookServiceTest {
 
   @Test
   void neitherThePayloadNorTheIdentifiersNorTheCredentialReachTheLogs() {
-    Logger logger = (Logger) LoggerFactory.getLogger(RazorpayWebhookService.class);
-    ListAppender<ILoggingEvent> appender = new ListAppender<>();
-    appender.start();
-    logger.addAppender(appender);
-    try {
-      String body = paymentCapturedBody(49_900L);
-      webhooks.handle(body, sign(body)); // verified
-      webhooks.handle(body, "forged"); // rejected
+    String body = paymentCapturedBody(49_900L);
+    webhooks.handle(body, sign(body)); // verified
+    webhooks.handle(body, "forged"); // rejected
 
-      String logged =
-          appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", String::concat);
-
-      assertThat(logged).doesNotContain(ORDER_ID); // redacted to a trailing fragment
-      assertThat(logged).doesNotContain(PAYMENT_ID);
-      assertThat(logged).doesNotContain(WEBHOOK_KEY); // the credential, never
-      assertThat(logged).doesNotContain("49900"); // no amounts
-      assertThat(logged).doesNotContain("payload"); // never the body verbatim
-    } finally {
-      logger.detachAppender(appender);
-    }
+    // The rejected path logs at WARN, so only a DEBUG event proves the verified path was observed.
+    assertThat(logs.hasLevel(Level.DEBUG)).isTrue();
+    String logged = String.join("\n", logs.messages());
+    assertThat(logged).doesNotContain(ORDER_ID); // redacted to a trailing fragment
+    assertThat(logged).doesNotContain(PAYMENT_ID);
+    assertThat(logged).doesNotContain(WEBHOOK_KEY); // the credential, never
+    assertThat(logged).doesNotContain("49900"); // no amounts
+    assertThat(logged).doesNotContain("payload"); // never the body verbatim
   }
 }

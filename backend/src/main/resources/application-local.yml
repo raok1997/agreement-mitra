@@ -24,3 +24,8 @@ auth:
 rules:
   stamp-duty:
     allow-unreviewed: ${RULES_STAMP_DUTY_ALLOW_UNREVIEWED:true}
+
+# Local dev keeps DEBUG; every other profile inherits INFO from application.yml.
+logging:
+  level:
+    in.agreementmitra: DEBUG

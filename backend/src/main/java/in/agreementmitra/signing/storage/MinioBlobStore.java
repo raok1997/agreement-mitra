@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.storage;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.BlobStore;
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
@@ -39,9 +40,9 @@ class MinioBlobStore implements BlobStore {
           PutObjectArgs.builder().bucket(bucket).object(key).stream(in, bytes.length, -1)
               .contentType(contentType)
               .build());
-      log.debug("Stored object {} ({} bytes)", key, bytes.length);
+      log.debug("Stored object {} ({} bytes)", AgreementIds.redactIn(key), bytes.length);
     } catch (Exception e) {
-      throw new IllegalStateException("Failed to store object " + key, e);
+      throw new IllegalStateException("Failed to store object " + AgreementIds.redactIn(key), e);
     }
   }
 
@@ -51,7 +52,7 @@ class MinioBlobStore implements BlobStore {
         client.getObject(GetObjectArgs.builder().bucket(bucket).object(key).build())) {
       return in.readAllBytes();
     } catch (Exception e) {
-      throw new IllegalStateException("Failed to read object " + key, e);
+      throw new IllegalStateException("Failed to read object " + AgreementIds.redactIn(key), e);
     }
   }
 

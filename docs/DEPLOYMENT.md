@@ -304,7 +304,8 @@ is the part of the configuration that actually needs reviewing.
 | `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `DISABLED` to bring the box up before the gateway account exists. |
 | `MAIL_PROVIDER` | `stub` | The email channel is enabled by default, so delivery reports success and sends nothing. |
 | `ESIGN_PROVIDER` | `zoop` | Correct, but `ZOOP_RESPONSE_URL`/`ZOOP_REDIRECT_URL` default **blank**: the callback never arrives and signatures complete only via the reconciliation job. |
-| `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `DEBUG` | Debug logging in production, on identity/legal infra. |
+| `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `INFO` | Correct. Set `DEBUG` only deliberately, for a bounded diagnosis: application lines redact agreement ids to an 8-character prefix, but debug output is still more than production needs. **Do not** raise framework loggers instead -- `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG` logs request URIs (`/api/agreements/<id>/...`), Hibernate bind `TRACE` logs parameter values, root `DEBUG` does both, and enabling a Caddy `log` directive records request URIs; each writes raw agreement ids. |
+| `DB_URL` | `...?logServerErrorDetail=false` | Correct. An override must keep `logServerErrorDetail=false`, or a unique violation logs the raw agreement id (Postgres `DETAIL`) at ERROR. |
 
 ### Paid fulfilment is off by default, and that is easy to miss
 

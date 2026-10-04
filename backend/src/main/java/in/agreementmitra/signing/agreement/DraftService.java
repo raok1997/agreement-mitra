@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
@@ -59,7 +60,9 @@ public class DraftService {
         repository
             .findById(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
 
     validatePdf(bytes);
 
@@ -71,7 +74,7 @@ public class DraftService {
     blobStore.put(key, bytes, CONTENT_TYPE_PDF);
     agreement.attachDraft(key); // managed entity — flushed on tx commit
 
-    log.debug("Draft stored for agreement {}", agreementId);
+    log.debug("Draft stored for agreement {}", AgreementIds.redact(agreementId));
   }
 
   /**

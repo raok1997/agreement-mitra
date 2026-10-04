@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentState;
@@ -601,6 +602,6 @@ class Agreement implements Persistable<UUID> {
   @Override
   public String toString() {
     // Id only — no signer PII (the signer collection holds name/email).
-    return "Agreement{id=" + id + "}";
+    return "Agreement{id=" + AgreementIds.redact(id) + "}";
   }
 }

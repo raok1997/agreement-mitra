@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.delivery;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.ClosureReason;
@@ -265,7 +266,7 @@ public class SignedDocumentDeliveryService {
     if (agreementService.close(view.agreementId(), ClosureReason.COMPLETED)) {
       log.info(
           "Agreement {} closed as completed: signed and delivered to every party",
-          view.agreementId());
+          AgreementIds.redact(view.agreementId()));
     }
   }
 
@@ -287,7 +288,8 @@ public class SignedDocumentDeliveryService {
           default -> ClosureReason.ABANDONED_SIGNING_FAILED;
         };
     if (agreementService.close(view.agreementId(), reason)) {
-      log.info("Agreement {} closed as abandoned ({})", view.agreementId(), reason);
+      log.info(
+          "Agreement {} closed as abandoned ({})", AgreementIds.redact(view.agreementId()), reason);
     }
   }
 

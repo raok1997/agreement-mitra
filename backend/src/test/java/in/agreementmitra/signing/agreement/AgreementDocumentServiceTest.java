@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.RenderCapacityException;
 import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.documents.DocumentRenderException;
@@ -21,6 +23,7 @@ import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
 import in.agreementmitra.documents.api.TemplateFormApi;
+import in.agreementmitra.support.LogCapture;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -29,6 +32,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -44,6 +48,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  */
 @ExtendWith(MockitoExtension.class)
 class AgreementDocumentServiceTest {
+
+  @RegisterExtension
+  final LogCapture logs = LogCapture.of(AgreementDocumentService.class, Level.INFO);
 
   @Mock private AgreementRepository repository;
   @Mock private in.agreementmitra.documents.api.DocumentProjectionApi documentProjection;
@@ -275,6 +282,14 @@ class AgreementDocumentServiceTest {
 
     assertThat(service.renderForStamp(id, new BigDecimal("100.00"))).isEmpty();
     verifyNoInteractions(documentProjection, templateForms);
+
+    // The INFO fallback line names the agreement only by its redacted id.
+    assertThat(logs.messages())
+        .filteredOn(m -> m.contains("without a re-render"))
+        .singleElement()
+        .asString()
+        .contains(AgreementIds.redact(agreement.getId()))
+        .doesNotContain(agreement.getId().toString());
   }
 
   @Test

@@ -1,5 +1,6 @@
 package in.agreementmitra.signing;
 
+import in.agreementmitra.AgreementIds;
 import java.util.List;
 
 /**
@@ -13,6 +14,18 @@ import java.util.List;
  * @param invitees the signers to invite, in a stable order
  */
 public record SignRequest(String agreementId, byte[] unsignedPdf, List<Invitee> invitees) {
+
+  /** The agreement id redacted, the PDF and invitees as sizes - never a signer's name or email. */
+  @Override
+  public String toString() {
+    return "SignRequest{agreementId="
+        + AgreementIds.redactIn(agreementId)
+        + ", unsignedPdf="
+        + (unsignedPdf == null ? 0 : unsignedPdf.length)
+        + " bytes, invitees="
+        + (invitees == null ? 0 : invitees.size())
+        + "}";
+  }
 
   /**
    * Where one signature goes on the instrument.

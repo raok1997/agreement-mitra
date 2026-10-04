@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.DocumentProjectionResult;
@@ -104,10 +105,14 @@ public class AgreementController {
    * which the filter chain cannot see.
    */
   @GetMapping("/{id}")
-  public AgreementResponse get(@PathVariable UUID id, @AuthenticationPrincipal UUID identityId) {
+  public AgreementResponse get(
+      @PathVariable("id") UUID agreementId, @AuthenticationPrincipal UUID identityId) {
     return agreementService
-        .findByIdForReader(id, identityId)
-        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + id));
+        .findByIdForReader(agreementId, identityId)
+        .orElseThrow(
+            () ->
+                new ResourceNotFoundException(
+                    "Agreement not found: " + AgreementIds.redact(agreementId)));
   }
 
   /**
@@ -117,11 +122,15 @@ public class AgreementController {
    * Returns the (now owner-scoped) agreement.
    */
   @PostMapping("/{id}/claim")
-  public AgreementResponse claim(@PathVariable UUID id, @AuthenticationPrincipal UUID identityId) {
-    agreementService.claim(id, identityId);
+  public AgreementResponse claim(
+      @PathVariable("id") UUID agreementId, @AuthenticationPrincipal UUID identityId) {
+    agreementService.claim(agreementId, identityId);
     return agreementService
-        .findByIdForReader(id, identityId)
-        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + id));
+        .findByIdForReader(agreementId, identityId)
+        .orElseThrow(
+            () ->
+                new ResourceNotFoundException(
+                    "Agreement not found: " + AgreementIds.redact(agreementId)));
   }
 
   /**

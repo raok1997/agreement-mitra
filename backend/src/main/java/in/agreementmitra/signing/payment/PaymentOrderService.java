@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.payment;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampChoiceInvalidException;
@@ -121,7 +122,9 @@ public class PaymentOrderService {
         agreementService
             .findById(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
 
     Map<Role, Integer> seenPerRole = new EnumMap<>(Role.class);
     List<String> unreachable = new ArrayList<>();
@@ -195,7 +198,9 @@ public class PaymentOrderService {
         quoting
             .evaluate(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     if (!evaluation.payable()) {
       // jurisdiction.require just passed, so only a concurrent rule change lands here.
       throw ConflictException.jurisdictionUnsupported(
@@ -314,7 +319,9 @@ public class PaymentOrderService {
         quoting
             .evaluate(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     if (!evaluation.payable()) {
       return StampQuoteResponse.unavailable(agreementId, evaluation.status().name());
     }
@@ -541,7 +548,8 @@ public class PaymentOrderService {
             ? agreementService.paymentState(agreementId).isPresent()
             : agreementService.isAccessibleBy(agreementId, callerIdentityId);
     if (!permitted) {
-      throw new ResourceNotFoundException("Agreement not found: " + agreementId);
+      throw new ResourceNotFoundException(
+          "Agreement not found: " + AgreementIds.redact(agreementId));
     }
   }
 

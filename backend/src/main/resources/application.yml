@@ -15,7 +15,10 @@ spring:
       max-file-size: 10MB
       max-request-size: 11MB
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra}
+    # logServerErrorDetail=false keeps Postgres' DETAIL line (e.g. `Key (agreement_id)=(<uuid>)` on
+    # a unique violation) out of the driver message Hibernate logs at ERROR. The agreement id is a
+    # bearer capability (agreement-id-debug-logging D9). An overriding DB_URL must keep it.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra?logServerErrorDetail=false}
     username: ${DB_USER:agreementmitra}
     password: ${DB_PASSWORD:agreementmitra}
   jpa:
@@ -405,4 +408,6 @@ abuse:
 
 logging:
   level:
-    in.agreementmitra: DEBUG
+    # INFO outside `local` (agreement-id-debug-logging D5): DEBUG on identity/legal infra is opt-in
+    # per deployment via LOGGING_LEVEL_IN_AGREEMENTMITRA, never the shipped default.
+    in.agreementmitra: INFO

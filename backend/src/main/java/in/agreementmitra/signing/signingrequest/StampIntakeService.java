@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.signingrequest;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
@@ -304,7 +305,7 @@ public class StampIntakeService {
     auditor.record(staffIdentityId, agreementId, reference, OUTCOME_ACCEPTED);
     log.debug(
         "e-Stamp attached to agreement {} (certificate {})",
-        agreementId,
+        AgreementIds.redact(agreementId),
         CertificateNumbers.redact(result.certificateNumber()));
     StampIntakeResponse attached =
         StampIntakeResponse.stamped(

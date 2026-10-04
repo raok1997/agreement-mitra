@@ -14,6 +14,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.signing.DocumentStatusView;
@@ -21,6 +22,7 @@ import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
 import in.agreementmitra.signing.SignedDocument;
+import in.agreementmitra.support.LogCapture;
 import in.agreementmitra.support.TestPdfs;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,6 +33,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -47,6 +50,8 @@ class ZoopEsignProviderWireMockTest {
   private static final String GROUP_URL = "/contract/esign/v5/fetch/group";
   private static final String AUDIT_URL = "/contract/esign/v5/fetch/audit-trail";
   private static final String AGREEMENT_ID = "1a111111-2b22-3c33-4d44-5e5555555555";
+
+  @RegisterExtension final LogCapture logs = LogCapture.of(ZoopEsignProvider.class, Level.DEBUG);
 
   private WireMockServer server;
   private ZoopEsignProvider adapter;
@@ -282,25 +287,13 @@ class ZoopEsignProviderWireMockTest {
     // Placement reads a legal instrument and computes positions on it. Neither the token nor a
     // coordinate may reach the log: a coordinate is tied to a named party's signature zone, and
     // the surrounding lines are the document itself.
-    ch.qos.logback.classic.Logger logger =
-        (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ZoopEsignProvider.class);
-    ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
-        new ch.qos.logback.core.read.ListAppender<>();
-    appender.start();
-    logger.addAppender(appender);
-    try {
-      stubInit();
+    stubInit();
 
-      adapter.createSignRequest(twoSignerRequest(TestPdfs.withEsignAnchors()));
+    adapter.createSignRequest(twoSignerRequest(TestPdfs.withEsignAnchors()));
 
-      String logged =
-          appender.list.stream()
-              .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
-              .reduce("", (a, b) -> a + "\n" + b);
-      assertThat(logged).doesNotContain("esign:").doesNotContain("x_coord").doesNotContain("Asha");
-    } finally {
-      logger.detachAppender(appender);
-    }
+    assertThat(logs.hasLevel(Level.DEBUG)).isTrue();
+    String logged = String.join("\n", logs.messages());
+    assertThat(logged).doesNotContain("esign:").doesNotContain("x_coord").doesNotContain("Asha");
   }
 
   @Test
@@ -482,56 +475,44 @@ class ZoopEsignProviderWireMockTest {
 
   @Test
   void neitherIdentifiersUrlsNorEkycFieldsReachTheLogs() {
-    ch.qos.logback.classic.Logger logger =
-        (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ZoopEsignProvider.class);
-    ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
-        new ch.qos.logback.core.read.ListAppender<>();
-    appender.start();
-    logger.addAppender(appender);
-    try {
-      server.stubFor(
-          post(urlEqualTo(INIT_URL))
-              .willReturn(
-                  okJson(
-                      """
-                      {"success":true,"group_id":"GRP-SECRET-9876",
-                       "webhook_security_key":"WHK-SECRET-1",
-                       "expires_at":"2026-08-10T10:00:00Z",
-                       "requests":[
-                         {"request_id":"REQ-SECRET-1","signer_email":"asha@example.com",
-                          "signing_order":1,"signing_url":"https://esign.zoop.plus/s/SECRETURL"},
-                         {"request_id":"REQ-SECRET-2","signer_email":"tara@example.com",
-                          "signing_order":2,"signing_url":"https://esign.zoop.plus/s/SECRETURL2"}]}
-                      """)));
-      server.stubFor(
-          get(urlPathEqualTo(GROUP_URL))
-              .willReturn(
-                  okJson(
-                      """
-                      {"success":true,"group_id":"GRP-SECRET-9876","transaction_status":"SIGNED",
-                       "requests":[{"request_id":"REQ-SECRET-1","status":"SIGNED",
-                                    "signer":{"fetched_name":"ASHA KUMARI","given_name":"ASHA",
-                                              "postal_code":"560001","name_match_score":"0.98"}}]}
-                      """)));
+    server.stubFor(
+        post(urlEqualTo(INIT_URL))
+            .willReturn(
+                okJson(
+                    """
+                    {"success":true,"group_id":"GRP-SECRET-9876",
+                     "webhook_security_key":"WHK-SECRET-1",
+                     "expires_at":"2026-08-10T10:00:00Z",
+                     "requests":[
+                       {"request_id":"REQ-SECRET-1","signer_email":"asha@example.com",
+                        "signing_order":1,"signing_url":"https://esign.zoop.plus/s/SECRETURL"},
+                       {"request_id":"REQ-SECRET-2","signer_email":"tara@example.com",
+                        "signing_order":2,"signing_url":"https://esign.zoop.plus/s/SECRETURL2"}]}
+                    """)));
+    server.stubFor(
+        get(urlPathEqualTo(GROUP_URL))
+            .willReturn(
+                okJson(
+                    """
+                    {"success":true,"group_id":"GRP-SECRET-9876","transaction_status":"SIGNED",
+                     "requests":[{"request_id":"REQ-SECRET-1","status":"SIGNED",
+                                  "signer":{"fetched_name":"ASHA KUMARI","given_name":"ASHA",
+                                            "postal_code":"560001","name_match_score":"0.98"}}]}
+                    """)));
 
-      adapter.createSignRequest(twoSignerRequest(TestPdfs.withEsignAnchors()));
-      adapter.getStatus("GRP-SECRET-9876");
+    adapter.createSignRequest(twoSignerRequest(TestPdfs.withEsignAnchors()));
+    adapter.getStatus("GRP-SECRET-9876");
 
-      String logged =
-          appender.list.stream()
-              .map(e -> e.getFormattedMessage())
-              .reduce("", (a, b) -> a + "\n" + b);
-      assertThat(logged).doesNotContain("GRP-SECRET-9876"); // transaction id redacted
-      assertThat(logged).doesNotContain("REQ-SECRET-1"); // per-signer id never logged
-      assertThat(logged).doesNotContain("WHK-SECRET-1"); // the credential, never
-      assertThat(logged).doesNotContain("SECRETURL"); // signing URLs are bearer capabilities
-      // eKYC-derived signer data returned by the vendor must never surface in a log line.
-      assertThat(logged).doesNotContain("ASHA KUMARI");
-      assertThat(logged).doesNotContain("560001");
-      assertThat(logged).doesNotContain("0.98");
-      assertThat(logged).doesNotContain("asha@example.com");
-    } finally {
-      logger.detachAppender(appender);
-    }
+    assertThat(logs.hasLevel(Level.DEBUG)).isTrue();
+    String logged = String.join("\n", logs.messages());
+    assertThat(logged).doesNotContain("GRP-SECRET-9876"); // transaction id redacted
+    assertThat(logged).doesNotContain("REQ-SECRET-1"); // per-signer id never logged
+    assertThat(logged).doesNotContain("WHK-SECRET-1"); // the credential, never
+    assertThat(logged).doesNotContain("SECRETURL"); // signing URLs are bearer capabilities
+    // eKYC-derived signer data returned by the vendor must never surface in a log line.
+    assertThat(logged).doesNotContain("ASHA KUMARI");
+    assertThat(logged).doesNotContain("560001");
+    assertThat(logged).doesNotContain("0.98");
+    assertThat(logged).doesNotContain("asha@example.com");
   }
 }
