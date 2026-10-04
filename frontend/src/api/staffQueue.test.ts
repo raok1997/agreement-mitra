@@ -5,6 +5,7 @@ import {
   StaffQueueHttpError,
   type StampQueueEntry,
 } from "./staffQueue";
+import { hasProblemType, PROBLEM } from "./problems";
 
 // A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
 vi.mock("./cookies", () => ({
@@ -160,7 +161,10 @@ describe("staff queue api", () => {
         dutyAmount: "500.00",
         jurisdiction: "KA",
       }),
-    ).rejects.toMatchObject({ status: 409, paymentRequired: true });
+    ).rejects.toMatchObject({
+      status: 409,
+      problemType: "urn:agreementmitra:problem:payment-required",
+    });
   });
 
   it("does not mistake another 409 for a payment refusal", async () => {
@@ -186,6 +190,65 @@ describe("staff queue api", () => {
         dutyAmount: "500.00",
         jurisdiction: "KA",
       }),
-    ).rejects.toMatchObject({ paymentRequired: false });
+    ).rejects.toSatisfy(
+      (e: unknown) => !hasProblemType(e, PROBLEM.paymentRequired),
+    );
+  });
+});
+
+// Both calls carry the problem type, not only the upload (D2). Literal server URNs.
+describe("staff queue api: every refusal carries its problem type", () => {
+  const scan = new File([new Uint8Array([1])], "c.png", { type: "image/png" });
+  const certificate = {
+    certificateNumber: "IN-KA12345678901234X",
+    issueDate: "2026-01-15",
+    dutyAmount: "500.00",
+    jurisdiction: "KA",
+  };
+  const calls: [string, () => Promise<unknown>][] = [
+    ["listStampQueue", () => listStampQueue()],
+    [
+      "uploadStampForEntry",
+      () => uploadStampForEntry(entry(), scan, certificate),
+    ],
+  ];
+
+  it.each(calls)(
+    "%s keeps the status and exact type of a 409",
+    async (_, call) => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: "urn:agreementmitra:problem:payment-required",
+            }),
+            {
+              status: 409,
+              headers: { "Content-Type": "application/problem+json" },
+            },
+          ),
+        ),
+      );
+
+      const failure = await call().catch((e) => e);
+
+      expect(failure).toBeInstanceOf(StaffQueueHttpError);
+      expect(failure.status).toBe(409);
+      expect(failure.problemType).toBe(
+        "urn:agreementmitra:problem:payment-required",
+      );
+    },
+  );
+
+  it("degrades to a null type for a non-JSON body", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("<html>bad gateway</html>", { status: 502 }),
+    );
+
+    const failure = await listStampQueue().catch((e) => e);
+
+    expect(failure).toBeInstanceOf(StaffQueueHttpError);
+    expect(failure.status).toBe(502);
+    expect(failure.problemType).toBeNull();
   });
 });

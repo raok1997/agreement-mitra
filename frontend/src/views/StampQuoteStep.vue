@@ -17,6 +17,10 @@ import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
 import { busyMessage } from "../api/http";
 import {
+  JURISDICTION_UNSUPPORTED_MESSAGE,
+  STAMP_UNPLANNABLE_MESSAGE,
+} from "./refusalMessages";
+import {
   getStampQuote,
   selectionFor,
   type StampQuote,
@@ -170,9 +174,14 @@ function confirm(): void {
     </p>
 
     <div v-else-if="quote && !quote.available" class="mt-3 space-y-3">
+      <!-- UNPLANNABLE is a supported state whose duty no stamp paper covers, not a jurisdiction
+           refusal; every other unavailable status is the jurisdiction gate stated ahead of time. -->
       <p class="text-sm text-slate-700" data-testid="stamp-quote-unavailable">
-        Stamping is not available for this agreement yet. You can still preview
-        and download the draft free of charge.
+        {{
+          quote.status === "UNPLANNABLE"
+            ? STAMP_UNPLANNABLE_MESSAGE
+            : JURISDICTION_UNSUPPORTED_MESSAGE
+        }}
       </p>
     </div>
 

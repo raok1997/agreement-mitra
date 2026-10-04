@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
 import { busyMessage } from "../api/http";
+import { hasProblemType, PROBLEM } from "../api/problems";
 import {
   listStampQueue,
   uploadStampForEntry,
@@ -255,7 +256,10 @@ async function submit(entry: StampQueueEntry): Promise<void> {
     // certificate that is perfectly fine.
     if (busyMessage(e)) {
       submitError.value = busyMessage(e);
-    } else if (e instanceof StaffQueueHttpError && e.paymentRequired) {
+    } else if (
+      e instanceof StaffQueueHttpError &&
+      hasProblemType(e, PROBLEM.paymentRequired)
+    ) {
       submitError.value =
         "Refused: this order has not been paid for. Payment must clear before an e-stamp is bought, or a staff member must waive it.";
     } else if (e instanceof StaffQueueHttpError && e.status === 409) {

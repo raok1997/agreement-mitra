@@ -14,7 +14,8 @@
 // Card, UPI, netbanking and wallet details are collected entirely inside the provider's hosted
 // checkout. They never pass through our code, so nothing here can accept, proxy, store, or log one.
 
-import { apiFetch } from "./http";
+import { apiFetch, CustomerFacingError } from "./http";
+import { problemTypeOf } from "./problems";
 import type { StampSelection } from "./stampQuote";
 
 const BASE = "/api";
@@ -50,11 +51,23 @@ export interface PaymentProgress {
   stampValueMinorUnits?: number | null;
 }
 
-/** An Error carrying the HTTP status so callers can distinguish 404 (not yours) from the rest. */
+/**
+ * An Error carrying the HTTP status so callers can distinguish 404 (not yours) from the rest, and
+ * the RFC 9457 problem `type` so a refusal such as the jurisdiction gate's re-check at checkout is
+ * recognised exactly as it is when finalise refuses it.
+ */
 export class PaymentHttpError extends Error {
-  constructor(public readonly status: number) {
+  constructor(
+    public readonly status: number,
+    public readonly problemType: string | null = null,
+  ) {
     super(`Payment request failed: ${status}`);
     this.name = "PaymentHttpError";
+  }
+
+  /** The one way to build this error from a refusal: it always carries the problem type. */
+  static async from(res: Response): Promise<PaymentHttpError> {
+    return new this(res.status, await problemTypeOf(res));
   }
 }
 
@@ -82,7 +95,7 @@ export async function startCheckout(
         : {}),
     },
   );
-  if (!res.ok) throw new PaymentHttpError(res.status);
+  if (!res.ok) throw await PaymentHttpError.from(res);
   return res.json();
 }
 
@@ -91,7 +104,7 @@ export async function getPaymentProgress(
   agreementId: string,
 ): Promise<PaymentProgress> {
   const res = await apiFetch(`${BASE}/agreements/${agreementId}/payment`);
-  if (!res.ok) throw new PaymentHttpError(res.status);
+  if (!res.ok) throw await PaymentHttpError.from(res);
   return res.json();
 }
 
@@ -123,7 +136,7 @@ export async function reportCheckoutResult(
       }),
     },
   );
-  if (!res.ok) throw new PaymentHttpError(res.status);
+  if (!res.ok) throw await PaymentHttpError.from(res);
   return res.json();
 }
 
@@ -158,7 +171,7 @@ export async function loadCheckoutScript(): Promise<RazorpayConstructor> {
     if (existing) {
       existing.addEventListener("load", () => resolve());
       existing.addEventListener("error", () =>
-        reject(new Error("Could not load the payment window.")),
+        reject(new CustomerFacingError("Could not load the payment window.")),
       );
       return;
     }
@@ -167,10 +180,11 @@ export async function loadCheckoutScript(): Promise<RazorpayConstructor> {
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () =>
-      reject(new Error("Could not load the payment window."));
+      reject(new CustomerFacingError("Could not load the payment window."));
     document.head.appendChild(script);
   });
-  if (!window.Razorpay) throw new Error("Could not load the payment window.");
+  if (!window.Razorpay)
+    throw new CustomerFacingError("Could not load the payment window.");
   return window.Razorpay;
 }
 

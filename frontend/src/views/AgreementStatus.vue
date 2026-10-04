@@ -25,6 +25,11 @@ import {
 } from "../api/stampQuote";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
+import { hasProblemType, PROBLEM } from "../api/problems";
+import {
+  customerMessage,
+  JURISDICTION_UNSUPPORTED_MESSAGE,
+} from "./refusalMessages";
 
 // The landing behind the emailed link. It answers "where has my agreement got to?" from three
 // server reads and nothing else: the agreement (already loaded by the shell, which owns the
@@ -307,9 +312,12 @@ async function payWith(selection: StampSelection): Promise<void> {
       selection,
     });
   } catch (e) {
-    payError.value =
-      busyMessage(e) ??
-      "Payment cannot be started yet. Contact support quoting your reference.";
+    payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
+      ? JURISDICTION_UNSUPPORTED_MESSAGE
+      : customerMessage(
+          e,
+          "Payment cannot be started yet. Contact support quoting your reference.",
+        );
   } finally {
     paying.value = false;
   }

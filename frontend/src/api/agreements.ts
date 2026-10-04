@@ -3,6 +3,7 @@
 // Kept here with the other API modules -- components never call fetch directly.
 
 import { apiFetch } from "./http";
+import { problemTypeOf } from "./problems";
 import { type AgreementView, type CreateAgreementInput } from "./client";
 
 const BASE = "/api";
@@ -42,36 +43,16 @@ export class AgreementHttpError extends Error {
     this.name = "AgreementHttpError";
   }
 
-  /** Whether the refusal was the contacts freeze: payment is settled, so a retry is futile. */
-  get contactsFrozen(): boolean {
-    return !!this.problemType?.endsWith("contacts-frozen");
-  }
-
-  /**
-   * Whether the refusal was the jurisdiction gate: this agreement's state cannot be stamped or
-   * eSigned here. Like the contacts freeze, a retry can never succeed -- but for a different
-   * reason and with a different remedy, so it needs its own message rather than the generic
-   * "could not start payment".
-   */
-  get jurisdictionUnsupported(): boolean {
-    return !!this.problemType?.endsWith("jurisdiction-unsupported");
-  }
-}
-
-/** Read the problem `type` from an RFC 9457 body, or null when the body is not that shape. */
-async function problemTypeOf(res: Response): Promise<string | null> {
-  try {
-    const body = await res.json();
-    return typeof body?.type === "string" ? body.type : null;
-  } catch {
-    return null;
+  /** The one way to build this error from a refusal: it always carries the problem type. */
+  static async from(res: Response): Promise<AgreementHttpError> {
+    return new this(res.status, await problemTypeOf(res));
   }
 }
 
 /** List the signed-in caller's agreements, most-recent first. Requires a live session. */
 export async function listMyAgreements(): Promise<AgreementSummary[]> {
   const res = await apiFetch(`${BASE}/agreements`);
-  if (!res.ok) throw new AgreementHttpError(res.status);
+  if (!res.ok) throw await AgreementHttpError.from(res);
   return res.json();
 }
 
@@ -80,14 +61,14 @@ export async function claimAgreement(id: string): Promise<AgreementView> {
   const res = await apiFetch(`${BASE}/agreements/${id}/claim`, {
     method: "POST",
   });
-  if (!res.ok) throw new AgreementHttpError(res.status);
+  if (!res.ok) throw await AgreementHttpError.from(res);
   return res.json();
 }
 
 /** Read one owned agreement to prefill the edit form. 404 (as AgreementHttpError) if not the owner. */
 export async function getAgreement(id: string): Promise<AgreementView> {
   const res = await apiFetch(`${BASE}/agreements/${id}`);
-  if (!res.ok) throw new AgreementHttpError(res.status);
+  if (!res.ok) throw await AgreementHttpError.from(res);
   return res.json();
 }
 
@@ -106,7 +87,7 @@ export async function finaliseAgreement(id: string): Promise<FinaliseResult> {
   const res = await apiFetch(`${BASE}/agreements/${id}/finalise`, {
     method: "POST",
   });
-  if (!res.ok) throw new AgreementHttpError(res.status);
+  if (!res.ok) throw await AgreementHttpError.from(res);
   return res.json();
 }
 
@@ -120,7 +101,7 @@ export async function updateAgreement(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new AgreementHttpError(res.status);
+  if (!res.ok) throw await AgreementHttpError.from(res);
   return res.json();
 }
 
@@ -154,7 +135,7 @@ export async function updateAgreementContacts(
     body: JSON.stringify({ contacts }),
   });
   if (!res.ok) {
-    throw new AgreementHttpError(res.status, await problemTypeOf(res));
+    throw await AgreementHttpError.from(res);
   }
   return res.json();
 }

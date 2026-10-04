@@ -17,7 +17,6 @@ import {
   type Role,
 } from "../api/client";
 import {
-  AgreementHttpError,
   claimAgreement,
   finaliseAgreement,
   getAgreement,
@@ -39,6 +38,12 @@ import {
 } from "../api/payments";
 import { isSignedIn, whenReady } from "../api/authStore";
 import { busyMessage } from "../api/http";
+import { hasProblemType, PROBLEM } from "../api/problems";
+import {
+  customerMessage,
+  JURISDICTION_UNSUPPORTED_MESSAGE,
+  TERMS_FROZEN_MESSAGE,
+} from "./refusalMessages";
 import {
   fetchDocumentPreviewHtml,
   fetchDocumentPreviewPdf,
@@ -747,8 +752,10 @@ async function saveAndContinue(): Promise<void> {
     }
   } catch (e) {
     saved.value = false;
-    saveError.value =
-      e instanceof Error ? e.message : "Could not save. Please try again.";
+    // An edit refused because the order is already placed can never succeed, so say why.
+    saveError.value = hasProblemType(e, PROBLEM.draftFrozen)
+      ? TERMS_FROZEN_MESSAGE
+      : customerMessage(e, "Could not save. Please try again.");
   } finally {
     saving.value = false;
   }
@@ -910,11 +917,12 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
     // The contacts freeze is keyed on PAYMENT, not on the order existing, so this is reachable only
     // once the money is settled. "Please try again" would be a lie there: the freeze is permanent
     // and retrying refuses forever, so the message has to name the real condition instead.
-    contactError.value =
-      busyMessage(e) ??
-      (e instanceof AgreementHttpError && e.contactsFrozen
-        ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
-        : "Could not save those contact details. Please try again.");
+    contactError.value = hasProblemType(e, PROBLEM.contactsFrozen)
+      ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
+      : customerMessage(
+          e,
+          "Could not save those contact details. Please try again.",
+        );
   } finally {
     contactSaving.value = false;
   }
@@ -959,17 +967,11 @@ async function finaliseAndPay(selection: StampSelection): Promise<void> {
       paymentConfirmed.value = true;
     }
   } catch (e) {
-    if (e instanceof AgreementHttpError && e.jurisdictionUnsupported) {
-      // A retry can never succeed, so do not invite one: say what this agreement CAN still do.
-      payError.value =
-        "Stamping and eSign are not yet available for this agreement's jurisdiction. You can " +
-        "still preview and download the draft free of charge.";
-    } else {
-      payError.value =
-        e instanceof Error && e.message
-          ? e.message
-          : "Could not start payment. Please try again.";
-    }
+    // Finalise and the checkout re-gate refuse an unsupported jurisdiction with the same type. A
+    // retry can never succeed, so do not invite one: say what this agreement CAN still do.
+    payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
+      ? JURISDICTION_UNSUPPORTED_MESSAGE
+      : customerMessage(e, "Could not start payment. Please try again.");
   } finally {
     paying.value = false;
   }

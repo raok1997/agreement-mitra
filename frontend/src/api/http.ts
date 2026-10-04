@@ -11,22 +11,33 @@
 // edge 5xx -- is returned unchanged, exactly as before.
 
 import { readCookie } from "./cookies";
+import { PROBLEM } from "./problems";
 
 const SECURE_CSRF_COOKIE = "__Host-XSRF-TOKEN";
 const INSECURE_CSRF_COOKIE = "XSRF-TOKEN";
 const CSRF_HEADER = "X-XSRF-TOKEN";
-const CSRF_PROBLEM_TYPE = "urn:agreementmitra:problem:csrf";
 const CSRF_BOOTSTRAP = "/api/auth/csrf";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
-const RENDER_BUSY_PROBLEM_TYPE = "urn:agreementmitra:problem:render-busy";
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * An error whose message is written for customers, so a view may show it as is. Every other error
+ * -- an API HTTP error carrying a status string, a failed fetch -- gets the view's generic message
+ * instead (agreement-error-problem-type-plumbing D4). A guard test limits where one is constructed.
+ */
+export class CustomerFacingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CustomerFacingError";
+  }
+}
 
 /**
  * The server refused a request for load -- rate limited (429) or every renderer busy (503
  * render-busy). Not a session problem and not a failure of the request itself: the same request
  * will succeed after `retryAfterSeconds`. Never retried automatically.
  */
-export class ServiceBusyError extends Error {
+export class ServiceBusyError extends CustomerFacingError {
   readonly retryAfterSeconds: number;
 
   constructor(retryAfterSeconds: number) {
@@ -59,7 +70,7 @@ async function isServiceBusy(res: Response): Promise<boolean> {
   if (res.status !== 503 || typeof res.clone !== "function") return false;
   try {
     const body = await res.clone().json();
-    return body?.type === RENDER_BUSY_PROBLEM_TYPE;
+    return body?.type === PROBLEM.renderBusy;
   } catch {
     return false;
   }
@@ -106,7 +117,7 @@ async function isCsrfRefusal(res: Response): Promise<boolean> {
   if (res.status !== 403 || typeof res.clone !== "function") return false;
   try {
     const body = await res.clone().json();
-    return body?.type === CSRF_PROBLEM_TYPE;
+    return body?.type === PROBLEM.csrf;
   } catch {
     return false;
   }

@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AgreementHttpError,
   claimAgreement,
+  finaliseAgreement,
   getAgreement,
   listMyAgreements,
   updateAgreement,
   updateAgreementContacts,
 } from "./agreements";
+import { hasProblemType, PROBLEM } from "./problems";
 import type { CreateAgreementInput } from "./client";
 
 // The authenticated agreement calls ride the HttpOnly session cookie (same-origin credentials, never
@@ -126,7 +128,7 @@ describe("agreements api", () => {
     expect(failure.problemType).toBe(
       "urn:agreementmitra:problem:contacts-frozen",
     );
-    expect(failure.contactsFrozen).toBe(true);
+    expect(hasProblemType(failure, PROBLEM.contactsFrozen)).toBe(true);
   });
 
   it("does not mistake the terms freeze for the contacts freeze", async () => {
@@ -142,7 +144,7 @@ describe("agreements api", () => {
 
     const failure = await updateAgreementContacts("a1", []).catch((e) => e);
 
-    expect(failure.contactsFrozen).toBe(false);
+    expect(hasProblemType(failure, PROBLEM.contactsFrozen)).toBe(false);
   });
 
   it("degrades to a null problem type when the body is not problem+json", async () => {
@@ -158,6 +160,67 @@ describe("agreements api", () => {
     const failure = await updateAgreementContacts("a1", []).catch((e) => e);
 
     expect(failure.problemType).toBeNull();
-    expect(failure.contactsFrozen).toBe(false);
+    expect(hasProblemType(failure, PROBLEM.contactsFrozen)).toBe(false);
+  });
+});
+
+// Every call carries the problem type, not only the one that once opted in (D2). Literal server URNs.
+describe("agreements api: every refusal carries its problem type", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const calls: [string, () => Promise<unknown>][] = [
+    ["listMyAgreements", () => listMyAgreements()],
+    ["claimAgreement", () => claimAgreement("a1")],
+    ["getAgreement", () => getAgreement("a1")],
+    ["finaliseAgreement", () => finaliseAgreement("a1")],
+    ["updateAgreement", () => updateAgreement("a1", editInput)],
+    ["updateAgreementContacts", () => updateAgreementContacts("a1", [])],
+  ];
+
+  it.each(calls)(
+    "%s keeps the status and exact type of a 409",
+    async (_, call) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                type: "urn:agreementmitra:problem:jurisdiction-unsupported",
+              }),
+              {
+                status: 409,
+                headers: { "Content-Type": "application/problem+json" },
+              },
+            ),
+          ),
+        ),
+      );
+
+      const failure = await call().catch((e) => e);
+
+      expect(failure).toBeInstanceOf(AgreementHttpError);
+      expect(failure.status).toBe(409);
+      expect(failure.problemType).toBe(
+        "urn:agreementmitra:problem:jurisdiction-unsupported",
+      );
+    },
+  );
+
+  it("degrades to a null type for a non-JSON body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("<html>bad gateway</html>", { status: 502 }),
+        ),
+    );
+
+    const failure = await finaliseAgreement("a1").catch((e) => e);
+
+    expect(failure).toBeInstanceOf(AgreementHttpError);
+    expect(failure.status).toBe(502);
+    expect(failure.problemType).toBeNull();
   });
 });

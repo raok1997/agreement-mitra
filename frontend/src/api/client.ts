@@ -1,6 +1,6 @@
 // Thin API client. Keep all backend calls here, not scattered in components.
 
-import { apiFetch } from "./http";
+import { apiFetch, CustomerFacingError } from "./http";
 
 export type Role = "OWNER" | "TENANT";
 
@@ -102,7 +102,7 @@ export async function createAgreement(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(await describeProblem(res));
+  if (!res.ok) throw new CustomerFacingError(await describeProblem(res));
   return res.json();
 }
 
@@ -114,7 +114,8 @@ interface FieldError {
 /**
  * Build a human message from an RFC 9457 problem+json body. Surfaces the per-field
  * validation errors the backend returns so a 400 says *which* fields are wrong, not just
- * the status. Falls back to the status code if the body is not the expected shape.
+ * the status. Falls back to a generic message -- never the status code -- if the body is not the
+ * expected shape.
  */
 async function describeProblem(res: Response): Promise<string> {
   try {
@@ -135,7 +136,7 @@ async function describeProblem(res: Response): Promise<string> {
   } catch {
     // non-JSON body — fall through to the generic message
   }
-  return `Sorry, that couldn't be saved (${res.status}). Please check the form and try again.`;
+  return "Sorry, that couldn't be saved. Please try again.";
 }
 
 /**
@@ -147,7 +148,7 @@ export async function fetchAgreementPreview(
   agreementId: string,
 ): Promise<string> {
   const res = await apiFetch(`${BASE}/agreements/${agreementId}/preview`);
-  if (!res.ok) throw new Error(await describeProblem(res));
+  if (!res.ok) throw new CustomerFacingError(await describeProblem(res));
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
@@ -163,5 +164,5 @@ export async function generateAgreementDocument(
   const res = await apiFetch(`${BASE}/agreements/${agreementId}/document`, {
     method: "POST",
   });
-  if (!res.ok) throw new Error(await describeProblem(res));
+  if (!res.ok) throw new CustomerFacingError(await describeProblem(res));
 }

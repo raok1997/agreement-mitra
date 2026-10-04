@@ -166,8 +166,27 @@ describe("StampQuoteStep", () => {
     );
 
     expect(
-      wrapper.find('[data-testid="stamp-quote-unavailable"]').exists(),
-    ).toBe(true);
+      wrapper.find('[data-testid="stamp-quote-unavailable"]').text(),
+    ).toContain("not yet available for this agreement's jurisdiction");
+    expect(wrapper.find('[data-testid="stamp-quote-pay"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("does not blame the jurisdiction when the duty is merely unplannable", async () => {
+    const wrapper = await mountStep(
+      quote({
+        available: false,
+        status: "UNPLANNABLE",
+        options: [],
+      }),
+    );
+
+    const notice = wrapper
+      .find('[data-testid="stamp-quote-unavailable"]')
+      .text();
+    expect(notice).toContain("not available for this agreement yet");
+    expect(notice).not.toContain("jurisdiction");
     expect(wrapper.find('[data-testid="stamp-quote-pay"]').exists()).toBe(
       false,
     );
