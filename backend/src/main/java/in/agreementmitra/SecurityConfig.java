@@ -17,6 +17,7 @@ import org.springframework.security.web.authentication.Http403ForbiddenEntryPoin
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
@@ -28,8 +29,13 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  *
  * <p>The webhook is permitted here because the aggregator cannot present credentials - its real
  * authorization is the body-MAC (HMAC-SHA1) verification in the signing service, which runs before
- * any side effect. The signing create-request route is permitted but unauthenticated; ownership
- * authorization + rate-limiting on it are deferred to a follow-up change.
+ * any side effect. The signing create-request route is STAFF-only: signing starts server-side once
+ * the e-stamp is attached, so the route is a staff retry hatch rather than a customer path.
+ *
+ * <p><b>Rate limits</b> (anonymous-surface-abuse-controls): {@link CrossSiteRequestGuard} and then
+ * {@link RouteRateLimitFilter} run in this chain after {@code CsrfFilter}, refusing browser-marked
+ * cross-site requests uncounted and then classifying every route; the request-body ceiling runs as
+ * a servlet filter ahead of the chain.
  *
  * <p><b>Role-based authorization</b> (manual-estamp-upload CR): the staff surface under {@code
  * /api/staff/} requires the STAFF role, evaluated <em>here</em> - in the filter chain, BEFORE any
@@ -106,7 +112,9 @@ class SecurityConfig {
   SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       ObjectProvider<SessionAuthenticationFilter> sessionAuthenticationFilter,
-      ObjectProvider<CsrfTokenRepository> csrfTokenRepository)
+      ObjectProvider<CsrfTokenRepository> csrfTokenRepository,
+      ObjectProvider<CrossSiteRequestGuard> crossSiteRequestGuard,
+      ObjectProvider<RouteRateLimitFilter> routeRateLimitFilter)
       throws Exception {
     http.csrf(
             c ->
@@ -135,6 +143,19 @@ class SecurityConfig {
     // application context always has it.
     sessionAuthenticationFilter.ifAvailable(
         filter -> http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class));
+    // Route-class rate limits (anonymous-surface-abuse-controls D4): AFTER CsrfFilter, so a request
+    // refused for CSRF costs its source nothing, and BEFORE the session filter above, so a flood of
+    // junk session cookies is bounded before the lookup reaches Postgres.
+    // A request the browser marks cross-site is refused first and never counted, so a hostile page
+    // cannot spend a visitor's budget with embedded GETs (CSRF tokens guard only unsafe methods).
+    crossSiteRequestGuard.ifAvailable(guard -> http.addFilterAfter(guard, CsrfFilter.class));
+    routeRateLimitFilter.ifAvailable(
+        filter ->
+            http.addFilterAfter(
+                filter,
+                crossSiteRequestGuard.getIfAvailable() != null
+                    ? CrossSiteRequestGuard.class
+                    : CsrfFilter.class));
     return http.authorizeHttpRequests(
             auth ->
                 // Permit the error dispatch path. Spring Security 6 re-authorizes the internal
@@ -208,10 +229,11 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, DELIVERY_RESEND_PATH)
                     .hasRole(STAFF_ROLE)
                     // Exact create-request path only - NOT /api/signing/** - so future signing
-                    // sub-paths are denied by default. This route is unauthenticated today;
-                    // ownership authorization + rate-limiting are deferred to a follow-up change.
+                    // sub-paths are denied by default. STAFF-only (anonymous-surface-abuse-controls
+                    // D7): signing is initiated server-side once the e-stamp is attached, so this
+                    // is a staff retry hatch, not a customer path. CSRF still applies.
                     .requestMatchers(HttpMethod.POST, "/api/signing/*/request")
-                    .permitAll()
+                    .hasRole(STAFF_ROLE)
                     // Per-party signing progress (zoop-aadhaar-esign CR). Permitted here and
                     // owner-scoped in the handler, exactly like GET /api/agreements/* - the chain
                     // cannot see the row's owner, and a STAFF caller must also be able to read it.
@@ -306,8 +328,8 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/stamp-quote")
                     .permitAll()
                     // Draft upload - scoped to the exact sub-path (NOT /api/agreements/**) so the
-                    // posture stays fail-closed. Unauthenticated today; ownership authorization +
-                    // rate-limiting on upload/overwrite are deferred to the signing-auth change.
+                    // posture stays fail-closed. Anonymous like the rest of the capability surface
+                    // (the id is the credential); rate limited as a capability write.
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/draft")
                     .permitAll()
                     // Form-projection schema (template-form-projection) - a public read of
@@ -323,8 +345,9 @@ class SecurityConfig {
                     // (NOT
                     // /api/templates/**) so the posture stays fail-closed. Anonymous like the rest
                     // of
-                    // the render surface; server-side schema validation caps the render, and
-                    // per-caller rate-limiting is an owed companion before this leaves sandbox.
+                    // the render surface; server-side schema validation caps the render, the
+                    // render route class bounds it per source, and render admission control
+                    // refuses rather than queues when every slot is busy.
                     .requestMatchers(HttpMethod.POST, "/api/templates/document/preview")
                     .permitAll()
                     // Template catalog (template-catalog) -- public reads of system-owned

@@ -262,15 +262,31 @@ class CsrfProtectionIntegrationTest {
   }
 
   @Test
-  void theSigningRequestStubWithATokenIsNotRefusedByTheChain() {
-    ResponseEntity<String> resp =
+  void theSigningRequestStubNeedsStaffAndATokenToPassTheChain() {
+    // STAFF-only since anonymous-surface-abuse-controls D7, and still CSRF-protected.
+    String staff =
+        StaffSessions.staffSession(
+            identityService, handoffService, sessionService, jdbc, "csrf-signing-staff");
+    HttpHeaders withToken = new HttpHeaders();
+    withToken.add(HttpHeaders.COOKIE, SessionCookie.header(staff));
+    ResponseEntity<String> passed =
         raw.exchange(
             "/api/signing/abc/request",
             HttpMethod.POST,
-            new HttpEntity<>(null, withCsrf(new HttpHeaders(), CSRF_COOKIE, "t", "t")),
+            new HttpEntity<>(null, withCsrf(withToken, CSRF_COOKIE, "t", "t")),
             String.class);
     // 400 = past security and into MVC, which rejected the non-UUID path variable.
-    assertThat(resp.getStatusCode().value()).isEqualTo(400);
+    assertThat(passed.getStatusCode().value()).isEqualTo(400);
+
+    HttpHeaders noToken = new HttpHeaders();
+    noToken.add(HttpHeaders.COOKIE, SessionCookie.header(staff));
+    ResponseEntity<String> refused =
+        raw.exchange(
+            "/api/signing/abc/request",
+            HttpMethod.POST,
+            new HttpEntity<>(null, noToken),
+            String.class);
+    assertCsrfRefusal(refused);
   }
 
   // ---- 5.3 webhook exemption ----

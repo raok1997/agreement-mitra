@@ -48,9 +48,13 @@ and the website.
 - **Rate limiting is the compensating control**, not authentication. The
   unauthenticated write endpoints are abuse-exposed rather than breach-exposed:
   unbounded row creation, 10 MB draft uploads filling the disk, and Gotenberg
-  renders exhausting CPU. A Cloudflare rate-limiting rule on `POST /api/*`
-  (excluding the webhook path) bounds all of them without blocking legitimate
-  anonymous use.
+  renders exhausting CPU. Two layers bound them without blocking legitimate
+  anonymous use (`anonymous-surface-abuse-controls`): at the edge, Cloudflare Bot
+  Fight Mode and a rate-limiting rule on `POST /api/*` (excluding the webhook
+  paths), plus Caddy's request-body ceilings; in the application, per-route-class
+  rate limits keyed on the real client address, a 1 MiB body guard, render
+  admission control and redacted security-event logging. Section 5.6 lists the
+  edge half and how to verify it.
 - **Hostnames:** `agreementmitra.com` (canonical) and `www.agreementmitra.com`
   (permanent redirect to the apex).
 
@@ -541,6 +545,85 @@ scheduled reconciliation job will quietly complete the signings anyway, several
 minutes late. The system appears to work while the primary path is entirely
 broken, which is considerably harder to notice than an outright failure.
 
+### 5.6 Abuse controls at the edge -- a manual gate
+
+The application enforces its own limits in every environment, but the edge half
+is configuration, not code: nothing in the build proves it is on. **Until
+`prod-readiness-preflight` gives these a production-gate row, they are a manual
+gate -- check each one on every deploy that touches Cloudflare, `deploy/Caddyfile`
+or `deploy/docker-compose.prod.yml`.**
+
+**What makes any of this real:** the origin accepts only Cloudflare's ranges
+(the `DOCKER-USER` chain, fetched live and failing closed -- section 2), so a
+request cannot skip the edge. That allowlist admits **any** Cloudflare tenant,
+whose traffic our zone's rules do not see; the source key stays honest because
+Cloudflare always sets `CF-Connecting-IP`, and the application layer stands on
+its own. **Authenticated Origin Pulls** (Cloudflare presents a client
+certificate Caddy verifies) would close that gap and is not done yet.
+
+1. **Bot Fight Mode** -- **Security** -> **Bots** -> on. The webhook Skip rule in
+   5.5 must cover **both** `/api/webhooks/esign` and `/api/webhooks/razorpay`, or
+   a vendor callback can be challenged.
+   *Verify:* the toggle shows On; a signed test webhook from the vendor dashboard
+   still answers `202`.
+2. **Rate-limiting rule** -- **Security** -> **WAF** -> **Rate limiting rules**:
+   match `http.request.method eq "POST" and starts_with(http.request.uri.path,
+   "/api/") and not starts_with(http.request.uri.path, "/api/webhooks/")`, keyed
+   on IP, block. **Check the current free-plan rule quota and the allowed
+   period/threshold in the dashboard before choosing values** -- it changes. Set
+   the threshold well above the application's own per-source limits so the edge
+   only catches floods.
+   *Verify:* the rule is listed as Deployed with the webhook exclusion visible in
+   its expression.
+3. **Pseudo IPv4 stays Off** -- **Network** -> **Pseudo IPv4**: `Off` (or `Add
+   header`), **never `Overwrite headers`**, or IPv6 clients arrive as synthetic
+   IPv4 addresses and the application's `/64` aggregation is silently defeated.
+   *Verify:* the setting reads Off.
+4. **Caddy forwarded-header overwrite and strip** -- `deploy/Caddyfile`'s `/api/*`
+   proxy sets `X-Forwarded-For` to the address Caddy recovered from
+   `CF-Connecting-IP` (overwrite, not append), pins `X-Forwarded-Proto https`, and
+   strips `Forwarded`, `X-Forwarded-Host`, `X-Forwarded-Prefix` and
+   `X-Forwarded-Port`.
+   *Verify:* the outside-in check below.
+5. **Caddy request-body ceilings** -- 11 MiB on `/api/agreements/*/draft` and
+   `/api/staff/estamp`, 1 MiB on every other `/api/*` path; the two matchers must
+   not overlap or uploads are capped at 1 MiB.
+   *Verify:* `curl -s -o /dev/null -w '%{http_code}' -X POST
+   https://agreementmitra.com/api/agreements -H 'Content-Type: application/json'
+   --data-binary @<(head -c 1200000 /dev/zero | tr '\0' x)` answers `413`.
+6. **Caddy's static address and `internal-proxies` deploy together.**
+   `deploy/docker-compose.prod.yml` pins Caddy to `10.203.17.10` on the declared
+   subnet `10.203.17.0/24`; the application trusts `X-Forwarded-For` only from
+   that address (`server.tomcat.remoteip.internal-proxies`, overridable with
+   `SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES`). Change one, change the other in the
+   same deploy. **Never deploy the application half without the Caddy half:** the
+   application would then trust a header the client can still seed, turning a
+   shared-bucket bug into a bypass. Adding the subnet to an existing stack
+   recreates the network, which needs `docker compose -f docker-compose.prod.yml
+   down` then `up -d` (a plain `up` refuses to change an existing network's IPAM).
+   If `10.203.17.0/24` collides with a network already on the box, pick another
+   and update both halves.
+   *Verify:* `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+   agreementmitra-caddy-1` prints `10.203.17.10`.
+
+**Outside-in check that a forged header does not become the source** (run from
+a machine outside Cloudflare's and the box's networks, once per deploy of items
+4 or 6). Use a cheap route and log no agreement id doing so:
+
+```sh
+# Forge both headers with an address in a DIFFERENT /24 from your own.
+for i in $(seq 1 130); do
+  curl -s -o /dev/null https://agreementmitra.com/api/auth/me \
+    -H 'X-Forwarded-For: 198.51.100.23' -H 'Forwarded: for=198.51.100.23'
+done
+# On the server: the default-class lockout event must name YOUR /24 -- not
+# 198.51.100.0/24, not a Cloudflare range, not the Docker gateway.
+docker compose -f docker-compose.prod.yml logs backend | grep 'event=rate_limit_lockout' | tail -1
+```
+
+The event carries `route=default`, the redacted `source=` prefix and a count --
+never a URI or an agreement id.
+
 ---
 
 ## 6. Verify end to end
@@ -635,12 +718,14 @@ an untested backup is a hypothesis.
 
 Carried deliberately, in rough priority order:
 
-1. **`signing-auth` has not landed.** `POST /api/signing/*/request` and
-   `POST /api/agreements/*/draft` carry no ownership authorization, rate
-   limiting, or redacted security-event logging in the application. Anonymous
-   *creation* is intended; what is missing is the abuse bounding and the
-   ownership checks on routes that act on an existing agreement. A Cloudflare
-   rate-limiting rule stands in for the first; the second still needs the CR.
+1. **No ownership authorization on the capability routes.** `POST
+   /api/agreements/*/draft` and the other routes that act on an existing
+   agreement are rate limited and logged (`anonymous-surface-abuse-controls`),
+   but holding the id is still the only authorization -- by design for the
+   no-login product (`claim-bound-to-initiator` in the register is the nearest
+   open item).
+   `POST /api/signing/*/request` is now STAFF-only. The edge half of the abuse
+   controls is a manual gate (section 5.6).
 2. **SSH password authentication is enabled** (section 2). Deferred by decision
    on 2026-07-29 to keep the box reachable during build-out. Port 22 on a public
    VPS is brute-forced continuously; fail2ban is the only thing standing in.

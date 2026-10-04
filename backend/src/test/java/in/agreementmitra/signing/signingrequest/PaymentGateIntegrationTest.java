@@ -13,6 +13,7 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -84,6 +85,7 @@ class PaymentGateIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -376,8 +378,7 @@ class PaymentGateIntegrationTest {
         "UPDATE agreement SET payment_state = 'UNPAID', payment_recorded_at = NULL WHERE id = ?",
         agreementId);
 
-    ResponseEntity<String> response =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> response = SigningRequests.post(rest, context, agreementId);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(response.getBody()).contains("payment-required");
@@ -398,9 +399,7 @@ class PaymentGateIntegrationTest {
         .isEqualTo(HttpStatus.OK);
     assertThat(uploadStamp(agreementId).getStatusCode()).isEqualTo(HttpStatus.OK);
 
-    assertThat(
-            rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class)
-                .getStatusCode())
+    assertThat(SigningRequests.post(rest, context, agreementId).getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
 
     WIREMOCK.verify(1, postRequestedFor(urlEqualTo(CREATE_URL)));

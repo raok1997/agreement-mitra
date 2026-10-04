@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import in.agreementmitra.RenderCapacityException;
 import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.documents.DocumentRenderException;
+import in.agreementmitra.documents.RenderPriority;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
 import in.agreementmitra.documents.api.DocumentProjectionResult;
 import in.agreementmitra.documents.api.EffectiveTemplateIdentity;
@@ -226,7 +229,8 @@ class AgreementDocumentServiceTest {
     // agreementDate left blank, so the draft printed the date it was rendered on.
     Agreement agreement = renderedTgDraft(id, null);
     currentTemplateHash(PINNED_HASH);
-    when(documentProjection.generate(any(), anyMap())).thenReturn(resultWithHash(PINNED_HASH));
+    when(documentProjection.generate(any(), anyMap(), eq(RenderPriority.FULFILMENT)))
+        .thenReturn(resultWithHash(PINNED_HASH));
 
     Optional<byte[]> instrument = service.renderForStamp(id, new BigDecimal("100.00"));
 
@@ -235,7 +239,8 @@ class AgreementDocumentServiceTest {
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
     @SuppressWarnings("unchecked")
     ArgumentCaptor<Map<String, Object>> system = ArgumentCaptor.forClass(Map.class);
-    verify(documentProjection).generate(req.capture(), system.capture());
+    verify(documentProjection)
+        .generate(req.capture(), system.capture(), eq(RenderPriority.FULFILMENT));
     // The certificate amount travels ONLY on the server-side system channel.
     assertThat(system.getValue()).containsEntry("stampDutyAmount", new BigDecimal("100.00"));
     // The recorded draft date, never the intake date, and the same tracking reference.
@@ -249,13 +254,14 @@ class AgreementDocumentServiceTest {
     UUID id = UUID.randomUUID();
     renderedTgDraft(id, "2026-09-01");
     currentTemplateHash(PINNED_HASH);
-    when(documentProjection.generate(any(), anyMap())).thenReturn(resultWithHash(PINNED_HASH));
+    when(documentProjection.generate(any(), anyMap(), eq(RenderPriority.FULFILMENT)))
+        .thenReturn(resultWithHash(PINNED_HASH));
 
     service.renderForStamp(id, new BigDecimal("100.00"));
 
     ArgumentCaptor<DocumentProjectionRequest> req =
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
-    verify(documentProjection).generate(req.capture(), anyMap());
+    verify(documentProjection).generate(req.capture(), anyMap(), eq(RenderPriority.FULFILMENT));
     assertThat(req.getValue().data()).containsEntry("agreementDate", "2026-09-01");
   }
 
@@ -286,7 +292,8 @@ class AgreementDocumentServiceTest {
     UUID id = UUID.randomUUID();
     renderedTgDraft(id, null);
     currentTemplateHash(PINNED_HASH);
-    when(documentProjection.generate(any(), anyMap())).thenReturn(resultWithHash("reloaded-hash"));
+    when(documentProjection.generate(any(), anyMap(), eq(RenderPriority.FULFILMENT)))
+        .thenReturn(resultWithHash("reloaded-hash"));
 
     assertThat(service.renderForStamp(id, new BigDecimal("100.00"))).isEmpty();
   }
@@ -296,11 +303,26 @@ class AgreementDocumentServiceTest {
     UUID id = UUID.randomUUID();
     renderedTgDraft(id, null);
     currentTemplateHash(PINNED_HASH);
-    when(documentProjection.generate(any(), anyMap()))
+    when(documentProjection.generate(any(), anyMap(), eq(RenderPriority.FULFILMENT)))
         .thenThrow(new DocumentRenderException("Gotenberg render failed"));
 
     assertThatThrownBy(() -> service.renderForStamp(id, new BigDecimal("100.00")))
         .isInstanceOf(StampRenderUnavailableException.class);
+  }
+
+  @Test
+  void aCapacityRefusalOfTheFulfilmentRenderIsTheSameRetryableException() {
+    // The reserved render slot was also busy (anonymous-surface-abuse-controls D6): staff see the
+    // existing "nothing saved; retry" problem, not a new one.
+    UUID id = UUID.randomUUID();
+    renderedTgDraft(id, null);
+    currentTemplateHash(PINNED_HASH);
+    when(documentProjection.generate(any(), anyMap(), eq(RenderPriority.FULFILMENT)))
+        .thenThrow(new RenderCapacityException("no render slot"));
+
+    assertThatThrownBy(() -> service.renderForStamp(id, new BigDecimal("100.00")))
+        .isInstanceOf(StampRenderUnavailableException.class)
+        .hasCauseInstanceOf(RenderCapacityException.class);
   }
 
   @Test
@@ -319,6 +341,9 @@ class AgreementDocumentServiceTest {
     agreement.pinEffectiveTemplate("h", Map.of("base", 1), LocalDate.parse("2026-09-11"));
     agreement.clearDraftPin();
     assertThat(agreement.draftExecutionDate()).isNull();
+    // No render of any kind -- either overload, either priority.
+    verify(documentProjection, never()).generate(any(), anyMap(), any());
     verify(documentProjection, never()).generate(any(), anyMap());
+    verify(documentProjection, never()).generate(any());
   }
 }

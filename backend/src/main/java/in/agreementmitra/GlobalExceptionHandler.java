@@ -69,11 +69,20 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
   private static final String TYPE_STAMP_CHOICE_INVALID =
       "urn:agreementmitra:problem:stamp-choice-invalid";
-  private static final String TYPE_PAYLOAD_TOO_LARGE =
-      "urn:agreementmitra:problem:payload-too-large";
+  // One constant for both 413 paths (the guard's own response and this handler), so they never
+  // drift.
+  private static final String TYPE_PAYLOAD_TOO_LARGE = RequestBodyGuard.TYPE;
   private static final String TYPE_STAMP_FAILED = "urn:agreementmitra:problem:stamp-failed";
   private static final String TYPE_STAMP_RENDER_UNAVAILABLE =
       "urn:agreementmitra:problem:stamp-render-unavailable";
+  private static final String TYPE_RENDER_BUSY = "urn:agreementmitra:problem:render-busy";
+
+  /**
+   * Seconds a refused render is told to wait. A render slot frees within one render (seconds), so
+   * this is short; the client shows it as a retry message.
+   */
+  static final int RENDER_BUSY_RETRY_AFTER_SECONDS = 5;
+
   private static final String TYPE_DOCUMENT_DATA_INVALID =
       "urn:agreementmitra:problem:document-data-invalid";
 
@@ -99,6 +108,12 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       HttpHeaders headers,
       HttpStatusCode status,
       WebRequest request) {
+    // A body streamed past the request-body ceiling (no declared length) surfaces here, wrapped by
+    // the message converter: answer the same 413 the guard writes for a declared over-limit length.
+    if (causedByOversizedBody(ex)) {
+      return handleExceptionInternal(
+          ex, oversizedBody(), headers, HttpStatus.PAYLOAD_TOO_LARGE, request);
+    }
     // Build from a constant — ex.getMessage() can contain raw-payload fragments.
     ProblemDetail body =
         problem(
@@ -107,6 +122,24 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             "Malformed request",
             "The request body could not be read.");
     return handleExceptionInternal(ex, body, headers, HttpStatus.BAD_REQUEST, request);
+  }
+
+  private static boolean causedByOversizedBody(Throwable ex) {
+    for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+      if (cause instanceof RequestBodyGuard.RequestBodyTooLargeException) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The same 413 body {@link RequestBodyGuard} writes. Package-private for unit tests. */
+  ProblemDetail oversizedBody() {
+    return problem(
+        HttpStatus.PAYLOAD_TOO_LARGE,
+        TYPE_PAYLOAD_TOO_LARGE,
+        RequestBodyGuard.TITLE,
+        RequestBodyGuard.DETAIL);
   }
 
   @Override
@@ -280,6 +313,22 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         "Document renderer unavailable",
         "The agreement could not be prepared for stamping right now. Nothing was saved; retry the"
             + " upload with the same certificate.");
+  }
+
+  @ExceptionHandler(RenderCapacityException.class)
+  ResponseEntity<ProblemDetail> handleRenderCapacity(RenderCapacityException ex) {
+    // 503 + Retry-After: every render slot is busy and the bounded wait elapsed (or the waiting
+    // room
+    // was full). Distinct from a render failure, and retryable. Constant detail; nothing echoed.
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(RENDER_BUSY_RETRY_AFTER_SECONDS))
+        .body(
+            problem(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                TYPE_RENDER_BUSY,
+                "Document renderer busy",
+                "The document could not be rendered right now because the renderer is busy."
+                    + " Try again shortly."));
   }
 
   @ExceptionHandler(DocumentDataInvalidException.class)

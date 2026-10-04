@@ -23,9 +23,9 @@
 	servers {
 		# Cloudflare terminates the client connection, so without this every
 		# request would appear to originate from a Cloudflare IP. Rate limiting
-		# and the redacted security-event logging that `signing-auth` will add
-		# are both meaningless on a proxy IP, so real-client-IP recovery has to
-		# be correct from day one.
+		# and the redacted security-event logging are both meaningless on a
+		# proxy IP. This only fills Caddy's {client_ip}; the /api/* proxy below
+		# is what forwards it to the application.
 		#
 		# REFRESH THESE: the canonical list is https://www.cloudflare.com/ips/.
 		# Cloudflare changes it rarely but does change it; a stale list silently
@@ -95,7 +95,38 @@ agreementmitra.com {
 	# (eager issuance), so a cached response would hand one visitor's token to
 	# everyone. See docs/DEPLOYMENT.md.
 	handle /api/* {
+		# Request-body ceilings (anonymous-surface-abuse-controls D9): refuse an oversized body
+		# here, before the JVM allocates for it. The two multipart upload routes keep the
+		# application's own 11 MiB envelope (spring.servlet.multipart.max-request-size); every
+		# other API route gets the 1 MiB the application's body guard enforces. The matchers must
+		# NOT overlap -- two request_body blocks on one request both apply and the smaller wins,
+		# which would cap uploads at 1 MiB. Units are binary (MiB) to match Spring's `MB`, which
+		# is 1024-based; Caddy's `MB` is decimal.
+		@uploads path /api/agreements/*/draft /api/staff/estamp
+		@ordinary not path /api/agreements/*/draft /api/staff/estamp
+		request_body @uploads {
+			max_size 11MiB
+		}
+		request_body @ordinary {
+			max_size 1MiB
+		}
+
 		reverse_proxy backend:8090 {
+			# The ONE forwarded header the application trusts (D2). OVERWRITE it with the
+			# address Caddy recovered from CF-Connecting-IP above -- trusted only because the
+			# peer is in Cloudflare's pinned ranges -- rather than appending to whatever the
+			# client sent, whose leftmost value would otherwise be attacker-chosen. Strip every
+			# other forwarding header so nothing the client wrote reaches the application as its
+			# address, host, port or path, and pin the scheme. The application honours this
+			# header only from Caddy's static compose address (server.tomcat.remoteip
+			# .internal-proxies), so this block and that property MUST deploy together.
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto https
+			header_up -Forwarded
+			header_up -X-Forwarded-Host
+			header_up -X-Forwarded-Prefix
+			header_up -X-Forwarded-Port
+
 			# The draft-upload route accepts up to 11 MB (spring.servlet
 			# .multipart.max-request-size) and PDF renders can be slow, so do not
 			# let a default read timeout truncate either.

@@ -14,6 +14,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +78,7 @@ class SigningRequestApiIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -288,8 +290,7 @@ class SigningRequestApiIntegrationTest {
 
   private UUID createSigningRequest(UUID agreementId, String documentId) {
     stubCreate(documentId);
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(
@@ -340,8 +341,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createAgreement();
     stubCreate("DOC-CREATE-1");
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     assertThat(resp.getBody()).contains("DOC-CREATE-1").contains("https://sign/1");
@@ -373,8 +373,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createAgreement();
     stubCreate("DOC-STAMP-1");
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 
     // The stamp DATA came from the staff upload: a real certificate number and dutyPaid = true.
@@ -410,8 +409,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createDraftedAgreement(); // draft uploaded, no e-stamp yet
     long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(resp.getHeaders().getContentType())
@@ -465,7 +463,7 @@ class SigningRequestApiIntegrationTest {
   void stampInfoIsNotExposedOnTheAgreementResponse() {
     UUID agreementId = createAgreement();
     stubCreate("DOC-STAMP-2");
-    rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    SigningRequests.post(rest, context, agreementId);
 
     ResponseEntity<String> get = rest.getForEntity("/api/agreements/" + agreementId, String.class);
 
@@ -482,8 +480,7 @@ class SigningRequestApiIntegrationTest {
     UUID missing = UUID.randomUUID();
     long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + missing + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, missing);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     assertThat(resp.getHeaders().getContentType())
@@ -495,8 +492,7 @@ class SigningRequestApiIntegrationTest {
 
   @Test
   void nonUuidAgreementIdReturns400() {
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/not-a-uuid/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, "not-a-uuid");
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     assertThat(resp.getHeaders().getContentType())
         .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
@@ -507,8 +503,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createBareAgreement();
     long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(resp.getHeaders().getContentType())
@@ -523,8 +518,12 @@ class SigningRequestApiIntegrationTest {
   @Test
   void oversizedBodyIsRejectedWith413() {
     UUID agreementId = createAgreement();
-    String huge = "x".repeat(2 * 1024 * 1024); // 2 MiB > 1 MiB limit
-    HttpHeaders headers = new HttpHeaders();
+    // 1.5 MiB: over the 1 MiB guard, under Tomcat's 2 MB maxSwallowSize (past which it resets the
+    // connection instead of answering). Sent as STAFF, the route's only caller; the guard runs
+    // ahead
+    // of the security chain, so the 413 comes before authorization either way.
+    String huge = "x".repeat(1536 * 1024);
+    HttpHeaders headers = SigningRequests.staffHeaders(context);
     headers.setContentType(MediaType.APPLICATION_JSON);
 
     ResponseEntity<String> resp =

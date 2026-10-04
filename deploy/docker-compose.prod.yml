@@ -129,11 +129,31 @@ services:
       - ./certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      default:
+        # Pinned so the application can trust X-Forwarded-For from Caddy and from nothing else
+        # (server.tomcat.remoteip.internal-proxies in backend.env / application.yml). Trusting the
+        # whole subnet would also trust Postgres, MinIO, Gotenberg and the bridge gateway. Changing
+        # this address means changing that property in the same deploy.
+        ipv4_address: 10.203.17.10
     deploy:
       resources:
         limits:
           memory: 256m
     logging: *logging
+
+# A declared subnet, so Caddy's address above is fixed rather than whatever Docker hands out.
+# Chosen outside Docker's default 172.17-31/16 and 192.168/16 pools to avoid colliding with other
+# networks on the box. Adding IPAM to an existing network requires `docker compose down` then `up`
+# (the network is recreated); see docs/DEPLOYMENT.md.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.203.17.0/24
+          # Dynamic addresses come only from the upper half, so Docker can never hand Caddy's
+          # static 10.203.17.10 to another container on a recreate.
+          ip_range: 10.203.17.128/25
 
 volumes:
   pgdata:

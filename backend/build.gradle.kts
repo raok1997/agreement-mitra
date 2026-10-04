@@ -111,6 +111,10 @@ dependencies {
     // spring.security.oauth2.client.registration.* props are set). A shipping dependency, so the
     // OSV/SpotBugs gate scopes it; version is Boot-BOM-managed.
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
+    // Size-capped, expiring storage for the abuse-control rate limiter
+    // (anonymous-surface-abuse-controls D3): `maximumSize` is the hard memory ceiling a hand-rolled
+    // map lacked. Boot-BOM managed; a shipping dependency, so the OSV gate scans it.
+    implementation("com.github.ben-manes.caffeine:caffeine")
     // Actuator: only `health` exposed (see application.yml management.*).
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.modulith:spring-modulith-starter-core")

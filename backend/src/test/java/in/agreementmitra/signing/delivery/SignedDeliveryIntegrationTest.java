@@ -17,6 +17,7 @@ import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -100,6 +101,7 @@ class SignedDeliveryIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -283,9 +285,7 @@ class SignedDeliveryIntegrationTest {
 
   private UUID requestSigning(UUID agreementId, String documentId) {
     stubCreate(documentId);
-    assertThat(
-            rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class)
-                .getStatusCode())
+    assertThat(SigningRequests.post(rest, context, agreementId).getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(
@@ -670,8 +670,7 @@ class SignedDeliveryIntegrationTest {
     assertThat(closureState(agreementId)).isEqualTo("CLOSED");
 
     // Advancing a closed agreement is refused, with its own distinct 409 kind.
-    ResponseEntity<String> signing =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> signing = SigningRequests.post(rest, context, agreementId);
     assertThat(signing.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(signing.getBody()).contains("agreement-closed");
     ResponseEntity<String> finalise =

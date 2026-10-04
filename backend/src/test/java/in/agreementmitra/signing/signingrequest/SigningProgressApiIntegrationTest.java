@@ -15,6 +15,7 @@ import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -83,6 +84,7 @@ class SigningProgressApiIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -178,9 +180,7 @@ class SigningProgressApiIntegrationTest {
                         + "\",\"invitees\":[{\"inviteeId\":\"INV-1\",\"signUrl\":\"https://sign/OWNERSECRET\","
                         + "\"expiryDate\":\"2026-01-01\"},{\"inviteeId\":\"INV-2\","
                         + "\"signUrl\":\"https://sign/TENANTSECRET\",\"expiryDate\":\"2026-01-02\"}]}}")));
-    assertThat(
-            rest.postForEntity("/api/signing/" + id + "/request", null, String.class)
-                .getStatusCode())
+    assertThat(SigningRequests.post(rest, context, id).getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
     return id;
   }

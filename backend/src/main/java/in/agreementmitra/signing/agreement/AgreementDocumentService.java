@@ -1,8 +1,10 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.RenderCapacityException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.documents.DocumentRenderException;
+import in.agreementmitra.documents.RenderPriority;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
@@ -140,15 +142,17 @@ public class AgreementDocumentService {
    * <p>When the captured {@code agreementDate} is blank the draft printed the date it was rendered;
    * that recorded date is passed back so the re-render never prints the intake date instead.
    *
-   * @throws StampRenderUnavailableException if the renderer is unavailable -- retryable, nothing
-   *     has been written
+   * @throws StampRenderUnavailableException if the renderer is unavailable or at capacity --
+   *     retryable, nothing has been written
    * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
    */
   @Transactional(readOnly = true)
   public Optional<byte[]> renderForStamp(UUID agreementId, BigDecimal dutyAmount) {
     try {
       return reRenderStoredDraft(find(agreementId), dutyAmount);
-    } catch (DocumentRenderException e) {
+    } catch (DocumentRenderException | RenderCapacityException e) {
+      // A capacity refusal (the reserved slot is also busy) is render unavailability like any
+      // other: audited OUTCOME_RENDER_UNAVAILABLE, and staff see "nothing saved; retry".
       throw new StampRenderUnavailableException("instrument re-render failed", e);
     }
   }
@@ -186,7 +190,11 @@ public class AgreementDocumentService {
         documentProjection.generate(
             new DocumentProjectionRequest(
                 dimensions, data, activeSectionsFor(agreement), agreement.trackingReference()),
-            Map.of(STAMP_DUTY_AMOUNT_KEY, stampDutyAmount));
+            Map.of(STAMP_DUTY_AMOUNT_KEY, stampDutyAmount),
+            // The one FULFILMENT render: it may take the slot reserved for paid fulfilment, so an
+            // anonymous preview flood cannot fast-fail stamping an agreement that has been paid
+            // for.
+            RenderPriority.FULFILMENT);
     if (!pinnedHash.equals(result.identity().contentHash())) {
       // The layers changed between the check above and the render: still drift.
       return fallBack(agreementId, "PIN_DRIFT");

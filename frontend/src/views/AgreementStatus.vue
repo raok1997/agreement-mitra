@@ -17,6 +17,7 @@ import {
   type SigningProgress,
 } from "../api/signingProgress";
 import { usePolling, type PollVerdict } from "../composables/usePolling";
+import { busyMessage, ServiceBusyError } from "../api/http";
 import {
   getStampQuote,
   selectionFor,
@@ -168,9 +169,19 @@ function isUnavailable(reason: unknown): boolean {
   );
 }
 
+// Set when the first load was refused for load and polling was started to recover from it.
+let recoveringFromBusy = false;
+
 async function readOnce(): Promise<PollVerdict> {
   const verdict = await readLatest();
   if (verdict !== null) latestVerdict = verdict;
+  if (recoveringFromBusy && verdict !== null) {
+    // The first successful read after a busy first load: it is the real first load. Clear the
+    // retry message and apply the same keep-watching rule load() applies.
+    recoveringFromBusy = false;
+    loadError.value = null;
+    if (verdict !== "stop" && !somethingCanHappen()) return "stop";
+  }
   return verdict ?? "continue";
 }
 
@@ -196,6 +207,12 @@ async function readLatest(): Promise<PollVerdict | null> {
   ) {
     unavailable.value = true;
     return "stop";
+  }
+  // A load refusal wins over any other rejection: it carries the Retry-After the poll must honour.
+  for (const settled of [pay, prog]) {
+    if (settled.status === "rejected" && settled.reason instanceof ServiceBusyError) {
+      throw settled.reason;
+    }
   }
   if (pay.status === "rejected") throw pay.reason;
   if (prog.status === "rejected") throw prog.reason;
@@ -234,9 +251,16 @@ onMounted(async () => {
   loadError.value = null;
   try {
     await load();
-  } catch {
+  } catch (e) {
     loadError.value =
+      busyMessage(e) ??
       "Could not load the agreement's status. Please try again.";
+    // Refused for load, not broken: keep watching so the page recovers on its own once the
+    // server is ready, instead of telling the customer to retry and then never doing so.
+    if (e instanceof ServiceBusyError) {
+      recoveringFromBusy = true;
+      polling.start();
+    }
   }
 });
 
@@ -261,8 +285,9 @@ async function pay(): Promise<void> {
       return;
     }
     await payWith(selectionFor(quote, frozen));
-  } catch {
+  } catch (e) {
     payError.value =
+      busyMessage(e) ??
       "Payment cannot be started yet. Contact support quoting your reference.";
   }
 }
@@ -281,8 +306,9 @@ async function payWith(selection: StampSelection): Promise<void> {
       description: `Agreement ${props.agreement.trackingNumber}`,
       selection,
     });
-  } catch {
+  } catch (e) {
     payError.value =
+      busyMessage(e) ??
       "Payment cannot be started yet. Contact support quoting your reference.";
   } finally {
     paying.value = false;

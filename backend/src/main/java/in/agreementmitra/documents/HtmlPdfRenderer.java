@@ -1,5 +1,7 @@
 package in.agreementmitra.documents;
 
+import in.agreementmitra.RenderCapacityException;
+
 /**
  * The public HTML-to-PDF seam of the {@code documents} module: hand it a self-contained HTML string
  * and it returns the rendered PDF bytes. The only render entry point another package may depend on
@@ -24,6 +26,20 @@ public interface HtmlPdfRenderer {
    * @param reference the non-PII footer reference (tracking number or preview marker)
    * @return the rendered PDF bytes (begin with the {@code %PDF-} signature)
    * @throws DocumentRenderException if the render fails or returns no document
+   * @throws RenderCapacityException if no render slot frees within the bounded wait
    */
   byte[] toPdf(String html, String reference);
+
+  /**
+   * As {@link #toPdf(String, String)}, admitted to the render slots {@code priority} may take. A
+   * render that cannot be admitted in time is refused rather than queued.
+   *
+   * <p>The default ignores {@code priority}, which only a renderer with no admission control may do
+   * -- the Gotenberg-backed implementation overrides it.
+   *
+   * @throws RenderCapacityException if no eligible render slot frees within the bounded wait
+   */
+  default byte[] toPdf(String html, String reference, RenderPriority priority) {
+    return toPdf(html, reference);
+  }
 }

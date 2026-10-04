@@ -3,6 +3,12 @@
 // to unsafe methods, retries exactly once on a CSRF refusal, and asks the auth store to re-check
 // the session after an authorization failure. A guard test fails the build if any other module
 // calls fetch directly.
+//
+// It is also the ONE place a server refusal for load is recognised (anonymous-surface-abuse-controls
+// D5): a 429, or a 503 whose problem type is render-busy, is thrown as a ServiceBusyError carrying
+// the server's Retry-After, so every view shows "try again in N seconds" rather than a raw status.
+// Every other response -- including the staff console's stamp-render-unavailable 503 and a bodyless
+// edge 5xx -- is returned unchanged, exactly as before.
 
 import { readCookie } from "./cookies";
 
@@ -12,6 +18,52 @@ const CSRF_HEADER = "X-XSRF-TOKEN";
 const CSRF_PROBLEM_TYPE = "urn:agreementmitra:problem:csrf";
 const CSRF_BOOTSTRAP = "/api/auth/csrf";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+const RENDER_BUSY_PROBLEM_TYPE = "urn:agreementmitra:problem:render-busy";
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * The server refused a request for load -- rate limited (429) or every renderer busy (503
+ * render-busy). Not a session problem and not a failure of the request itself: the same request
+ * will succeed after `retryAfterSeconds`. Never retried automatically.
+ */
+export class ServiceBusyError extends Error {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super(
+      `We're getting a lot of requests right now. Please try again in ${retryAfterSeconds} second${
+        retryAfterSeconds === 1 ? "" : "s"
+      }.`,
+    );
+    this.name = "ServiceBusyError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/** The customer-facing retry message when `e` is a load refusal, otherwise null. */
+export function busyMessage(e: unknown): string | null {
+  return e instanceof ServiceBusyError ? e.message : null;
+}
+
+/** Retry-After in whole seconds; the default when it is absent or not a positive integer. */
+function retryAfterSeconds(res: Response): number {
+  const raw = res.headers?.get?.("Retry-After");
+  const seconds = raw == null ? NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds > 0
+    ? seconds
+    : DEFAULT_RETRY_AFTER_SECONDS;
+}
+
+async function isServiceBusy(res: Response): Promise<boolean> {
+  if (res.status === 429) return true;
+  if (res.status !== 503 || typeof res.clone !== "function") return false;
+  try {
+    const body = await res.clone().json();
+    return body?.type === RENDER_BUSY_PROBLEM_TYPE;
+  } catch {
+    return false;
+  }
+}
 
 let bootstrap: Promise<void> | null = null;
 let reconcileHook: (() => void) | null = null;
@@ -96,6 +148,11 @@ export async function apiFetch(
     }
   } else {
     res = await fetch(input, base);
+  }
+
+  // A refusal for load is neither retried here nor a reason to re-check the session.
+  if (await isServiceBusy(res)) {
+    throw new ServiceBusyError(retryAfterSeconds(res));
   }
 
   const authFailure =

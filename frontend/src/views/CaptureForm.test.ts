@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
+import { ServiceBusyError } from "../api/http";
 import CaptureForm from "./CaptureForm.vue";
 import * as client from "../api/client";
 import * as agreements from "../api/agreements";
@@ -448,7 +449,7 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
       tenantName: "Tara Sen",
       ownerName: "Asha Rao",
     });
-    await new Promise((r) => setTimeout(r, 300)); // debounced (250ms) preview refresh
+    await new Promise((r) => setTimeout(r, 650)); // debounced (~600ms) preview refresh
     await flushPromises();
 
     expect(mockedPreviewHtml).toHaveBeenCalled();
@@ -468,6 +469,32 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(logged).not.toContain("Tara");
     logSpy.mockRestore();
     errSpy.mockRestore();
+  });
+
+  it("debounces the live preview at ~600 ms, not per keystroke", async () => {
+    const wrapper = await mountReady();
+    mockedPreviewHtml.mockClear();
+
+    await fillSection(wrapper, "parties", { tenantName: "Tara Sen" });
+    await new Promise((r) => setTimeout(r, 400));
+    await flushPromises();
+    expect(mockedPreviewHtml).not.toHaveBeenCalled(); // the old 250 ms debounce would have fired
+
+    await new Promise((r) => setTimeout(r, 300));
+    await flushPromises();
+    expect(mockedPreviewHtml).toHaveBeenCalledOnce();
+  });
+
+  it("shows a retry message, not a raw status, when the preview is refused for load", async () => {
+    const wrapper = await mountReady();
+    mockedPreviewHtml.mockRejectedValue(new ServiceBusyError(7));
+
+    await fillSection(wrapper, "parties", { tenantName: "Tara Sen" });
+    await new Promise((r) => setTimeout(r, 650));
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("try again in 7 seconds");
+    expect(wrapper.text()).not.toMatch(/\b429\b|\b503\b/);
   });
 
   it("hard-blocks Save & continue until required sections are complete (disabled, no create call)", async () => {
@@ -793,7 +820,7 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     );
 
     await wrapper.find('[data-testid="add-optional-pets"]').trigger("click");
-    await new Promise((r) => setTimeout(r, 300)); // debounced preview refresh
+    await new Promise((r) => setTimeout(r, 650)); // debounced (~600ms) preview refresh
     await flushPromises();
 
     // (b) it moved into the active-optional zone and left the catalog.
@@ -809,7 +836,7 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     // Removing it drops the title from activeSections and returns it to the catalog.
     mockedPreviewHtml.mockClear();
     await wrapper.find('[data-testid="remove-optional-pets"]').trigger("click");
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 650));
     await flushPromises();
     expect(wrapper.find('[data-testid="catalog-pets"]').exists()).toBe(true);
     const [, , afterRemove] = mockedPreviewHtml.mock.calls.at(-1) ?? [];
@@ -1131,7 +1158,7 @@ describe("CaptureForm: derived tenancy term", () => {
   it("never sends the derived duration to the server", async () => {
     const wrapper = await openTermWith("2026-01-08", "2028-01-08");
     await wrapper.find('[data-testid="modal-save"]').trigger("click");
-    await new Promise((r) => setTimeout(r, 300)); // debounced preview refresh
+    await new Promise((r) => setTimeout(r, 650)); // debounced (~600ms) preview refresh
     await flushPromises();
 
     // The server strips durationMonths as anti-mass-assignment and recomputes it; sending one would

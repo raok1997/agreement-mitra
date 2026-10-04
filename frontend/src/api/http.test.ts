@@ -210,3 +210,87 @@ describe("apiFetch", () => {
     expect(hook).not.toHaveBeenCalled();
   });
 });
+
+describe("apiFetch load refusals", () => {
+  beforeEach(() => {
+    cookies.jar = { "__Host-XSRF-TOKEN": "tok" };
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function problem(code: number, type: string, retryAfter?: string): Response {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/problem+json",
+    };
+    if (retryAfter !== undefined) headers["Retry-After"] = retryAfter;
+    return new Response(JSON.stringify({ type, status: code }), {
+      status: code,
+      headers,
+    });
+  }
+
+  it("throws ServiceBusyError carrying Retry-After for a 429", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          problem(429, "urn:agreementmitra:problem:rate-limited", "42"),
+        ),
+    );
+    const { apiFetch, ServiceBusyError } = await freshHttp();
+
+    const error = await apiFetch("/api/agreements", { method: "POST" }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ServiceBusyError);
+    expect((error as InstanceType<typeof ServiceBusyError>).retryAfterSeconds).toBe(42);
+    expect((error as Error).message).toMatch(/try again in 42 seconds/);
+  });
+
+  it("throws ServiceBusyError for a render-busy 503, defaulting Retry-After when absent", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(problem(503, "urn:agreementmitra:problem:render-busy")),
+    );
+    const { apiFetch, ServiceBusyError } = await freshHttp();
+
+    const error = await apiFetch("/api/templates/document/preview", {
+      method: "POST",
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ServiceBusyError);
+    expect((error as InstanceType<typeof ServiceBusyError>).retryAfterSeconds).toBe(5);
+  });
+
+  it("returns a stamp-render-unavailable 503 and a bodyless 503 unchanged", async () => {
+    const stamp = problem(503, "urn:agreementmitra:problem:stamp-render-unavailable");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(stamp).mockResolvedValueOnce(status(503)),
+    );
+    const { apiFetch } = await freshHttp();
+
+    expect(await apiFetch("/api/staff/estamp", { method: "POST" })).toBe(stamp);
+    expect((await apiFetch("/api/agreements/x")).status).toBe(503);
+  });
+
+  it("does not retry a refusal and does not treat it as a session problem", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(problem(429, "urn:agreementmitra:problem:rate-limited", "3"));
+    vi.stubGlobal("fetch", fetchMock);
+    const http = await freshHttp();
+    const hook = vi.fn();
+    http.setReconcileHook(hook);
+
+    await expect(http.apiFetch("/api/agreements/x")).rejects.toBeInstanceOf(
+      http.ServiceBusyError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hook).not.toHaveBeenCalled();
+  });
+});
+

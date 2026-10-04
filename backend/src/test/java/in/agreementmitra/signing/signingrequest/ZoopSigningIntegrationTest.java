@@ -18,6 +18,7 @@ import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -104,6 +105,7 @@ class ZoopSigningIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -298,8 +300,7 @@ class ZoopSigningIntegrationTest {
   }
 
   private UUID requestSigning(UUID agreementId, String groupId) {
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(

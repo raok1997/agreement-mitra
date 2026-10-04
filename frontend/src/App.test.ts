@@ -234,7 +234,7 @@ describe("App end-to-end (pick -> fill -> preview -> save)", () => {
     // Add one optional section -> the subsequent preview POST carries its title in activeSections.
     mockedPreviewHtml.mockClear();
     await wrapper.find('[data-testid="add-optional-pets"]').trigger("click");
-    await new Promise((r) => setTimeout(r, 300)); // debounced preview refresh
+    await new Promise((r) => setTimeout(r, 650)); // debounced (~600ms) preview refresh
     await flushPromises();
     expect(wrapper.find('[data-testid="active-optional-pets"]').exists()).toBe(
       true,

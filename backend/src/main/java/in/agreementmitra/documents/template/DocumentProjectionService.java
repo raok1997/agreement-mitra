@@ -3,6 +3,7 @@ package in.agreementmitra.documents.template;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.DocumentFooterProperties;
 import in.agreementmitra.documents.HtmlPdfRenderer;
+import in.agreementmitra.documents.RenderPriority;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
@@ -132,6 +133,14 @@ class DocumentProjectionService implements DocumentProjectionApi {
   @Override
   public DocumentProjectionResult generate(
       DocumentProjectionRequest request, Map<String, Object> systemValues) {
+    return generate(request, systemValues, RenderPriority.STANDARD);
+  }
+
+  @Override
+  public DocumentProjectionResult generate(
+      DocumentProjectionRequest request,
+      Map<String, Object> systemValues,
+      RenderPriority priority) {
     EffectiveTemplate effective = resolve(request.dimensions());
     // The tracking number (request.documentReference) + platform URL render as the screen-only body
     // provenance line (for the on-screen preview) AND as the per-page PDF footer furniture. Both
@@ -153,7 +162,7 @@ class DocumentProjectionService implements DocumentProjectionApi {
             reference,
             platformUrl,
             screenNotice);
-    byte[] pdf = htmlPdfRenderer.toPdf(html, reference);
+    byte[] pdf = htmlPdfRenderer.toPdf(html, reference, priority);
     return new DocumentProjectionResult(pdf, identityOf(effective), executionDate);
   }
 

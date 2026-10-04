@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
+import { busyMessage } from "../api/http";
 import {
   listStampQueue,
   uploadStampForEntry,
@@ -169,9 +170,10 @@ async function load(): Promise<void> {
   } catch (e) {
     // Never surface server internals; distinguish only "not allowed" from "went wrong".
     error.value =
-      e instanceof StaffQueueHttpError && (e.status === 401 || e.status === 403)
+      busyMessage(e) ??
+      (e instanceof StaffQueueHttpError && (e.status === 401 || e.status === 403)
         ? "This console is for AgreementMitra staff."
-        : "Could not load the stamp queue. Please try again.";
+        : "Could not load the stamp queue. Please try again.");
   } finally {
     loading.value = false;
   }
@@ -232,7 +234,9 @@ async function submit(entry: StampQueueEntry): Promise<void> {
   } catch (e) {
     // 409 is no longer one situation. Naming the wrong one sends an operator to re-check a
     // certificate that is perfectly fine.
-    if (e instanceof StaffQueueHttpError && e.paymentRequired) {
+    if (busyMessage(e)) {
+      submitError.value = busyMessage(e);
+    } else if (e instanceof StaffQueueHttpError && e.paymentRequired) {
       submitError.value =
         "Refused: this order has not been paid for. Payment must clear before an e-stamp is bought, or a staff member must waive it.";
     } else if (e instanceof StaffQueueHttpError && e.status === 409) {

@@ -2,11 +2,6 @@
 
 import { apiFetch } from "./http";
 
-export interface SignSession {
-  providerRequestId: string;
-  signingUrl: string;
-}
-
 export type Role = "OWNER" | "TENANT";
 
 /** One party (owner or tenant) as captured on the form. Contact is optional at draft. */
@@ -169,14 +164,4 @@ export async function generateAgreementDocument(
     method: "POST",
   });
   if (!res.ok) throw new Error(await describeProblem(res));
-}
-
-export async function requestSignature(
-  agreementId: string,
-): Promise<SignSession> {
-  const res = await apiFetch(`${BASE}/signing/${agreementId}/request`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error(`Sign request failed: ${res.status}`);
-  return res.json();
 }

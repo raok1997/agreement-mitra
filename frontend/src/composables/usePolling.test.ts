@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { usePolling, type PollVerdict } from "./usePolling";
+import { ServiceBusyError } from "../api/http";
 
 // The loop's rules, tested with a hand-cranked clock: every `wait` is captured and released by the
 // test, so nothing here depends on real time and every assertion is about ordering.
@@ -114,6 +115,31 @@ describe("usePolling", () => {
     expect(h.waits.at(-1)?.ms).toBe(50);
     await h.release(); // success -> back to base
     expect(h.waits.at(-1)?.ms).toBe(20);
+  });
+
+  it("waits the server's Retry-After on a load refusal instead of doubling", async () => {
+    const h = harness();
+    const read = vi
+      .fn<() => Promise<PollVerdict>>()
+      .mockRejectedValueOnce(new ServiceBusyError(300))
+      .mockRejectedValueOnce(new ServiceBusyError(5))
+      .mockResolvedValue("continue");
+    const p = usePolling(read, {
+      intervalMs: 20_000,
+      maxIntervalMs: 300_000,
+      wait: h.wait,
+      now: h.now,
+      isHidden: h.isHidden,
+    });
+    stopper = p.stop;
+
+    p.start();
+    await h.release(); // refused: come back in 300 s, exactly as the server said
+    expect(h.waits.at(-1)?.ms).toBe(300_000);
+    await h.release(); // refused with 5 s: never under the 20 s floor
+    expect(h.waits.at(-1)?.ms).toBe(20_000);
+    await h.release(); // success -> base
+    expect(h.waits.at(-1)?.ms).toBe(20_000);
   });
 
   it("slows to the cap on 'slow'", async () => {

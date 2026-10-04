@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
+import { ServiceBusyError } from "../api/http";
 import AgreementStatus from "./AgreementStatus.vue";
 import * as payments from "../api/payments";
 import * as signing from "../api/signingProgress";
@@ -482,6 +483,46 @@ describe("AgreementStatus — payment is the server's word", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Payment cannot be started yet");
+  });
+});
+
+describe("AgreementStatus — load refusals", () => {
+  it("shows the retry message, preferring a busy refusal over any other rejection", async () => {
+    // Payment fails generically and progress is refused for load: the busy refusal must win, since
+    // it is the one that carries when to come back.
+    mockedPayment.mockRejectedValue(new Error("boom"));
+    mockedProgress.mockRejectedValue(new ServiceBusyError(30));
+    const wrapper = mount(AgreementStatus, {
+      props: {
+        agreement: agreement(),
+        pollIntervalMs: 20,
+        pollWait: controlledWait().wait,
+      },
+    });
+    await flushPromises();
+
+    const shown = wrapper.get('[data-testid="status-error"]').text();
+    expect(shown).toContain("try again in 30 seconds");
+    expect(shown).not.toMatch(/429|503/);
+  });
+});
+
+describe("AgreementStatus — recovering from a busy first load", () => {
+  it("clears the retry message and shows the status once a poll succeeds", async () => {
+    const wait = controlledWait();
+    mockedPayment.mockRejectedValueOnce(new ServiceBusyError(5));
+    mockedProgress.mockRejectedValueOnce(new ServiceBusyError(5));
+    mockedPayment.mockResolvedValue(UNPAID_WITH_ORDER());
+    mockedProgress.mockResolvedValue(progress());
+    const wrapper = mount(AgreementStatus, {
+      props: { agreement: agreement(), pollIntervalMs: 20, pollWait: wait.wait },
+    });
+    await flushPromises();
+    expect(wrapper.get('[data-testid="status-error"]').text()).toContain("try again in 5");
+
+    await wait.tick(); // the poll the busy refusal started
+    expect(wrapper.find('[data-testid="status-error"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="status-pay"]').exists()).toBe(true);
   });
 });
 

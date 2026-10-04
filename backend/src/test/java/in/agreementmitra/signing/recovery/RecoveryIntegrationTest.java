@@ -2,6 +2,7 @@ package in.agreementmitra.signing.recovery;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import in.agreementmitra.SlidingWindowRateLimiter;
 import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
@@ -13,6 +14,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
@@ -55,15 +57,19 @@ class RecoveryIntegrationTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private IdentityService identityService;
   @Autowired private RecordingEmailSender mail;
-  @Autowired private RecoveryRateLimiter rateLimiter;
+
+  @Autowired
+  @Qualifier(RecoveryLimiterConfig.LIMITER)
+  private SlidingWindowRateLimiter rateLimiter;
 
   @BeforeEach
   void resetHarness() {
     mail.reset();
     // The limiter is a singleton shared across this class, and every request here arrives from
     // loopback - so without this, one test's requests throttle the next one's and the failures look
-    // like delivery bugs. Production keys on a real client address, where that does not happen.
-    rateLimiter.clear();
+    // like delivery bugs. Production keys on the client address the trusted proxy forwarded
+    // (anonymous-surface-abuse-controls D2), where unrelated customers do not share a bucket.
+    rateLimiter.reset();
   }
 
   // --- fixtures ---------------------------------------------------------------------------------
@@ -451,5 +457,38 @@ class RecoveryIntegrationTest {
     // what does or does not exist.
     ResponseEntity<String> response = requestRecovery("");
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  // --- the source key (anonymous-surface-abuse-controls 11.2) ----------------------------------
+
+  private ResponseEntity<String> requestRecoveryVia(String forwardedFor, String reference) {
+    org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+    headers.set("X-Forwarded-For", forwardedFor);
+    return rest.postForEntity(
+        "/api/agreements/recovery",
+        new org.springframework.http.HttpEntity<>(Map.of("reference", reference), headers),
+        String.class);
+  }
+
+  private List<String> outcomesFrom(String fingerprint) {
+    return jdbc.queryForList(
+        "SELECT outcome FROM recovery_audit WHERE requester_fingerprint = ?",
+        String.class,
+        fingerprint);
+  }
+
+  @Test
+  void twoCustomersBehindTheTrustedProxyOccupyDifferentBuckets() {
+    // Loopback is the trusted proxy in the test profile, so Tomcat's RemoteIpValve takes the
+    // client address from X-Forwarded-For - as it takes Caddy's in production. Before this change
+    // the source was the proxy itself, so one caller's lockout refused every customer.
+    for (int i = 0; i < 31; i++) {
+      requestRecoveryVia("203.0.113.61", "AMSRC" + String.format("%06d", i));
+    }
+    assertThat(outcomesFrom("203.0.113.61")).hasSize(31).contains("THROTTLED");
+
+    requestRecoveryVia("203.0.113.62", "AMSRCOTHER1");
+    // Keyed on its own address, not the proxy's - and not locked out by its neighbour.
+    assertThat(outcomesFrom("203.0.113.62")).containsExactly("NOT_ELIGIBLE");
   }
 }

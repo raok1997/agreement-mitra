@@ -38,6 +38,7 @@ import {
   payForAgreement,
 } from "../api/payments";
 import { isSignedIn, whenReady } from "../api/authStore";
+import { busyMessage } from "../api/http";
 import {
   fetchDocumentPreviewHtml,
   fetchDocumentPreviewPdf,
@@ -338,9 +339,14 @@ const previewLoading = ref(false);
 const previewError = ref<string | null>(null);
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ~600 ms: long enough that typing through a field renders once at the pause rather than per
+// keystroke, which keeps a customer well inside the server's render rate limit
+// (anonymous-surface-abuse-controls D5) and is the cheapest render-load cut there is.
+const PREVIEW_DEBOUNCE_MS = 600;
+
 function schedulePreview(): void {
   if (previewTimer) clearTimeout(previewTimer);
-  previewTimer = setTimeout(refreshPreview, 250);
+  previewTimer = setTimeout(refreshPreview, PREVIEW_DEBOUNCE_MS);
 }
 
 async function refreshPreview(): Promise<void> {
@@ -828,8 +834,9 @@ async function openContactStep(): Promise<void> {
       mobile: s.mobile ?? "",
     }));
     contactStep.value = true;
-  } catch {
-    payError.value = "Could not load the party details. Please try again.";
+  } catch (e) {
+    payError.value =
+      busyMessage(e) ?? "Could not load the party details. Please try again.";
   }
 }
 
@@ -883,9 +890,10 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
     // once the money is settled. "Please try again" would be a lie there: the freeze is permanent
     // and retrying refuses forever, so the message has to name the real condition instead.
     contactError.value =
-      e instanceof AgreementHttpError && e.contactsFrozen
+      busyMessage(e) ??
+      (e instanceof AgreementHttpError && e.contactsFrozen
         ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
-        : "Could not save those contact details. Please try again.";
+        : "Could not save those contact details. Please try again.");
   } finally {
     contactSaving.value = false;
   }

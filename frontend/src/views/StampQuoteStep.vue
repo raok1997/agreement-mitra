@@ -15,6 +15,7 @@
 
 import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
+import { busyMessage } from "../api/http";
 import {
   getStampQuote,
   selectionFor,
@@ -50,8 +51,9 @@ onMounted(async () => {
     const preselected =
       q.options.find((o) => o.recommended) ?? q.options[0] ?? null;
     selectedValue.value = preselected?.stampValueMinorUnits ?? null;
-  } catch {
+  } catch (e) {
     loadError.value =
+      busyMessage(e) ??
       "Could not load the stamp duty for this agreement. Please try again.";
   } finally {
     loading.value = false;

@@ -7,11 +7,17 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.http.MockHttpInputMessage;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+import org.springframework.web.context.request.ServletWebRequest;
 
 /**
  * Unit tests for the error-mapping logic — no Spring context, no I/O. Exercises the field/global
@@ -201,5 +207,53 @@ class GlobalExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getType().toString())
         .isEqualTo("urn:agreementmitra:problem:payload-too-large");
+  }
+
+  @Test
+  void aBodyStreamedPastTheCeilingIs413OfThePayloadTooLargeType() {
+    // anonymous-surface-abuse-controls D9: the guard's exception arrives wrapped by the converter.
+    HttpMessageNotReadableException wrapped =
+        new HttpMessageNotReadableException(
+            "I/O error while reading input message",
+            new RequestBodyGuard.RequestBodyTooLargeException(),
+            new MockHttpInputMessage(new byte[0]));
+
+    ResponseEntity<Object> response =
+        handler.handleHttpMessageNotReadable(
+            wrapped,
+            new HttpHeaders(),
+            HttpStatus.BAD_REQUEST,
+            new ServletWebRequest(new MockHttpServletRequest()));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
+    ProblemDetail problem = (ProblemDetail) response.getBody();
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:payload-too-large");
+    assertThat(problem.getInstance()).isEqualTo(problem.getType());
+  }
+
+  @Test
+  void anyOtherUnreadableBodyStaysA400MalformedRequest() {
+    HttpMessageNotReadableException other =
+        new HttpMessageNotReadableException("bad json", new MockHttpInputMessage(new byte[0]));
+    ResponseEntity<Object> response =
+        handler.handleHttpMessageNotReadable(
+            other,
+            new HttpHeaders(),
+            HttpStatus.BAD_REQUEST,
+            new ServletWebRequest(new MockHttpServletRequest()));
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void aRenderCapacityRefusalIs503RenderBusyWithRetryAfter() {
+    ResponseEntity<ProblemDetail> response =
+        handler.handleRenderCapacity(new RenderCapacityException("busy"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("5");
+    assertThat(response.getBody().getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:render-busy");
+    assertThat(response.getBody().getDetail()).doesNotContain("busy\"");
   }
 }

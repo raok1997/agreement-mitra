@@ -2,7 +2,12 @@ package in.agreementmitra;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import in.agreementmitra.identity.IdentityService;
+import in.agreementmitra.identity.oauth.HandoffService;
+import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.StaffSessions;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +19,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -37,6 +43,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class SecurityBaselineIntegrationTest {
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private IdentityService identityService;
+  @Autowired private HandoffService handoffService;
+  @Autowired private SessionService sessionService;
+  @Autowired private JdbcTemplate jdbc;
 
   @Autowired private List<SecurityFilterChain> filterChains;
 
@@ -53,7 +63,7 @@ class SecurityBaselineIntegrationTest {
 
   @Test
   void nonRequestSigningSubPathIsDeniedWith403() {
-    // /api/signing/** is NOT a blanket permit — only the exact */request stub is open.
+    // /api/signing/** is NOT a blanket rule — only the exact */request (STAFF) and */progress are.
     assertThat(rest.getForEntity("/api/signing/list", String.class).getStatusCode().value())
         .isEqualTo(403);
   }
@@ -74,12 +84,38 @@ class SecurityBaselineIntegrationTest {
   }
 
   @Test
-  void signingRequestStubIsPermittedAndReachesTheController() {
+  void anAnonymousSigningRequestIsRejected() {
+    // STAFF-only (anonymous-surface-abuse-controls D7). 403 from the chain, before the controller:
+    // a non-UUID id would otherwise reach MVC and answer 400.
     ResponseEntity<String> resp =
         rest.postForEntity("/api/signing/abc/request", null, String.class);
-    // 400 = permitted past security and reached MVC, which rejected the non-UUID path var. A 403
-    // would mean security blocked it before dispatch — the regression this guards against.
-    assertThat(resp.getStatusCode().value()).isEqualTo(400);
+    assertThat(resp.getStatusCode().value()).isEqualTo(403);
+  }
+
+  @Test
+  void aCustomerSessionCannotRequestSigning() {
+    String customer =
+        StaffSessions.customerSession(
+            identityService, handoffService, sessionService, "baseline-signing-customer");
+    assertThat(signingRequestAs(customer).getStatusCode().value()).isEqualTo(403);
+  }
+
+  @Test
+  void aStaffSigningRequestPassesTheChainAndReachesTheController() {
+    String staff =
+        StaffSessions.staffSession(
+            identityService, handoffService, sessionService, jdbc, "baseline-signing-staff");
+    // 400 = past security and into MVC, which rejected the non-UUID path var. A 403 would mean
+    // security blocked it. (The harness interceptor supplies the CSRF token;
+    // CsrfProtectionIntegrationTest proves the same STAFF request without one is refused.)
+    assertThat(signingRequestAs(staff).getStatusCode().value()).isEqualTo(400);
+  }
+
+  private ResponseEntity<String> signingRequestAs(String session) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
+    return rest.exchange(
+        "/api/signing/abc/request", HttpMethod.POST, new HttpEntity<>(headers), String.class);
   }
 
   @Test

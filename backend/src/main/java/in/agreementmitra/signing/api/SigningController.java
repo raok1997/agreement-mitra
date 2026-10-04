@@ -16,9 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
  * thread returns immediately — completion arrives later via {@link WebhookController}.
  *
  * <p>A non-UUID {@code agreementId} yields a 400 ProblemDetail (type mismatch, handled centrally);
- * an unknown agreement yields a 404 ProblemDetail (via {@code ResourceNotFoundException}). This
- * endpoint is unauthenticated today (no auth mechanism exists yet) — ownership authorization and
- * rate-limiting are deferred to a follow-up change.
+ * an unknown agreement yields a 404 ProblemDetail (via {@code ResourceNotFoundException}).
+ *
+ * <p>The create-request route is <b>STAFF-only</b> (anonymous-surface-abuse-controls D7), enforced
+ * in {@code SecurityConfig}: signing starts server-side once the e-stamp is attached, so this is a
+ * staff retry hatch, not a customer path. The progress read stays capability-scoped and is rate
+ * limited as a capability read.
  */
 @RestController
 @RequestMapping("/api/signing")

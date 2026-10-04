@@ -1,11 +1,17 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: Signing stub endpoint permitted pending an auth mechanism`
+- TO: `### Requirement: Signing-request endpoint restricted to staff`
+
 ## MODIFIED Requirements
 
-### Requirement: Signing stub endpoint permitted pending an auth mechanism
+### Requirement: Signing-request endpoint restricted to staff
 
 The filter chain SHALL require the STAFF authority on the signing-request path (the matcher
 `/api/signing/*/request`), and SHALL NOT permit it anonymously. The permit MUST remain scoped to
 that path only and MUST NOT use a broad `/api/signing/**` wildcard, so that any future signing
-sub-path is denied by default rather than born unauthenticated.
+sub-path is denied by default rather than born unauthenticated. Like every unsafe
+request, a call to the path SHALL still carry a valid CSRF token, in addition to the STAFF authority.
 
 This replaces the temporary anonymous allowance the requirement previously described, and is the
 tightening that allowance itself demanded ("MUST be tightened ... when an authentication mechanism
@@ -20,13 +26,15 @@ than rate-limiting it.
 
 #### Scenario: An anonymous signing request is rejected
 - **WHEN** `POST /api/signing/{agreementId}/request` is received without a STAFF session
-- **THEN** the security filter chain rejects it, and the request does not reach the controller
+- **THEN** the security filter chain rejects it with 403, and the request does not reach the
+  controller
 
 #### Scenario: Signing-request stub passes the filter
 - **WHEN** `POST /api/signing/{agreementId}/request` is received from a caller holding the STAFF
-  authority
+  authority and with a valid CSRF token
 - **THEN** the filter chain does not reject it and the request reaches the controller
 - **AND** the same request without that authority does not reach the controller
+- **AND** the same STAFF request without a valid CSRF token does not reach the controller
 
 #### Scenario: Other signing sub-paths are denied by default
 - **WHEN** a request is made to a different `/api/signing/**` path that is not `*/request` (e.g. `GET /api/signing/list`)
