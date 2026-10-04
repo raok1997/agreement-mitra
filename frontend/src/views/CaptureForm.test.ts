@@ -1172,77 +1172,6 @@ describe("CaptureForm: derived tenancy term", () => {
   });
 });
 
-describe("CaptureForm: registration warning", () => {
-  beforeEach(() => {
-    mockedGetForm.mockReset();
-    mockedEligible.mockReset();
-    mockedPreviewHtml.mockReset();
-    mockedGetForm.mockResolvedValue(sampleSchema());
-    mockedEligible.mockResolvedValue(["TG"]);
-    mockedPreviewHtml.mockResolvedValue("<p>preview</p>");
-    // The shell resumes a draft from localStorage on mount, so a leftover draft from an earlier
-    // test would silently supply dates this test never set.
-    localStorage.clear();
-  });
-
-  async function openTermWith(startDate: string, endDate: string) {
-    const wrapper = await mountReady();
-    await wrapper.find('[data-testid="section-term"]').trigger("click");
-    await wrapper.find('[data-testid="field-startDate"]').setValue(startDate);
-    await wrapper.find('[data-testid="field-endDate"]').setValue(endDate);
-    await flushPromises();
-    return wrapper;
-  }
-
-  it("warns above eleven months, naming the Sub-Registrar and excluding stamp duty", async () => {
-    const wrapper = await openTermWith("2026-01-08", "2028-01-08"); // 24 months
-
-    const warning = wrapper.find('[data-testid="registration-warning"]');
-    expect(warning.exists()).toBe(true);
-    expect(warning.text()).toMatch(/Sub-Registrar/);
-    expect(warning.text()).toMatch(/not included/i);
-  });
-
-  it("does not warn at exactly eleven months", async () => {
-    // The registrability line is "MORE than eleven months" (Registration Act 1908 s.17(1)(d)), so
-    // the common 11-month Indian tenancy must stay silent -- warning on it would train users to
-    // ignore the warning.
-    const wrapper = await openTermWith("2026-01-01", "2026-12-01");
-
-    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(
-      false,
-    );
-  });
-
-  it("does not warn while the term is undetermined", async () => {
-    const wrapper = await mountReady();
-    await wrapper.find('[data-testid="section-term"]').trigger("click");
-    await wrapper
-      .find('[data-testid="field-startDate"]')
-      .setValue("2026-01-08");
-    await flushPromises();
-
-    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(
-      false,
-    );
-  });
-
-  it("is advisory: the section still saves and counts as complete", async () => {
-    const wrapper = await openTermWith("2026-01-08", "2028-01-08");
-    expect(wrapper.find('[data-testid="registration-warning"]').exists()).toBe(
-      true,
-    );
-
-    await wrapper.find('[data-testid="modal-save"]').trigger("click");
-    await flushPromises();
-
-    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="status-term"]').text()).not.toBe(
-      "Needs input",
-    );
-  });
-});
-
 describe("CaptureForm: tenancy date range", () => {
   beforeEach(() => {
     mockedGetForm.mockReset();
@@ -1272,6 +1201,76 @@ describe("CaptureForm: tenancy date range", () => {
     expect(wrapper.find('[data-testid="field-error-startDate"]').exists()).toBe(
       false,
     );
+  });
+
+  it("disables the save control while the range is reversed", async () => {
+    // The rule used to be cosmetic: the error rendered, Save still worked, the section flipped to
+    // complete, and the reversed range reached the preview -- where the server derives a NEGATIVE
+    // term. Nothing downstream rejected it, so the deed could state "a term of -4 month(s)".
+    //
+    // Scope of this assertion: the DISABLED ATTRIBUTE is the whole of what it proves. A click on a
+    // disabled button dispatches no event in Vue Test Utils, so asserting "the modal stayed open"
+    // afterwards would pass identically with `saveSection`'s early return deleted. That early
+    // return is defence-in-depth and has no UI route to reach it today (there is no Enter-to-save
+    // handler); its decision logic is `crossFieldErrors`, which is unit-tested directly.
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper
+      .find('[data-testid="field-startDate"]')
+      .setValue("2026-06-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="modal-save"]').attributes("disabled"),
+    ).toBeDefined();
+    // And the section is not counted as complete while the range is invalid.
+    expect(wrapper.find('[data-testid="status-term"]').text()).toBe(
+      "Needs input",
+    );
+  });
+
+  it("re-enables the save control once the range is corrected", async () => {
+    // The complement that makes the disabled assertion meaningful: it must not be permanently
+    // disabled, and correcting the range must clear it -- i.e. no dead end for the user.
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper
+      .find('[data-testid="field-startDate"]')
+      .setValue("2026-06-01");
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2026-01-01");
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="modal-save"]').attributes("disabled"),
+    ).toBeDefined();
+
+    await wrapper.find('[data-testid="field-endDate"]').setValue("2027-06-01");
+    await flushPromises();
+
+    const save = wrapper.find('[data-testid="modal-save"]');
+    expect(save.attributes("disabled")).toBeUndefined();
+    await save.trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
+  });
+
+  it("still allows saving a part-filled section, so capture stays progressive", async () => {
+    // Only CROSS-FIELD errors block. A "required" error must not: a customer is expected to fill
+    // a section over more than one visit.
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    await wrapper
+      .find('[data-testid="field-startDate"]')
+      .setValue("2026-01-01");
+    await flushPromises();
+
+    const save = wrapper.find('[data-testid="modal-save"]');
+    expect(save.attributes("disabled")).toBeUndefined();
+
+    await save.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
   });
 
   it("clears the error once the range is valid", async () => {

@@ -130,10 +130,7 @@ export function fieldErrors(
  * plus a month silently rolls over to 3 March. Date is used only for the one-day step past the end
  * date, where its rollover is exactly the calendar rule wanted (31 Jan + 1 day = 1 Feb).
  */
-export function tenancyMonths(
-  startIso: string,
-  endIso: string,
-): number | null {
+export function tenancyMonths(startIso: string, endIso: string): number | null {
   const start = parseIsoDate(startIso);
   const end = parseIsoDate(endIso);
   if (!start || !end) return null;
@@ -174,26 +171,9 @@ function parseIsoDate(
 }
 
 /**
- * The term in months above which registration with the Sub-Registrar is compulsory (Registration
- * Act 1908 s.17(1)(d)). This is the NATIONAL default, mirroring the stamp-duty rules' base
- * `requiredWhenTermMonthsOver: 11`.
- *
- * It is deliberately a fixed number here: the capture form does not reach the rules engine, so a
- * state whose rule is stricter (Telangana sets 0 -- every lease is registrable) is under-warned at
- * capture time and still caught by the state-aware notice at the stamp-quote step. Making this
- * threshold state-aware is tracked in the follow-up register in docs/ROADMAP.md.
- */
-export const REGISTRABLE_OVER_MONTHS = 11;
-
-/** True when a term of this many months must be registered. Null (undetermined) never warns. */
-export function requiresRegistration(months: number | null): boolean {
-  return months !== null && months > REGISTRABLE_OVER_MONTHS;
-}
-
-/**
  * Per-field errors PLUS cross-field rules for a section. `validateField` stays per-field and pure;
- * this is the only place that compares one field against another, so the per-field call sites (and
- * `isSectionComplete`) are unaffected.
+ * this is the only place that compares one field against another, so the per-field call sites are
+ * unaffected. `isSectionComplete` DOES consult the cross-field rules (see `crossFieldErrors`).
  *
  * Today the one cross-field rule is the tenancy date range. The error attaches to the END date --
  * where the user can fix it -- and only once both dates are individually present and valid, so a
@@ -207,13 +187,35 @@ export function sectionErrors(
   data: SectionData,
 ): Record<string, string> {
   const errors = fieldErrors(fields, data);
+  return { ...errors, ...crossFieldErrors(fields, data, errors) };
+}
+
+/**
+ * The cross-field rules ALONE -- the errors `sectionErrors` adds on top of the per-field ones.
+ *
+ * Kept separately addressable because the two classes of error block different things. A per-field
+ * "required" error must NOT prevent saving a section: capture is progressive, and a customer is
+ * expected to fill a section over more than one visit. A cross-field error must, because a section
+ * that saves with a reversed date range reaches the preview and compiles a non-positive term into
+ * the document body.
+ *
+ * `perFieldErrors` is passed in so a rule can stay silent while either field still has an error of
+ * its own -- a half-filled form reports "required", not a confusing range error. Callers that do
+ * not have it to hand may omit it.
+ */
+export function crossFieldErrors(
+  fields: FormField[],
+  data: SectionData,
+  perFieldErrors: Record<string, string> = fieldErrors(fields, data),
+): Record<string, string> {
+  const errors: Record<string, string> = {};
 
   const keys = new Set(fields.map((f) => f.key));
   if (keys.has("startDate") && keys.has("endDate")) {
     const start = parseIsoDate(data.startDate ?? "");
     const end = parseIsoDate(data.endDate ?? "");
     // Only when both parse and neither already has an error of its own.
-    if (start && end && !errors.startDate && !errors.endDate) {
+    if (start && end && !perFieldErrors.startDate && !perFieldErrors.endDate) {
       const endNotAfterStart =
         end.year * 10000 + end.month * 100 + end.day <=
         start.year * 10000 + start.month * 100 + start.day;
@@ -263,12 +265,19 @@ export function isSectionComplete(
   fields: FormField[],
   data: SectionData,
 ): boolean {
-  return fields
+  const everyRequiredFieldFilled = fields
     // A read-only (derived) field is never the customer's to fill, so it can never hold a section
     // back. The backend already projects it required:false, but filtering here too means a stale
     // cached schema cannot strand a section as permanently incomplete.
     .filter((f) => f.required && !f.readOnly)
     .every((f) => !validateField(f, data[f.key] ?? ""));
+  if (!everyRequiredFieldFilled) return false;
+
+  // A cross-field rule must hold too, or a section with a reversed date range would report
+  // complete and let the flow proceed to a deed stating a non-positive term. Only the CROSS-FIELD
+  // rules are added here: per-field errors on OPTIONAL fields deliberately keep their existing
+  // (non-blocking) effect on completeness.
+  return Object.keys(crossFieldErrors(fields, data)).length === 0;
 }
 
 /** True when the customer supplies this field's value -- i.e. it is not a server-derived display. */

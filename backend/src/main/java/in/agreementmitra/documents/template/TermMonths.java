@@ -34,7 +34,16 @@ final class TermMonths {
     if (start == null || end == null) {
       return null;
     }
-    return Period.between(start, end.plusDays(1)).toTotalMonths();
+    try {
+      return Period.between(start, end.plusDays(1)).toTotalMonths();
+    } catch (RuntimeException e) {
+      // ISO_LOCAL_DATE accepts a signed, >4-digit year, so an end date of LocalDate.MAX
+      // ("+999999999-12-31") parses and then overflows on plusDays(1). This runs BEFORE the
+      // submitted-data validator, so throwing here would surface as a 500 on a request the date
+      // validator would have answered with a clean 400. Undetermined instead, same as an
+      // unparseable date; nothing is logged -- a submitted value must never reach the logs.
+      return null;
+    }
   }
 
   /** Parse an ISO date, or {@code null} for anything that is not one. Never throws. */

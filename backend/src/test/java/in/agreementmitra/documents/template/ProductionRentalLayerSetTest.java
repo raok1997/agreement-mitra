@@ -113,6 +113,16 @@ class ProductionRentalLayerSetTest {
   }
 
   @Test
+  void theBaseLayerPinsItsAuthoredVersion() {
+    // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
+    // different deeds must never report one authored version. v3 is the bump that made
+    // durationMonths derived. Pinned explicitly because every other assertion in this suite reads
+    // the version dynamically, which would let a revert through silently.
+    assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
+        .isEqualTo(3);
+  }
+
+  @Test
   void theRenderedTermFollowsTheDatesNotTheSubmittedDuration() {
     EffectiveTemplate eff = resolve("IN", "residential");
 

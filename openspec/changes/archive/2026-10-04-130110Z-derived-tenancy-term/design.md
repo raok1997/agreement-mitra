@@ -32,6 +32,10 @@ See `proposal.md` -- Why. The design-relevant state of the code today:
 
 - Changing how `signing` derives or stores `termMonths`. It is already right; this change must leave
   `Agreement`, `TenancyDuration`, and `AgreementDocumentMapper` untouched in behavior.
+  **Superseded 2026-10-03 for `TenancyDuration` only:** commit `5d39b7f` changed its count to
+  end-INCLUSIVE (`Period.between(start, end.plusDays(1))`) so that `signing`'s persisted
+  `termMonths` and this change's rendered term agree case for case -- see D4. `Agreement` and
+  `AgreementDocumentMapper` remain untouched in behavior.
 - A general expression language for derived fields. Exactly one field is derived, by a rule the
   server hard-codes; a template cannot declare *how* a field is derived, only *that* it is.
 - Reconciling the client-side month count with the server's by shipping shared code between Java and
@@ -109,23 +113,39 @@ number on screen but could never sign a wrong term. That asymmetry is what makes
 JavaScript `Date` month arithmetic overflows (31 Jan + 1 month = 3 March), so the helper compares
 year/month/day components directly rather than mutating a `Date`; the tests pin that case.
 
-### 5. Warn above eleven months, hard-coded, in the Term section
+### 5. ~~The capture-time registration warning~~ -- REMOVED FROM THIS CHANGE (2026-10-04)
 
-The threshold is the national default from `rules/stamp-duty/base.yaml`
-(`requiredWhenTermMonthsOver: 11`). The capture form does not reach the `rules` module, and giving it
-that reach is the deferred follow-up in the proposal.
+This decision described a warning in the Term section above the registration threshold. **The warning
+has been removed from this CR.** It duplicated the stamp-quote step's registration notice -- already
+server-side and computed from the stamp-duty rules -- as a second, less-informed assertion of the same
+legal fact by a client that cannot reach `rules`. The threshold it quoted also risked contradicting
+the registration clause in the deed being drafted: the shipped Karnataka clause reads "where the term
+exceeds twelve (12) months" while the national line is eleven.
 
-The warning is **advisory and non-blocking**: over eleven months is a lawful choice, and blocking it
-would make the product refuse valid business. It sits in the Term section beside the derived
-duration, where the dates that caused it are on screen. This does not replace the stamp-quote
-registration notice, which stays and remains the state-aware one.
+Attempting to fix that by making the client threshold state-aware (11 / KA 12 / TG 0, mirrored from
+the engine) was tried and reverted: Karnataka and Telangana both exempt a term below twelve months,
+which is the national line already, so it changed no customer-visible outcome while duplicating the
+rules engine and raising a counsel question. That sequence is the worked example now recorded under
+"Scope discipline" in CLAUDE.md.
+
+What the thresholds actually are -- and whether the shipped Karnataka clause is wrong -- is tracked as
+the existing `ka-stamp-duty-counsel-review` and `tg-stamp-duty-counsel-review` rows. A capture-time warning may still be worth building, as
+its own proposal, whose first question is whether the stamp-quote notice already suffices.
 
 ### 6. Cross-field validation enters `formModel.ts` as a separate function
 
 `validateField` stays per-field and pure. A new `sectionErrors(fields, data)` composes
-`fieldErrors(...)` with the cross-field rules, and the modal binds to that instead. Keeping the
-cross-field layer separate means `isSectionComplete` and the existing per-field call sites are
-unaffected, and the new rules are unit-testable without a Vue component.
+`fieldErrors(...)` with the cross-field rules, and the modal binds to that instead; the cross-field
+rules are also addressable alone, as `crossFieldErrors(fields, data)`. Keeping the layer separate
+leaves the existing per-field call sites untouched and makes the new rules unit-testable without a
+Vue component.
+
+*(Revised 2026-10-04.)* The two classes of error deliberately block **different** things, which is
+why `crossFieldErrors` is separately addressable: a cross-field error blocks the section save and
+completeness, because a saved reversed range reaches the preview and renders a non-positive term;
+a per-field "required" error must NOT block saving, because capture is progressive and a section may
+be filled over more than one visit. So `isSectionComplete` does now consult the cross-field rules --
+the original note that it was "unaffected" no longer holds.
 
 The end-before-start error attaches to the **end date** field, matching where the user can fix it.
 
@@ -135,10 +155,6 @@ The end-before-start error attaches to the **end date** field, matching where th
   boundary-case table (11 vs 12, 31 Jan to 28 Feb, leap day, trailing partial month). Blast radius is
   capped by Decision 2: the server's value is what renders and what is stored, so drift misleads on
   screen but cannot produce a wrong deed. A task explicitly cross-checks the two tables.
-- **[Telangana users are under-warned at capture]** -> TG requires registration at any term, but the
-  capture warning fires only above 11 months. This is a **narrowing** of an existing gap, not a new
-  one: today no capture-time warning exists at all, and the TG case is still caught by the
-  state-aware stamp-quote notice before payment. Recorded as a follow-up register row.
 - **[Users who typed a term now see it change]** -> A user who typed 11 against 24-month dates will
   see the duration become 24. That is the bug being fixed and the number the signed PDF already used,
   so the change surfaces reality rather than altering it. No stored value changes meaning.

@@ -36,6 +36,11 @@ The capture surface SHALL report a validation error when the captured end date i
 captured start date, and SHALL surface it against the end date field before the agreement is
 submitted.
 
+The error SHALL also **block the section from being saved** and SHALL prevent the section counting as
+complete, because a saved reversed range reaches the preview, where the derived term is non-positive.
+Blocking applies to cross-field errors only: a per-field "required" error SHALL remain saveable, since
+capture is progressive and a section may be filled over more than one visit.
+
 This SHALL be understood as a usability affordance, not the trust boundary: the server independently
 rejects the same condition, and the surface's check exists so the user is corrected in place rather
 than by a submission failure.
@@ -55,33 +60,12 @@ than by a submission failure.
 - **WHEN** the user sets an end date strictly after the start date
 - **THEN** no date-range error is shown
 
-### Requirement: The capture surface warns when the term crosses the registrability line
+#### Scenario: A reversed range cannot be saved
 
-The capture surface SHALL display a warning, at the point the term is captured, whenever the derived
-term **exceeds eleven months**, stating that an agreement of that term must be registered with the
-Sub-Registrar and that registration is separate from, and not included in, the stamp duty the platform
-quotes.
+- **WHEN** the user sets a start date of 2026-06-01 and an end date of 2026-01-01
+- **THEN** the save control for the section is disabled and the section does not count as complete
 
-The warning SHALL be advisory: it SHALL NOT block editing, saving, or proceeding, because a term over
-eleven months is a lawful choice the parties may make knowingly, and the platform's role is to ensure
-they are not making it unknowingly.
+#### Scenario: A part-filled section can still be saved
 
-The warning SHALL be phrased for a non-technical, all-India audience and SHALL NOT restate any captured
-value other than the term itself.
-
-#### Scenario: A term over eleven months warns
-
-- **WHEN** the captured dates yield a term of 24 months
-- **THEN** a registration warning is shown in the Term section
-- **AND** the warning states that registration is not included in the stamp duty quoted
-
-#### Scenario: A term of exactly eleven months does not warn
-
-- **WHEN** the captured dates yield a term of 11 months
-- **THEN** no registration warning is shown
-
-#### Scenario: The warning does not block progress
-
-- **WHEN** the registration warning is shown
-- **THEN** the user can still save the section and continue, and the section counts as complete if its
-  required fields are valid
+- **WHEN** the user sets a start date and leaves the end date empty
+- **THEN** the section can still be saved, because a missing required value is not a cross-field error

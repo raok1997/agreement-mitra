@@ -55,8 +55,7 @@ import {
   isSectionComplete,
   isSectionMandatory,
   reconcileActiveSections,
-  REGISTRABLE_OVER_MONTHS,
-  requiresRegistration,
+  crossFieldErrors,
   sectionErrors,
   sectionIcon,
   sectionId,
@@ -377,7 +376,22 @@ const activeSection = computed(() =>
 );
 const modalForm = reactive<SectionData>({});
 const modalErrors = computed(() =>
-  activeSection.value ? sectionErrors(activeSection.value.fields, modalForm) : {},
+  activeSection.value
+    ? sectionErrors(activeSection.value.fields, modalForm)
+    : {},
+);
+
+/**
+ * Whether the open section violates a CROSS-FIELD rule. This is what blocks the save (see
+ * `saveSection`); per-field errors stay non-blocking so a section can be filled progressively.
+ */
+const hasModalCrossFieldErrors = computed(
+  () =>
+    Object.keys(
+      activeSection.value
+        ? crossFieldErrors(activeSection.value.fields, modalForm)
+        : {},
+    ).length > 0,
 );
 
 // --- Derived tenancy term -------------------------------------------------------------------
@@ -395,19 +409,6 @@ watch(modalTermMonths, (months) => {
   modalForm.durationMonths = months === null ? "" : String(months);
 });
 
-/**
- * True when the term being captured crosses the registrability line, so the Term section warns.
- * Advisory only -- a term over eleven months is a lawful choice, and the platform's job is to make
- * sure it is not made unknowingly.
- */
-const modalNeedsRegistration = computed(() =>
-  requiresRegistration(modalTermMonths.value),
-);
-
-/** The Term section is the one that captures the dates; only it carries the warning. */
-const modalShowsTerm = computed(() =>
-  (activeSection.value?.fields ?? []).some((f) => f.key === "durationMonths"),
-);
 const dialogRef = ref<HTMLElement | null>(null);
 let lastFocused: HTMLElement | null = null;
 
@@ -423,7 +424,10 @@ function openSection(id: string): void {
   // Seed the derived duration from the dates the modal just loaded, so it is correct on open and
   // not only after the user touches a date (the watcher fires on CHANGE, not on mount).
   if ("durationMonths" in modalForm) {
-    const months = tenancyMonths(modalForm.startDate ?? "", modalForm.endDate ?? "");
+    const months = tenancyMonths(
+      modalForm.startDate ?? "",
+      modalForm.endDate ?? "",
+    );
     modalForm.durationMonths = months === null ? "" : String(months);
   }
   void nextTick(() => {
@@ -442,11 +446,18 @@ function closeModal(): void {
 function saveSection(): void {
   const id = activeSectionId.value;
   if (!id) return;
+  // A cross-field error (today: an end date not after the start) must block the save, or a
+  // reversed range reaches the preview and compiles a non-positive term into the document. Only
+  // the cross-field rules block: a per-field "required" error must still be saveable, because
+  // capture is progressive and a section may be filled over more than one visit.
+  if (hasModalCrossFieldErrors.value) return;
   // Read-only (server-derived) keys are NOT committed: the server strips them from captureData as
   // anti-mass-assignment and recomputes them at render, so persisting one would only create a
   // second, drifting copy of a value the server owns.
   const derivedKeys = new Set(
-    (activeSection.value?.fields ?? []).filter((f) => f.readOnly).map((f) => f.key),
+    (activeSection.value?.fields ?? [])
+      .filter((f) => f.readOnly)
+      .map((f) => f.key),
   );
   const slice: SectionData = {};
   for (const key of Object.keys(modalForm)) {
@@ -1517,21 +1528,6 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
-      <!--
-        Registration warning. Advisory and NON-BLOCKING: a term over eleven months is a lawful
-        choice, so this exists to stop the parties making it unknowingly, not to refuse it. The
-        threshold is the national default; Telangana requires registration at ANY term and is still
-        caught by the state-aware notice at the stamp-quote step (see the follow-up register).
-      -->
-      <p
-        v-if="modalShowsTerm && modalNeedsRegistration"
-        class="mx-5 mb-4 rounded bg-amber-50 px-3 py-2 text-xs text-amber-900"
-        data-testid="registration-warning"
-      >
-        A term of more than {{ REGISTRABLE_OVER_MONTHS }} months must be
-        registered with the Sub-Registrar. Registration is separate from stamp
-        duty and is not included in what you pay here.
-      </p>
       <footer
         class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4"
       >
@@ -1548,8 +1544,9 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
           data-testid="modal-save"
+          :disabled="hasModalCrossFieldErrors"
           @click="saveSection"
         >
           Save section

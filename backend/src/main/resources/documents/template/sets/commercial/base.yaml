@@ -17,7 +17,9 @@
 #
 # PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
 # (ownerName, tenantName, propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate,
-# endDate). Those are the ONLY fields marked required here -- relabelled for commercial (Lessor name,
+# endDate). Of those, durationMonths is DERIVED (source: derived, required: false) -- the server
+# computes it from the dates, so it is mapped and rendered but never required of the customer.
+# The rest are the ONLY fields marked required here -- relabelled for commercial (Lessor name,
 # Lessee name, Demised premises, Monthly lease rent, Lease term, ...) but the SAME keys, so the signed
 # draft (generate) and the live preview stay in parity. Every other field is optional or carries a
 # system-authored default. A mandatory section (optional: false) always renders; its individual

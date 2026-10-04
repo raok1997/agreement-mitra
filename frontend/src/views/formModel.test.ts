@@ -7,9 +7,8 @@ import {
   isSectionComplete,
   isSectionMandatory,
   isSectionRequired,
+  crossFieldErrors,
   reconcileActiveSections,
-  REGISTRABLE_OVER_MONTHS,
-  requiresRegistration,
   sectionErrors,
   sectionIcon,
   sectionId,
@@ -254,18 +253,116 @@ describe("tenancyMonths", () => {
   });
 });
 
-describe("requiresRegistration", () => {
-  it("warns strictly ABOVE the eleven-month line, never at it", () => {
-    expect(REGISTRABLE_OVER_MONTHS).toBe(11);
-    expect(requiresRegistration(11)).toBe(false);
-    expect(requiresRegistration(12)).toBe(true);
-    expect(requiresRegistration(24)).toBe(true);
-    expect(requiresRegistration(0)).toBe(false);
+describe("crossFieldErrors", () => {
+  const dateFields = [
+    field({
+      key: "startDate",
+      label: "Start",
+      widget: "date",
+      type: "date",
+      required: true,
+    }),
+    field({
+      key: "endDate",
+      label: "End",
+      widget: "date",
+      type: "date",
+      required: true,
+    }),
+  ];
+
+  it("returns the cross-field rule ALONE, without per-field errors", () => {
+    // This is the distinction the save guard depends on: a "required" error must stay saveable
+    // (capture is progressive), while a reversed range must not.
+    const errors = crossFieldErrors(dateFields, {
+      startDate: "2026-06-01",
+      endDate: "2026-01-01",
+    });
+    expect(errors).toEqual({
+      endDate: "The end date must be after the start date.",
+    });
   });
 
-  it("never warns on an undetermined term", () => {
-    // A missing date must not produce a legal warning the user cannot act on.
-    expect(requiresRegistration(null)).toBe(false);
+  it("is empty when only per-field errors are present", () => {
+    // Both dates missing: sectionErrors reports two "required" errors, crossFieldErrors reports
+    // none -- so an unfilled section still saves.
+    expect(crossFieldErrors(dateFields, {})).toEqual({});
+    expect(Object.keys(sectionErrors(dateFields, {}))).toHaveLength(2);
+  });
+
+  it("is empty for a valid range", () => {
+    expect(
+      crossFieldErrors(dateFields, {
+        startDate: "2026-01-01",
+        endDate: "2026-12-01",
+      }),
+    ).toEqual({});
+  });
+
+  it("stays silent when a date cannot be parsed", () => {
+    // NOTE on what this does and does not prove: today it passes because `parseIsoDate` rejects
+    // the value, NOT because the `perFieldErrors` guard fires -- `validateField` has no `date`
+    // branch, so a date field's only per-field error is `required`, and a blank fails parsing
+    // first. The guard is therefore unreachable at present. It is kept deliberately rather than
+    // deleted: the sibling change `dd-mm-yyyy-date-entry` specifies that an invalid or incomplete
+    // date IS reported against the field, which makes the guard load-bearing -- without it, a
+    // half-typed date would show a confusing range error on top of its own.
+    expect(
+      crossFieldErrors(dateFields, {
+        startDate: "2026-06-01",
+        endDate: "not-a-date",
+      }),
+    ).toEqual({});
+  });
+
+  it("stays silent when the guard is given a per-field error for a date", () => {
+    // Exercises the guard directly, since no production path can reach it yet (see above).
+    expect(
+      crossFieldErrors(
+        dateFields,
+        { startDate: "2026-06-01", endDate: "2026-01-01" },
+        { endDate: "End is required." },
+      ),
+    ).toEqual({});
+  });
+});
+
+describe("isSectionComplete: cross-field rules", () => {
+  const dateFields = [
+    field({
+      key: "startDate",
+      label: "Start",
+      widget: "date",
+      type: "date",
+      required: true,
+    }),
+    field({
+      key: "endDate",
+      label: "End",
+      widget: "date",
+      type: "date",
+      required: true,
+    }),
+  ];
+
+  it("is NOT complete when the range is reversed, though both fields are filled", () => {
+    // Before this, a reversed range counted as complete: both required fields were non-empty and
+    // completeness only ever asked validateField, which is per-field.
+    expect(
+      isSectionComplete(dateFields, {
+        startDate: "2026-06-01",
+        endDate: "2026-01-01",
+      }),
+    ).toBe(false);
+  });
+
+  it("is complete for a valid range", () => {
+    expect(
+      isSectionComplete(dateFields, {
+        startDate: "2026-01-01",
+        endDate: "2026-12-01",
+      }),
+    ).toBe(true);
   });
 });
 

@@ -110,6 +110,86 @@ class AgreementDocumentFormatE2EIntegrationTest {
         .getContentAsString();
   }
 
+  // --- derived-tenancy-term: the API-level leg (tasks 5.6 / 5.7) -----------------------------
+  // These assert over the REAL production rental set, which reaches the HTTP surface only under
+  // the test+sandbox profiles this class activates (the catalog seeder plus the registry-backed
+  // LayerSource). The plain-profile integration tests resolve the FIXTURE set
+  // documents/template/examples/layers/, where durationMonths is still a required, bounded,
+  // user-sourced field -- so they can never witness the derived behaviour.
+
+  @Test
+  void formSchemaServesTheDerivedTermReadOnlyAndNotRequired() throws Exception {
+    String json =
+        mockMvc
+            .perform(get(FORM).param("state", "TG").param("type", "residential"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    JsonNode duration = null;
+    for (JsonNode section : mapper.readTree(json).get("sections")) {
+      for (JsonNode field : section.get("fields")) {
+        if ("durationMonths".equals(field.path("key").asText())) {
+          duration = field;
+        }
+      }
+    }
+
+    // Present (the client DISPLAYS it), read-only, and never required of the customer.
+    assertThat(duration).isNotNull();
+    assertThat(duration.path("readOnly").asBoolean()).isTrue();
+    assertThat(duration.path("required").asBoolean()).isFalse();
+    // No default: a default is what used to show 11 against a 24-month span.
+    assertThat(duration.hasNonNull("default")).isFalse();
+  }
+
+  @Test
+  void previewRendersTheTermDerivedFromTheDatesNotTheSubmittedDuration() throws Exception {
+    // The reported case, end to end over HTTP: a 24-month span submitted alongside a stale 11.
+    Map<String, Object> data = telanganaData();
+    data.put("startDate", "2026-01-08");
+    data.put("endDate", "2028-01-08");
+    data.put("durationMonths", 11);
+
+    String html = previewHtml(data, List.of());
+
+    assertThat(html).contains("term of 24 month(s)");
+    assertThat(html).doesNotContain("term of 11 month(s)");
+  }
+
+  @Test
+  void previewLeavesTheTermUnstatedRatherThanRenderingANegativeOne() throws Exception {
+    // A reversed range has no @EndAfterStart on the preview path, and durationMonths carries no
+    // `min` now that it is derived -- so without the guard this rendered "a term of -4 month(s)"
+    // into the document body.
+    Map<String, Object> data = telanganaData();
+    data.put("startDate", "2026-06-01");
+    data.put("endDate", "2026-01-01");
+    data.put("durationMonths", 11);
+
+    String html = previewHtml(data, List.of());
+
+    assertThat(html).doesNotContain("term of -4 month(s)");
+    assertThat(html).doesNotContain("term of 11 month(s)");
+  }
+
+  @Test
+  void previewStatesASubMonthTenancyAsZeroRatherThanAPlaceholder() throws Exception {
+    // A lawful 20-day tenancy is zero whole months. The term slot must carry a number, not the
+    // `[ Duration (months) ]` placeholder -- this document face is the one that gets signed.
+    Map<String, Object> data = telanganaData();
+    data.put("startDate", "2026-01-01");
+    data.put("endDate", "2026-01-20");
+    data.put("durationMonths", 11);
+
+    String html = previewHtml(data, List.of());
+
+    assertThat(html).contains("term of 0 month(s)");
+    assertThat(html).doesNotContain("[ Duration (months) ]");
+    assertThat(html).doesNotContain("term of 11 month(s)");
+  }
+
   // --- M0 + M3 + M5: the capture form carries section semantics and drops document-only sections
   // --
 

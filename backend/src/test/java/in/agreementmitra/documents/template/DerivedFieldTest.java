@@ -22,7 +22,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Derived fields ({@code source: derived}), change {@code
- * derived-tenancy-term-and-registration-warning}: the declaration binds, the field stays in the
+ * derived-tenancy-term}: the declaration binds, the field stays in the
  * capture form but read-only, a submitted value is discarded, and the term the document states is
  * always computed from the dates -- on the preview path as well as the generate path.
  *
@@ -184,6 +184,81 @@ class DerivedFieldTest {
     assertThat(TermMonths.between("not a date", "2026-12-01")).isNull();
     assertThat(TermMonths.between("01/01/2026", "2026-12-01")).isNull();
     assertThat(TermMonths.between(11, "2026-12-01")).isNull();
+  }
+
+  @Test
+  void anOutOfRangeYearLeavesTheTermUndeterminedRatherThanThrowing() {
+    // ISO_LOCAL_DATE accepts a signed, >4-digit year, so LocalDate.MAX parses -- and the
+    // end-inclusive count then adds a day to it, which overflows. This runs BEFORE the
+    // submitted-data validator, so throwing would turn a request the date validator answers with
+    // a clean 400 into a 500.
+    assertThat(TermMonths.between("2026-01-01", "+999999999-12-31")).isNull();
+    assertThat(TermMonths.between("-999999999-01-01", "2026-01-01")).isNotNull();
+  }
+
+  // --- a non-positive term is never substituted --------------------------------------
+
+  @Test
+  void aNegativeTermLeavesTheKeyUnsetRatherThanRenderingIt() {
+    // durationMonths lost its `validation: { min: 1 }` when it became derived, so nothing
+    // downstream rejects a negative count. Leaving the key unset renders it as any other unfilled
+    // field instead of compiling "a term of -4 month(s)" into the document body.
+    EffectiveTemplate effective = effective(loader.load(DEFINITION));
+
+    Map<String, Object> reversed = new LinkedHashMap<>();
+    reversed.put("startDate", "2026-06-01");
+    reversed.put("endDate", "2026-01-01");
+
+    assertThat(DocumentProjectionService.withSystemValues(effective, reversed, Map.of()))
+        .doesNotContainKey("durationMonths");
+  }
+
+  @Test
+  void aZeroMonthTermIsStillSubstitutedRatherThanLeftToThePlaceholder() {
+    // A lawful sub-month tenancy is ZERO whole months and is creatable (@EndAfterStart only
+    // requires end > start). Leaving the key unset would make the compiler render the
+    // `[ Duration (months) ]` placeholder into the GENERATED draft -- a form artifact inside the
+    // instrument that is then stamped and eSigned. "0 month(s)" is imprecise but not that.
+    // See `sub-month-tenancy-term-wording` in the follow-up register.
+    EffectiveTemplate effective = effective(loader.load(DEFINITION));
+
+    Map<String, Object> sameMonth = new LinkedHashMap<>();
+    sameMonth.put("startDate", "2026-01-01");
+    sameMonth.put("endDate", "2026-01-20");
+    assertThat(DocumentProjectionService.withSystemValues(effective, sameMonth, Map.of()))
+        .containsEntry("durationMonths", 0L);
+
+    Map<String, Object> sameDay = new LinkedHashMap<>();
+    sameDay.put("startDate", "2026-06-01");
+    sameDay.put("endDate", "2026-06-01");
+    assertThat(DocumentProjectionService.withSystemValues(effective, sameDay, Map.of()))
+        .containsEntry("durationMonths", 0L);
+  }
+
+  @Test
+  void aNegativeSubmittedTermIsStillDiscarded() {
+    // The guard must not accidentally let a client value survive when the derivation declines to
+    // substitute one: the removal is unconditional, the put is not.
+    EffectiveTemplate effective = effective(loader.load(DEFINITION));
+    Map<String, Object> submitted = new LinkedHashMap<>();
+    submitted.put("startDate", "2026-06-01");
+    submitted.put("endDate", "2026-01-01");
+    submitted.put("durationMonths", 11);
+
+    assertThat(DocumentProjectionService.withSystemValues(effective, submitted, Map.of()))
+        .doesNotContainKey("durationMonths");
+  }
+
+  @Test
+  void aOneMonthTermIsStillSubstituted() {
+    // The boundary the guard must not over-reach: 1 is positive and lawful.
+    EffectiveTemplate effective = effective(loader.load(DEFINITION));
+    Map<String, Object> submitted = new LinkedHashMap<>();
+    submitted.put("startDate", "2026-01-01");
+    submitted.put("endDate", "2026-01-31");
+
+    assertThat(DocumentProjectionService.withSystemValues(effective, submitted, Map.of()))
+        .containsEntry("durationMonths", 1L);
   }
 
   // --- 5.5 the substitution ----------------------------------------------------------

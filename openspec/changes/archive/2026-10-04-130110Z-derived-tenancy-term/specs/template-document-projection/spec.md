@@ -16,11 +16,23 @@ agreement record can never report different terms.
 
 When either date is absent or unusable, the system SHALL leave `durationMonths` unset rather than
 substitute a guessed or defaulted term, and the document SHALL render the same way it renders any
-other unfilled field.
+other unfilled field. A date whose year lies outside the representable range SHALL be treated as
+unusable rather than raising an error, so the submitted-data validator reports the date fault itself.
+
+The system SHALL likewise leave `durationMonths` unset when the computed term is **not positive** --
+a reversed range yields a negative count and an end date inside the start month yields zero, and
+neither is a term a deed can state. `durationMonths` carries no `validation: { min: 1 }` once it is
+derived (input bounds do not belong on a computed value), so nothing downstream would otherwise
+reject it and the document body would read "a term of -4 month(s)".
 
 This requirement is the data-map counterpart to single-compiler parity: parity of the compiler
 guarantees one renderer for a *given* data map, and this guarantees the preview path and the generate
 path present the *same* map for the term.
+
+#### Scenario: A non-positive term is left unstated
+
+- **WHEN** a preview is requested with a start date of 2026-06-01 and an end date of 2026-01-01
+- **THEN** `durationMonths` is left unset and the document does not state a negative term
 
 #### Scenario: A submitted duration that disagrees with the dates is discarded
 

@@ -74,7 +74,7 @@ range bounds -- and those deserve table-driven unit tests without mounting a com
 Validity is computed by **round-tripping**: build the date from the typed components, then check the
 constructed date reports back the same day, month, and year. `new Date(2026, 1, 31)` silently rolls
 over to 3 March, so a constructed-date check without the round-trip accepts `31/02/2026`. This is the
-same overflow trap the sibling `derived-tenancy-term-and-registration-warning` change documents for
+same overflow trap the sibling `derived-tenancy-term` change documents for
 month arithmetic, and the tests pin it.
 
 A **two-digit year is rejected** rather than expanded. `08/01/26` could mean 1926 or 2026; on a
@@ -138,7 +138,7 @@ backend release.
 Rollback is a revert of the frontend change; because no stored value was ever written in a new shape,
 nothing needs cleaning up afterwards.
 
-**Sequencing with `derived-tenancy-term-and-registration-warning`:** the two changes are independent
+**Sequencing with `derived-tenancy-term`:** the two changes are independent
 and touch different components (that one changes `FieldWidget`/`CaptureForm` and the Term section;
 this one changes `DateWidget`). They overlap only in that both are exercised by `CaptureForm.test.ts`
 and both concern the Term section, so whichever lands second updates the shared test file. Landing the

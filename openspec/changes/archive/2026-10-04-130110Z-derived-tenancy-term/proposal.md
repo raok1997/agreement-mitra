@@ -10,13 +10,19 @@ generated/signed PDF compiles the **date-derived** one. A tenancy captured as 20
 "a term of 24 month(s)". Same deed, two different terms, and the stamp duty is quoted off the
 derived 24.
 
-Separately, client-side validation is strictly per-field (`formModel.ts` validates each field in
+Relatedly, client-side validation is strictly per-field (`formModel.ts` validates each field in
 isolation), so the capture form has **no cross-field checks at all**. An end date on or before the
-start date passes the form and is only rejected by the server as a 400, and nothing tells the user
-that crossing 11 months makes registration compulsory under the Registration Act 1908 s.17(1)(d) --
-a consequence the deed's own `stampRegistrationClause` asserts, and which today surfaces only after
-saving, at the stamp-quote step. For legal infrastructure, letting a user walk past the
-registrability line unwarned is the more serious of the two defects.
+start date passes the form and is only rejected by the server as a 400. That matters more once the
+term is derived: a reversed range no longer shows a value the user typed, it shows a nonsense
+duration computed from their dates, so the range needs checking where the dates are entered.
+
+*(Scope corrected 2026-10-04. This CR also carried a capture-time **registration warning**, which has
+been removed from it. That warning duplicated the registration notice at the stamp-quote step --
+already server-side and computed from the stamp-duty rules -- as a second, less-informed statement of
+the same legal fact by a client that cannot reach `rules`. It was also the whole source of this CR's
+churn, and the threshold it asserted risked contradicting the registration clause in the deed being
+drafted. A capture-time warning may still be worth building; it needs its own proposal, whose first
+question is whether the stamp-quote notice already suffices.)*
 
 ## What Changes
 
@@ -29,21 +35,24 @@ registrability line unwarned is the more serious of the two defects.
   construction rather than by two code paths happening to compute the same thing.
 - The capture form gains its first **cross-field validation**: an error when the end date is on or
   before the start date, pre-empting the 400 the server already returns.
-- The Term section shows a **registration warning** when the derived term exceeds 11 months,
-  stating that registration with the Sub-Registrar is compulsory and is not part of the stamp duty
-  being quoted.
+- A cross-field error **blocks the section save** and keeps the section incomplete, because a saved
+  reversed range reaches the preview, where the derived term is non-positive. Per-field "required"
+  errors stay saveable, so capture remains progressive.
 - **Not breaking.** No API contract changes shape; `durationMonths` was already stripped from
   inbound `captureData` as server-managed, so no client can be relying on sending it.
 
 ### Deliberately out of scope (recorded in the `docs/ROADMAP.md` follow-up register)
 
-- **A state-aware warning threshold.** The 11-month line is the national default
-  (`rules/stamp-duty/base.yaml` -> `requiredWhenTermMonthsOver: 11`), but Telangana sets it to `0`
-  (`TG/lease-residential.yaml`, `TG/lease-commercial.yaml`): every TG lease is registrable, so a
-  fixed 11 under-warns Telangana users at capture time. Sourcing the threshold from the stamp-duty
-  rules engine needs the capture form to reach `rules`, which it does not today. The TG case stays
-  covered later by the existing stamp-quote registration notice, so this narrows an existing gap
-  rather than opening a new one.
+- **Sourcing the warning threshold from the rules engine.** *(Narrowed 2026-10-04 -- the
+  state-aware threshold itself was brought INTO scope during validation and is implemented; only the
+  plumbing remains deferred.)* The warning now uses each state's own line -- 11 nationally, 12 in
+  Karnataka, 0 in Telangana, where every lease is registrable -- because a single fixed 11 told a
+  Karnataka customer that a 12-month tenancy must be registered while the Karnataka clause in the
+  very deed being drafted sets the line at twelve. **Resolved by removing the warning from this CR
+  altogether** (see Why): with no capture-time warning there is no client-side threshold to source,
+  and the stamp-quote notice already reads the rules engine directly. What the thresholds actually
+  are remains an open question about the rule data and the shipped Karnataka clause, tracked as
+  the existing `ka-stamp-duty-counsel-review` and `tg-stamp-duty-counsel-review` rows.
 
 ## Capabilities
 
@@ -62,9 +71,8 @@ _None. Every behavior here belongs to an existing capability._
   and the generate path's data map agree -- extending the existing single-compiler parity
   requirement, which guarantees one compiler for a *given* data map but not that the two paths
   present the same map.
-- `preview-centric-capture`: the capture form SHALL render a derived field read-only, SHALL reject
-  an end date on or before the start date before submission, and SHALL warn when the derived term
-  exceeds the 11-month registrability line.
+- `preview-centric-capture`: the capture form SHALL render a derived field read-only, and SHALL
+  reject an end date on or before the start date before submission, blocking the section save.
 
 ## Impact
 
@@ -74,13 +82,17 @@ _None. Every behavior here belongs to an existing capability._
   data map; `TemplateDefinitionLoader` parses the new `source` value.
 - **Backend (resources)**: `documents/template/sets/rental/base.yaml` and the commercial set change
   `durationMonths` from `required: true` to the derived source.
-- **Backend (`signing`)**: unchanged in behavior. `AgreementDocumentMapper` already overwrites
+- **Backend (`signing`)**: unchanged in behavior at the time of this proposal. (`TenancyDuration`
+  was subsequently changed by `5d39b7f` to count the end date inclusively, keeping the persisted
+  term in step with the rendered one -- see the design Non-Goals.) `AgreementDocumentMapper` already overwrites
   `durationMonths` from `Agreement.termMonths()` and `AgreementService` already strips it from
   `captureData`; both stay as the authoritative belt-and-braces for the persisted path.
 - **Frontend**: `api/templateForm.ts` (the read-only marker on `FormField`), `views/formModel.ts`
-  (month derivation, the end-before-start cross-field rule, the registrability threshold),
-  `views/CaptureForm.vue` (read-only rendering of the Term duration, the warning, wiring the
-  cross-field error into the modal), `views/FieldWidget.vue` (disabled state).
+  (month derivation, the end-before-start cross-field rule), `views/CaptureForm.vue` (read-only
+  rendering of the Term duration, wiring the cross-field error into the modal),
+  `components/widgets/FieldWidget.vue` (dispatching on
+  `readOnly` ahead of the widget type) and a new `components/widgets/DerivedWidget.vue` (a display
+  with no `<input>`, so there is nothing to tab into).
 - **No migration.** `agreement.term_months` is already populated server-side from the dates; no
   stored value changes meaning and no backfill is needed.
 - **Docs**: a follow-up-register row in `docs/ROADMAP.md` for the state-aware threshold.
@@ -94,8 +106,7 @@ _None. Every behavior here belongs to an existing capability._
   Month derivation is arithmetic over dates already present in the request.
 - **Logging**: unchanged. The existing prohibition on logging rendered content or submitted values
   (`template-document-projection`) continues to hold; the derivation logs nothing, and the new
-  client-side validation messages name only the field label and the 11-month threshold, never a
-  captured value.
+  client-side validation messages name only the field label, never a captured value.
 - **Sandbox + dummy data only**: preserved. No credential, secret, or environment change.
 - **Signing status FSM**: untouched. This change is entirely pre-`PDF_GENERATED` capture and render
   behavior; it adds, removes, and reorders no `SignatureStatus` transition.
