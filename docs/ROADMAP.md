@@ -73,7 +73,10 @@ parallel.**
    that is Telangana" must agree with the home-page status board (`src/content/releaseStatus.ts`,
    TG stamping "In integration" today), and its national-template sentence is stale (the picker
    hides `IN` templates) ·
-   `stamp-certificate-price-reconciliation`
+   `stamp-certificate-price-reconciliation` · `legal-policy-pages` (new): the Privacy Policy,
+   Refund/Cancellation and Contact pages named in the counsel paragraph above. Generate them
+   from the same data-module pattern as the terms, so refund wording is ToS §11 rather than a
+   second copy, and the privacy text renders as a marked counsel gap until §15 is answered.
 2. Terms-acceptance checkpoint (under "Other queued non-goals"; after
    `terms-release-revision`, because it records which version was accepted) ·
    `rental-default-commercial-terms` together with `stamp-quote-capture-defaults` (same root;
