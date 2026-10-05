@@ -15,6 +15,9 @@ services:
     # answers minio-java 8.6.0's bucket calls with XML: every stored-draft request 500'd locally
     # ("Failed to ensure bucket agreements") while the suite stayed green on its own pinned image.
     # Bump this and the harness pin together, and bump minio-java deliberately alongside them.
+    # A volume written by a NEWER MinIO cannot be read by this one: the container exits with
+    # "Unknown xl header version 3". Local data is dummy - reset it:
+    #   docker compose rm -sf minio && docker volume rm agreement-mitra_miniodata && docker compose up -d minio
     image: minio/minio:RELEASE.2023-09-04T19-57-37Z
     command: server /data --console-address ":9001"
     environment:
