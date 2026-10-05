@@ -450,6 +450,40 @@ docker compose -f docker-compose.prod.yml exec postgres \
 The template query must return rows. An empty catalog means the `sandbox` profile
 is not active -- see the note in section 3.
 
+### MinIO image -- a manual gate on every deploy
+
+`docker-compose.prod.yml` runs `minio/minio:latest`, which is **unpinned**
+(register row `prod-minio-image-pin`). Two facts make that dangerous:
+
+- **A newer MinIO can break storage.** `RELEASE.2025-09-07` answers minio-java
+  8.6.0's bucket calls in a form it cannot parse, so every PDF write 500s
+  (`Failed to ensure bucket`) while the backend still reports healthy.
+  `RELEASE.2023-09-04T19-57-37Z` is the known-good release (dev and the test
+  harness pin it).
+- **An older MinIO cannot read a newer one's data.** Moving to an older release
+  than the one that wrote the volume makes MinIO exit at startup with
+  `Unknown xl header version 3`. So never "fix" the first problem by pinning
+  lower than what is running.
+
+Until the pin lands, on every deploy:
+
+1. **Before** -- record the running release:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml exec minio minio --version
+   ```
+
+2. **Do not pull MinIO.** `up -d --build` reuses the cached image; a
+   `docker compose pull`, or a fresh box, fetches whatever `latest` is today.
+3. **After** -- run the same command; the release must be unchanged. Then make
+   one real storage write: in the browser, start an agreement at `/start`, fill
+   it in and press **Generate**. A 500 there with MinIO up is this failure, not an
+   application bug.
+
+If the recorded release is `RELEASE.2025-09-07` or later, storage is likely
+already broken -- check with step 3 before deploying anything else, and resolve
+`prod-minio-image-pin` first.
+
 ### Build gates are NOT run by the image builds
 
 The backend image runs `bootJar`, not `check`; the web image runs `build:only`,
