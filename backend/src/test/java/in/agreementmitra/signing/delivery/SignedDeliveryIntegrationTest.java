@@ -49,6 +49,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.util.LinkedMultiValueMap;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -72,6 +73,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import({HarnessTestConfig.class, MailTestConfig.class})
 @ActiveProfiles("test")
+// Pinned blank so an OPERATOR_LLPIN exported in the shell cannot change the operator line asserted.
+@TestPropertySource(properties = "operator.llpin=")
 @Testcontainers(disabledWithoutDocker = true)
 class SignedDeliveryIntegrationTest {
 
@@ -372,6 +375,9 @@ class SignedDeliveryIntegrationTest {
                   .isNotEqualTo("AUDITTRAIL");
               assertThat(m.attachment().filename()).doesNotContain("audit");
               assertThat(m.body().toLowerCase(java.util.Locale.ROOT)).doesNotContain("audit");
+              // The operator line closes every body (operating-entity-disclosure D7).
+              assertThat(m.body())
+                  .endsWith("\n\nAgreementMitra is a service of KAVISAT TEK LABS LLP.\n");
             });
 
     // Signed and delivered to every party -> closed, as completed, with a recorded time.

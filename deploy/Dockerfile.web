@@ -7,6 +7,10 @@
 # a clean node image and the gate is deliberately fail-closed. Same reasoning as
 # the Cloudflare Pages build documented in docs/DOMAIN-AND-EMAIL-SETUP.md. A
 # green image build is NOT a passed dependency scan.
+#
+# CONTEXT: deploy/Dockerfile.web.dockerignore is an allowlist (BuildKit's
+# per-Dockerfile ignore), so keys, certs, .git, backend/ and host node_modules
+# never reach the context. The legacy builder (DOCKER_BUILDKIT=0) ignores it.
 
 FROM node:20-alpine AS spa
 WORKDIR /app
@@ -16,6 +20,28 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ ./
+
+# Public operator identifiers (operating-entity-disclosure D8), from the OPTIONAL
+# gitignored deploy/env/web-build.env: absent or empty means "being issued". The
+# file is read through a bind mount of deploy/ (always in the context, via the
+# Caddyfile), so a fresh clone without it still builds. Refuses any key but the
+# two public ones -- this is baked into a public bundle -- and any `$`, which
+# Vite's dotenv-expand would expand silently. Never echoes the offending line.
+# vite.config.ts then validates the values themselves.
+RUN --mount=type=bind,source=deploy,target=/deploy \
+    f=/deploy/env/web-build.env; \
+    if [ -f "$f" ]; then \
+      if grep -q '\$' "$f"; then \
+        echo "web-build.env must not contain \$" >&2; exit 1; \
+      fi; \
+      if grep -vE '^[[:space:]]*(#|$)' "$f" \
+          | grep -qvE '^(VITE_OPERATOR_LLPIN|VITE_OPERATOR_REGISTERED_OFFICE)='; then \
+        echo "web-build.env may hold only VITE_OPERATOR_LLPIN and VITE_OPERATOR_REGISTERED_OFFICE" >&2; \
+        exit 1; \
+      fi; \
+      cp "$f" .env.production.local; \
+    fi
+
 RUN npm run build:only
 
 FROM caddy:2-alpine AS runtime

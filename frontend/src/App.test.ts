@@ -290,6 +290,10 @@ describe("App route switch", () => {
     expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(false);
     // The landing page must render even when the backend is down.
     expect(mockedList).not.toHaveBeenCalled();
+    // The operator disclosure, scoped to the footer itself.
+    expect(wrapper.get("footer").text()).toContain(
+      "AgreementMitra is a service of KAVISAT TEK LABS LLP.",
+    );
   });
 
   it("enters the builder at /start from a landing CTA, and back returns to the page", async () => {
@@ -361,6 +365,12 @@ describe("App route switch", () => {
     expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(false);
     expect(mockedList).not.toHaveBeenCalled();
+    // The shared footer, scoped to the <footer>: the name also appears in §1 and Operator details.
+    expect(wrapper.get("footer").text()).toContain(
+      "AgreementMitra is a service of KAVISAT TEK LABS LLP.",
+    );
+    expect(wrapper.find('footer a[href="/terms"]').exists()).toBe(true);
+    expect(wrapper.find('footer a[href^="mailto:"]').exists()).toBe(true);
   });
 
   it("returns from /terms to wherever the reader came from", async () => {

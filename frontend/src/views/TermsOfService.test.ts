@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import TermsOfService from "./TermsOfService.vue";
 import { TERMS_CLAUSES } from "../content/termsOfService";
+import { CONTACT_EMAIL } from "../content/promises";
 
 // The page is published DELIBERATELY unfinished (docs/LEGAL-POSTURE.md item 2: a draft beats
 // nothing). What makes that defensible rather than sloppy is that the unfinished parts announce
@@ -119,5 +122,45 @@ describe("TermsOfService", () => {
     );
     // No remedy may be reintroduced as a multiple or share of the duty.
     expect(text).not.toContain("equal to the stamp duty");
+  });
+});
+
+// operating-entity-disclosure D6: the identifiers render after the clauses, never inside them.
+describe("TermsOfService operator details", () => {
+  const entity = {
+    legalName: "KAVISAT TEK LABS LLP",
+    llpin: null,
+    registeredOffice: null,
+  };
+
+  it("follows the last clause and names the LLP, its LLPIN state and the support email", () => {
+    const wrapper = mount(TermsOfService, { props: { entity } });
+    const details = wrapper.get('[data-testid="terms-operator-details"]');
+    const text = details.text();
+
+    expect(text).toContain("Operator details");
+    expect(text).toContain("KAVISAT TEK LABS LLP");
+    expect(text).toContain("being issued");
+    expect(text).toContain("to be confirmed");
+    expect(text).toContain(CONTACT_EMAIL);
+
+    const sections = wrapper.findAll("section").map((s) => s.element);
+    const lastClause = sections
+      .filter((el) =>
+        el.getAttribute("data-testid")?.startsWith("terms-clause-"),
+      )
+      .at(-1)!;
+    expect(
+      lastClause.compareDocumentPosition(details.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders values as text, never as HTML", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/views/TermsOfService.vue"),
+      "utf8",
+    );
+    expect(source).not.toContain("v-html");
   });
 });

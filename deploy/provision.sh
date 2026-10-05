@@ -301,7 +301,7 @@ UNIT
 # ---------------------------------------------------------------------------
 # secrets
 #
-# Generates deploy/env/{postgres,minio,backend}.env on the SERVER. Secrets are
+# Generates deploy/env/{postgres,minio,backend,web-build}.env on the SERVER. Secrets are
 # created here and never travel from a workstation -- see docs/DEPLOYMENT.md
 # section 3.
 #
@@ -461,6 +461,11 @@ secrets() {
       skipped=$((skipped + 1))
     fi
   done
+
+  # --- web-build.env -----------------------------------------------------
+  # Public operator identifiers baked into the caddy image (not secrets). Empty
+  # is valid: the site then says "being issued". See web-build.env.example.
+  touch "${ENV_DIR}/web-build.env"
 
   chmod 600 "${ENV_DIR}"/*.env
   log "secrets: ${filled} value(s) generated, ${skipped} left as already set"

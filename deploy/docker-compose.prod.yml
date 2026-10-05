@@ -10,6 +10,9 @@
 # rather than a single shared .env, so no service sees another's credentials.
 # Generate them with `./provision.sh secrets` -- templates are the *.env.example
 # files beside them. Nothing secret is ever written into this file.
+# `web-build.env` is the one exception to "read by a service": it is baked into
+# the caddy image's Vite build (deploy/Dockerfile.web) and holds only PUBLIC
+# operator identifiers, never a secret.
 
 name: agreementmitra
 

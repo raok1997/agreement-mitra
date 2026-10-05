@@ -17,7 +17,7 @@ reviewed as though it were intended.
 
 ## 1. Who we are
 
-AgreementMitra is an online service that produces residential rental agreements for the Indian market and takes them through to electronic execution. In these terms, "we" and "us" mean AgreementMitra, and "you" mean the person using the service.
+AgreementMitra is an online service that produces residential rental agreements for the Indian market and takes them through to electronic execution. AgreementMitra is a service provided by KAVISAT TEK LABS LLP, a limited liability partnership registered in India. In these terms, "we" and "us" mean KAVISAT TEK LABS LLP, and "you" mean the person using the service.
 
 These terms apply whenever you use the service, whether or not you create an account. Much of the service is deliberately usable without one.
 
@@ -180,3 +180,15 @@ The date this draft last changed is shown at the top of this page.
 ## 19. Contact
 
 Write to support@agreementmitra.com. If your message is about a specific agreement, quote its reference.
+
+---
+
+## Operator details
+
+These identifiers are deployment data, set from configuration when issued; they are not part of
+the clause text above. This document shows the committed defaults.
+
+- **Legal name:** KAVISAT TEK LABS LLP
+- **LLPIN:** being issued
+- **Registered office:** to be confirmed
+- **Support:** support@agreementmitra.com

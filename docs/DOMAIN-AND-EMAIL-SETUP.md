@@ -120,6 +120,15 @@ The repo already contains everything Pages needs: `frontend/public/_redirects`
 | Build command | `npm ci && npm run build:only` |
 | Build output directory | `dist` |
 | Environment variable | `NODE_VERSION` = `20.19.0` |
+| Environment variable | `VITE_OPERATOR_LLPIN` = the LLPIN (`AAA-0000`), blank until issued |
+| Environment variable | `VITE_OPERATOR_REGISTERED_OFFICE` = the registered office, blank until confirmed |
+
+The two `VITE_OPERATOR_*` values are **public** — baked into the bundle every visitor downloads —
+and must match `deploy/env/web-build.env` (the `caddy` image) and, for the LLPIN, `backend.env`.
+Blank renders "LLPIN: being issued" and omits the office. A malformed value **fails the build**
+(the check in `vite.config.ts`); the office allows only ASCII letters, digits, spaces and
+`, . - / # ( ) & '`. No `VITE_*` variable may ever hold a credential. Changing a value
+needs a redeploy (**Retry deployment**), since it is baked in at build time.
 
 Then **Custom domains** -> add `agreementmitra.com` and `www.agreementmitra.com`.
 

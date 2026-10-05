@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Level;
 import in.agreementmitra.AgreementIds;
+import in.agreementmitra.OperatingEntity;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.DeliveryArtifact;
@@ -95,7 +96,8 @@ class SignedDocumentDeliveryServiceTest {
         blobStore,
         emailSender,
         attachmentCeiling,
-        properties);
+        properties,
+        new OperatingEntity(null, null));
   }
 
   private SigningCompletionView signedView(String invitedEmail, InviteeStatus inviteeStatus) {

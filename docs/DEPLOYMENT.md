@@ -217,6 +217,7 @@ receives another's credentials:
 | `deploy/env/postgres.env` | `postgres` | `postgres.env.example` |
 | `deploy/env/minio.env` | `minio` | `minio.env.example` |
 | `deploy/env/backend.env` | `backend` | `backend.env.example` |
+| `deploy/env/web-build.env` | the `caddy` image **build** (baked into the public SPA bundle; optional, never a secret) | `web-build.env.example` |
 
 Generate them **on the server**:
 
@@ -327,7 +328,9 @@ founding-team-beta posture the rule files describe. Confirm that is what you
 want before going live, and revisit it when counsel review lands.
 
 Lock the files down (`provision.sh secrets` already does this):
-`chmod 600 deploy/env/*.env`.
+`chmod 600 deploy/env/*.env`. `web-build.env` holds only public operator identifiers, but is
+locked down with the rest; an existing server created before it existed runs
+`touch deploy/env/web-build.env` once (absent also builds, as "being issued").
 
 ### Why the `sandbox` profile is required
 

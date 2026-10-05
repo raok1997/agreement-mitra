@@ -20,6 +20,8 @@
 // no display utility class, because one would beat Tailwind's [hidden] rule and show all three.
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import wordmark from "../assets/logo-wordmark.svg";
+import SiteFooter from "../components/SiteFooter.vue";
+import { OPERATING_ENTITY } from "../content/operatingEntity";
 import { PANEL_IDS, panelForHash, type PanelId } from "./landingPanels";
 import {
   CONTACT_EMAIL,
@@ -577,26 +579,6 @@ onBeforeUnmount(() => {
       </section>
     </main>
 
-    <footer class="border-t border-ink-200 bg-white">
-      <div
-        class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 text-sm text-ink-500 md:flex-row md:items-center md:justify-between"
-      >
-        <p>&copy; 2026 AgreementMitra. Online rental agreements for India.</p>
-        <div class="flex items-center gap-4">
-          <a
-            class="font-medium text-ink-600 hover:text-brand-700"
-            href="/terms"
-          >
-            Terms of service
-          </a>
-          <a
-            class="font-medium text-ink-600 hover:text-brand-700"
-            :href="`mailto:${CONTACT_EMAIL}`"
-          >
-            {{ CONTACT_EMAIL }}
-          </a>
-        </div>
-      </div>
-    </footer>
+    <SiteFooter :entity="OPERATING_ENTITY" />
   </div>
 </template>

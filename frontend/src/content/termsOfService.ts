@@ -42,7 +42,7 @@ export const TERMS_CLAUSES: Clause[] = [
     heading: "1. Who we are",
     status: "drafted",
     body: [
-      'AgreementMitra is an online service that produces residential rental agreements for the Indian market and takes them through to electronic execution. In these terms, "we" and "us" mean AgreementMitra, and "you" mean the person using the service.',
+      'AgreementMitra is an online service that produces residential rental agreements for the Indian market and takes them through to electronic execution. AgreementMitra is a service provided by KAVISAT TEK LABS LLP, a limited liability partnership registered in India. In these terms, "we" and "us" mean KAVISAT TEK LABS LLP, and "you" mean the person using the service.',
       "These terms apply whenever you use the service, whether or not you create an account. Much of the service is deliberately usable without one.",
     ],
   },

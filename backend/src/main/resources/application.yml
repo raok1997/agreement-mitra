@@ -322,6 +322,15 @@ auth:
     token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
     jwks-uri: ${GOOGLE_OAUTH_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
 
+# The legal entity operating the service (operating-entity-disclosure). Its legal name is NOT here:
+# it is the constant OperatingEntity.LEGAL_NAME, so no environment can rename the party the terms of
+# service name. The LLPIN and GSTIN are pending: blank means "not yet issued". A non-blank malformed
+# value (or a GSTIN that is not a valid firm GSTIN) refuses startup. The GSTIN has no default and is
+# reachable only via OperatingEntity.gstin(), an Optional.
+operator:
+  llpin: ${OPERATOR_LLPIN:}
+  gstin: ${OPERATOR_GSTIN:}
+
 # Per-page render footer. platform-url is the non-secret provenance URL shown as the footer's
 # centre cell; the documents module keeps no brand literal (blank default omits the cell), so the
 # brand value lives here. Env-overridable.

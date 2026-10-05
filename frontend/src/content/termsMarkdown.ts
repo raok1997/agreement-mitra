@@ -6,6 +6,8 @@
 // is stale. The test is the gate, not the script: if the script ever stops working, regenerate the
 // file by hand and the gate still tells you whether you got it right.
 
+import { OPERATING_ENTITY_DEFAULTS } from "./operatingEntity";
+import { CONTACT_EMAIL } from "./promises";
 import {
   TERMS_CLAUSES,
   TERMS_LAST_UPDATED,
@@ -51,6 +53,24 @@ export function renderTermsMarkdown(): string {
       out.push(paragraph, "");
     }
   }
+
+  // From the committed defaults, never the build env: this document must not depend on whoever runs
+  // the generator. Not part of the clause text a terms acceptance versions (D6).
+  const entity = OPERATING_ENTITY_DEFAULTS;
+  out.push(
+    "---",
+    "",
+    "## Operator details",
+    "",
+    "These identifiers are deployment data, set from configuration when issued; they are not part of",
+    "the clause text above. This document shows the committed defaults.",
+    "",
+    `- **Legal name:** ${entity.legalName}`,
+    `- **LLPIN:** ${entity.llpin ?? "being issued"}`,
+    `- **Registered office:** ${entity.registeredOffice ?? "to be confirmed"}`,
+    `- **Support:** ${CONTACT_EMAIL}`,
+    "",
+  );
 
   return out.join("\n").replace(/\n+$/, "\n");
 }
