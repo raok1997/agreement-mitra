@@ -59,8 +59,11 @@ const stateFilter = ref("");
 const types = computed(() =>
   [...new Set(rows.value.map((r) => r.type))].sort(),
 );
+const byName = (a: string, b: string) =>
+  stateName(a).localeCompare(stateName(b));
+
 const states = computed(() =>
-  [...new Set(rows.value.map((r) => r.state))].sort(),
+  [...new Set(rows.value.map((r) => r.state))].sort(byName),
 );
 
 const filtered = computed(() => {
@@ -69,7 +72,8 @@ const filtered = computed(() => {
     if (typeFilter.value && r.type !== typeFilter.value) return false;
     if (stateFilter.value && r.state !== stateFilter.value) return false;
     if (!q) return true;
-    const hay = `${r.name} ${r.description ?? ""}`.toLowerCase();
+    const hay =
+      `${r.name} ${r.description ?? ""} ${stateName(r.state)}`.toLowerCase();
     return hay.includes(q);
   });
 });
@@ -82,7 +86,7 @@ const byState = computed(() => {
     groups.set(r.state, group);
   }
   return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => byName(a, b))
     .map(([state, templates]) => ({ state, templates }));
 });
 
@@ -152,7 +156,9 @@ onMounted(load);
         data-testid="filter-state"
       >
         <option value="">All states</option>
-        <option v-for="s in states" :key="s" :value="s">{{ s }}</option>
+        <option v-for="s in states" :key="s" :value="s">
+          {{ stateName(s) }}
+        </option>
       </select>
       <select
         v-if="types.length > 1"

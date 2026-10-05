@@ -221,6 +221,32 @@ describe("TemplatePicker", () => {
     );
   });
 
+  it("labels the state filter with state names, sorted by name", async () => {
+    const wrapper = await mountReady();
+    const options = wrapper.findAll('[data-testid="filter-state"] option');
+    expect(options.map((o) => o.text())).toEqual([
+      "All states",
+      "Karnataka",
+      "Telangana",
+    ]);
+    expect(options.map((o) => o.attributes("value"))).toEqual(["", "KA", "TG"]);
+  });
+
+  it("matches the state name in search even when the template text omits it", async () => {
+    mockedList.mockResolvedValue(
+      rows().map((r) => ({ ...r, description: null })),
+    );
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="picker-search"]').setValue("telangana");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="template-card-ka-res"]').exists()).toBe(
+      false,
+    );
+  });
+
   it("surfaces a load failure", async () => {
     mockedList.mockRejectedValue(new Error("Failed to load templates (500)."));
     const wrapper = await mountReady();
