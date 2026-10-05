@@ -549,4 +549,32 @@ class AgreementServiceTest {
     // Three rows, one template: one lookup. A per-row call would be an N+1 against the catalog.
     verify(templateCatalog, times(1)).find(templateId.toString());
   }
+
+  @Test
+  void namesOfSplitsByRoleInEntryPositionOrder() {
+    Agreement agreement =
+        Agreement.create(
+            "1 A St",
+            BigDecimal.TEN,
+            BigDecimal.ZERO,
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2026, 12, 1));
+    // Deliberately out of position order, as a list read in heap order would be.
+    List<Signer> signers =
+        List.of(
+            party(agreement, 3, "Tenant Two", Role.TENANT),
+            party(agreement, 1, "Owner Two", Role.OWNER),
+            party(agreement, 2, "Tenant One", Role.TENANT),
+            party(agreement, 0, "Owner One", Role.OWNER));
+
+    assertThat(AgreementService.namesOf(signers, Role.OWNER))
+        .containsExactly("Owner One", "Owner Two");
+    assertThat(AgreementService.namesOf(signers, Role.TENANT))
+        .containsExactly("Tenant One", "Tenant Two");
+  }
+
+  private static Signer party(Agreement agreement, int position, String name, Role role) {
+    return Signer.create(
+        agreement, position, name, name, "X", "Father", "1 A St", "a@example.com", "9", role);
+  }
 }

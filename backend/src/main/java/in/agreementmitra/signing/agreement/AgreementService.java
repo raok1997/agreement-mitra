@@ -20,6 +20,7 @@ import in.agreementmitra.signing.api.CreateAgreementRequest;
 import in.agreementmitra.signing.api.PaymentStateResponse;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,10 +97,10 @@ public class AgreementService {
 
   /**
    * Server-managed keys that must never round-trip through the user-content capture map
-   * (anti-mass-assignment, D2): the id, owner, creation timestamp, derived duration, and the
-   * template pin. They stay server-managed -- stripped here so a stored blob can never carry a
-   * value for them (both snake_case and camelCase spellings, so neither shape smuggles one in). The
-   * fixed typed columns remain authoritative at render (D3), independently of this strip.
+   * (anti-mass-assignment, D2): the id, owner, creation and last-edit timestamps, derived duration,
+   * and the template pin. They stay server-managed -- stripped here so a stored blob can never
+   * carry a value for them (both snake_case and camelCase spellings, so neither shape smuggles one
+   * in). The fixed typed columns remain authoritative at render (D3), independently of this strip.
    */
   private static final Set<String> SERVER_MANAGED_CAPTURE_KEYS =
       Set.of(
@@ -108,6 +109,8 @@ public class AgreementService {
           "owner_identity_id",
           "createdAt",
           "created_at",
+          "lastEditedAt",
+          "last_edited_at",
           "durationMonths",
           "termMonths",
           "duration",
@@ -233,14 +236,16 @@ public class AgreementService {
   }
 
   /**
-   * The caller's agreements as list summaries, most-recent first (D3): each carries the
-   * <b>derived</b> {@link AgreementDisplayStatus} (projected from the signing side, never stored)
-   * and the {@code editable} flag. Only the caller's rows are returned; unowned drafts never
-   * appear.
+   * The caller's agreements as list summaries, most recently edited first (ties: newest created,
+   * then id), with every party's name loaded in the same query. Each carries the <b>derived</b>
+   * {@link AgreementDisplayStatus} (projected from the signing side, never stored) and the {@code
+   * editable} flag. Only the caller's rows are returned; unowned drafts never appear.
    */
   @Transactional(readOnly = true)
   public List<AgreementSummaryResponse> listOwnedBy(UUID ownerIdentityId) {
-    return repository.findByOwnerIdentityIdOrderByCreatedAtDesc(ownerIdentityId).stream()
+    return repository
+        .findByOwnerIdentityIdOrderByLastEditedAtDescCreatedAtDescIdDesc(ownerIdentityId)
+        .stream()
         .map(this::toSummary)
         .toList();
   }
@@ -297,6 +302,7 @@ public class AgreementService {
     agreement.replaceCaptureState(
         sanitizeCaptureData(request.captureData()), request.activeSections());
     agreement.clearDraftPin();
+    agreement.markEdited(Instant.now());
     return toResponse(repository.save(agreement));
   }
 
@@ -375,6 +381,7 @@ public class AgreementService {
     // The draft pin is deliberately NOT cleared. Contacts are not terms and do not appear in the
     // rendered agreement, so the document the parties are about to be emailed is still the one
     // they were shown.
+    agreement.markEdited(Instant.now());
     return toResponse(repository.save(agreement));
   }
 
@@ -426,8 +433,23 @@ public class AgreementService {
         agreement.endDate(),
         agreement.termMonths(),
         agreement.createdAt(),
+        agreement.lastEditedAt(),
+        namesOf(agreement.signers(), Role.OWNER),
+        namesOf(agreement.signers(), Role.TENANT),
         status,
         status.editable());
+  }
+
+  /**
+   * The names of {@code role}'s parties, in entry order. Reads only {@code name()} and {@code
+   * role()}: the list summary carries names and nothing else of a party.
+   */
+  static List<String> namesOf(List<Signer> signers, Role role) {
+    return signers.stream()
+        .filter(signer -> signer.role() == role)
+        .sorted(Comparator.comparingInt(Signer::entryPosition))
+        .map(Signer::name)
+        .toList();
   }
 
   /**

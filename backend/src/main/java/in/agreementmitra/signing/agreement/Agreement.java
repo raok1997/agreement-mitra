@@ -12,6 +12,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
@@ -64,6 +65,16 @@ class Agreement implements Persistable<UUID> {
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
+
+  /**
+   * When the agreement's content was last changed through the drafting surface: set to {@link
+   * #createdAt} on create, then moved by {@link #markEdited} on an edit of terms or parties, a
+   * contacts edit, or a draft attach. Deliberately <b>not</b> a JPA {@code @UpdateTimestamp}: that
+   * would miss the edits touching only child rows and fire on payment, stamping and closure, so
+   * "Edited 2h ago" would mean "a webhook arrived 2h ago". Server-managed.
+   */
+  @Column(name = "last_edited_at", nullable = false)
+  private Instant lastEditedAt;
 
   /**
    * The agreement's <b>one</b> externally-visible reference (design D3): short, checksummed,
@@ -224,6 +235,7 @@ class Agreement implements Persistable<UUID> {
   private ClosureReason closureReason;
 
   @OneToMany(mappedBy = "agreement", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OrderBy("entryPosition ASC")
   private List<Signer> signers = new ArrayList<>();
 
   @Transient private boolean isNew = true;
@@ -251,6 +263,7 @@ class Agreement implements Persistable<UUID> {
     this.startDate = startDate;
     this.endDate = endDate;
     this.createdAt = createdAt;
+    this.lastEditedAt = createdAt;
   }
 
   static Agreement create(
@@ -271,7 +284,10 @@ class Agreement implements Persistable<UUID> {
         Instant.now());
   }
 
-  /** Add a signer to the aggregate, wiring both sides of the relationship. */
+  /**
+   * Add a signer to the aggregate, wiring both sides of the relationship. Its entry position is the
+   * current list size, so after {@link #clearSigners} the new list renumbers from 0 in call order.
+   */
   void addSigner(
       String name,
       String firstName,
@@ -283,7 +299,25 @@ class Agreement implements Persistable<UUID> {
       Role role) {
     signers.add(
         Signer.create(
-            this, name, firstName, lastName, fatherName, currentAddress, email, mobile, role));
+            this,
+            signers.size(),
+            name,
+            firstName,
+            lastName,
+            fatherName,
+            currentAddress,
+            email,
+            mobile,
+            role));
+  }
+
+  /**
+   * Record that the agreement's content was just changed through the drafting surface. Called once
+   * per action by the service (edit, contacts edit, draft attach), never by a read or a system
+   * transition.
+   */
+  void markEdited(Instant at) {
+    this.lastEditedAt = at;
   }
 
   /** Attach (or replace) the uploaded draft's object-storage key. Server-managed only. */
@@ -497,6 +531,10 @@ class Agreement implements Persistable<UUID> {
 
   Instant createdAt() {
     return createdAt;
+  }
+
+  Instant lastEditedAt() {
+    return lastEditedAt;
   }
 
   /**

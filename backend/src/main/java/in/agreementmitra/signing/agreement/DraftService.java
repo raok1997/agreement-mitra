@@ -6,6 +6,7 @@ import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.SigningRequestQuery;
+import java.time.Instant;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +74,7 @@ public class DraftService {
     String key = "drafts/" + agreementId + ".pdf";
     blobStore.put(key, bytes, CONTENT_TYPE_PDF);
     agreement.attachDraft(key); // managed entity — flushed on tx commit
+    agreement.markEdited(Instant.now());
 
     log.debug("Draft stored for agreement {}", AgreementIds.redact(agreementId));
   }

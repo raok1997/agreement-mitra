@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -284,5 +285,54 @@ class AgreementTest {
 
     org.junit.jupiter.api.Assertions.assertThrows(
         UnsupportedOperationException.class, () -> agreement.signers().clear());
+  }
+
+  private static void addParty(Agreement agreement, String name, Role role) {
+    agreement.addSigner(name, name, "X", "Father", "1 A St", null, null, role);
+  }
+
+  @Test
+  void createSetsLastEditedAtToCreatedAt() {
+    Agreement agreement = newAgreement();
+
+    assertThat(agreement.lastEditedAt()).isEqualTo(agreement.createdAt());
+  }
+
+  @Test
+  void markEditedMovesLastEditedAtAndLeavesCreatedAt() {
+    Agreement agreement = newAgreement();
+    Instant created = agreement.createdAt();
+    Instant later = created.plusSeconds(3600);
+
+    agreement.markEdited(later);
+
+    assertThat(agreement.lastEditedAt()).isEqualTo(later);
+    assertThat(agreement.createdAt()).isEqualTo(created);
+  }
+
+  @Test
+  void addSignerAssignsEntryPositionsInCallOrder() {
+    Agreement agreement = newAgreement();
+    addParty(agreement, "A", Role.OWNER);
+    addParty(agreement, "T", Role.TENANT);
+    addParty(agreement, "B", Role.OWNER);
+
+    assertThat(agreement.signers()).extracting(Signer::name).containsExactly("A", "T", "B");
+    assertThat(agreement.signers()).extracting(Signer::entryPosition).containsExactly(0, 1, 2);
+  }
+
+  @Test
+  void clearSignersThenAddSignerRenumbersFromZeroInTheNewOrder() {
+    Agreement agreement = newAgreement();
+    addParty(agreement, "A", Role.OWNER);
+    addParty(agreement, "B", Role.OWNER);
+    addParty(agreement, "T", Role.TENANT);
+
+    agreement.clearSigners();
+    addParty(agreement, "B", Role.OWNER);
+    addParty(agreement, "A", Role.OWNER);
+
+    assertThat(agreement.signers()).extracting(Signer::name).containsExactly("B", "A");
+    assertThat(agreement.signers()).extracting(Signer::entryPosition).containsExactly(0, 1);
   }
 }

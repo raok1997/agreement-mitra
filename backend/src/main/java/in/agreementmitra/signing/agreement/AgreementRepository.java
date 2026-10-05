@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -13,11 +14,15 @@ import org.springframework.data.repository.query.Param;
 interface AgreementRepository extends JpaRepository<Agreement, UUID> {
 
   /**
-   * The agreements owned by {@code ownerIdentityId}, most-recent first -- backs the "list mine"
-   * (resume) projection. Filters on the indexed {@code owner_identity_id}; an unowned (null-owner)
-   * draft never matches, so it is never listed to anyone.
+   * The agreements owned by {@code ownerIdentityId}, most recently edited first (ties: newest
+   * created, then id) -- backs the "list mine" (resume) projection. Filters on the indexed {@code
+   * owner_identity_id}; an unowned (null-owner) draft never matches, so it is never listed to
+   * anyone. The parties are fetched in the same query (one bag, no pagination), ordered by the
+   * collection's {@code @OrderBy}, so the summary's names cost no query per row.
    */
-  List<Agreement> findByOwnerIdentityIdOrderByCreatedAtDesc(UUID ownerIdentityId);
+  @EntityGraph(attributePaths = "signers")
+  List<Agreement> findByOwnerIdentityIdOrderByLastEditedAtDescCreatedAtDescIdDesc(
+      UUID ownerIdentityId);
 
   /**
    * Resolve the agreement named by its persisted {@link TrackingReference}. The column carries a

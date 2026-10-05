@@ -12,7 +12,10 @@ const BASE = "/api";
 export type AgreementStatus =
   "DRAFT" | "IN_PROGRESS" | "SIGNED" | "EXPIRED" | "ACTION_NEEDED";
 
-/** A row in "My Agreements": terms-only summary + the derived status and edit-eligibility flag. */
+/**
+ * A row in "My Agreements": the terms, every party's name by role (names only, in entry order), the
+ * last-edit time, the derived status and the edit-eligibility flag.
+ */
 export interface AgreementSummary {
   id: string;
   trackingNumber: string;
@@ -22,6 +25,9 @@ export interface AgreementSummary {
   endDate: string;
   durationMonths: number;
   createdAt: string;
+  lastEditedAt: string;
+  ownerNames: string[];
+  tenantNames: string[];
   status: AgreementStatus;
   editable: boolean;
 }
