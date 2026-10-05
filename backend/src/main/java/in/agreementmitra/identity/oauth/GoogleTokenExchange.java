@@ -2,7 +2,9 @@ package in.agreementmitra.identity.oauth;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import in.agreementmitra.identity.AuthProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -17,7 +19,8 @@ import org.springframework.web.client.RestClientException;
  *
  * <p>The token URI is configurable so integration tests point it at a stubbed Google with no live
  * call. A non-2xx or missing {@code id_token} surfaces as {@link InvalidLoginException} (no token
- * or body echoed).
+ * or body echoed). Connect and read are bounded by {@link GoogleHttp}, so a hung Google surfaces as
+ * the same refusal rather than holding the callback's transaction open.
  */
 @Component
 class GoogleTokenExchange {
@@ -25,8 +28,13 @@ class GoogleTokenExchange {
   private final RestClient restClient;
   private final AuthProperties.Google google;
 
+  @Autowired
   GoogleTokenExchange(AuthProperties properties) {
-    this.restClient = RestClient.create();
+    this(properties, GoogleHttp.requestFactory());
+  }
+
+  GoogleTokenExchange(AuthProperties properties, ClientHttpRequestFactory requestFactory) {
+    this.restClient = RestClient.builder().requestFactory(requestFactory).build();
     this.google = properties.google();
   }
 

@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.web.client.RestTemplate;
 
 /**
  * Wires the identity module's OAuth configuration: enables {@link AuthProperties} and builds the
@@ -42,7 +43,11 @@ class OauthConfig {
     // Signature validation against Google's JWKS; issuer/audience/expiry are enforced in code by
     // GoogleTokenValidator so they stay unit-testable with a stubbed decoder. Building the decoder
     // needs only the JWKS URI, not the client credentials.
-    return NimbusJwtDecoder.withJwkSetUri(google.jwksUri()).build();
+    // The JWKS fetch runs inside the callback transaction, so it gets the same bounded timeouts as
+    // the token POST (GoogleHttp).
+    return NimbusJwtDecoder.withJwkSetUri(google.jwksUri())
+        .restOperations(new RestTemplate(GoogleHttp.requestFactory()))
+        .build();
   }
 
   private static boolean isBlank(String s) {
