@@ -101,8 +101,8 @@ stay on the register for the release that brings commercial back.
    `terms-release-revision`, because it records which version was accepted) ·
    `rental-default-commercial-terms` together with `stamp-quote-capture-defaults` (same root;
    needs a product decision first)
-3. Small fixes as direct commits, any time: `estamp-signature-band`,
-   `capture-required-fields-drift` (product to confirm which side is right)
+3. Small fixes as direct commits, any time: `capture-required-fields-drift` (product to confirm
+   which side is right)
 
 **Triggers this release reaches: decide before launch, do or explicitly defer.**
 CR-7 `ci-pipeline` and the OSV build-tool scope ("revisit before any production / real-PII
@@ -245,23 +245,16 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
    picking a template, then carry it through the existing stamp + eSign flow.
    Direction agreed 2026-09-12 and **not yet proposed**; the reasoning, the
    rejected alternatives and the mock screens are in
-   `docs/BYO-DOCUMENT-UPLOAD.md`. Three changes in dependency order, after
+   `docs/BYO-DOCUMENT-UPLOAD.md`. Two changes in dependency order, after
    `anonymous-upload-byte-budget` (the draft route is now rate limited per source
    and per agreement, but has no global byte budget, and a public upload UI widens
    that):
-   - **`estamp-signature-band`** — reserve the 26–66pt per-page signature band
-     when composing the certificate page. **This is a defect on the shipping
-     path today, not BYO work:** `PdfStampComposer` fits the scan into A4 minus
-     28pt, so a tall certificate reaches into the band and a signature is drawn
-     over it on *templated* documents. Unobserved because no signing has
-     completed end to end against a real callback. Independent of everything
-     below — it can be picked up on its own.
    - **`byo-document-upload`** — BYO end to end, deliberately **block-only**
      (signatures on the appended page, none on the customer's pages). Carries
      the instrument-type declaration and the ToS delta; neither may be split out.
    - **`byo-every-page-signatures`** — detect whether every page's footer band is
      free of text, decide once per document, and disclose the outcome with a
-     remedy. Needs the two above.
+     remedy. Needs the one above.
 
 ## Track B — ZOOP test access is free and self-serve (no longer blocked)
 

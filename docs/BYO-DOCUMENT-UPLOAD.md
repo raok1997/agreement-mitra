@@ -144,30 +144,26 @@ or a background fill in the band is invisible to it. Two consequences, both load
 
 ---
 
-## 4. A defect this surfaced, on the shipping path today
+## 4. A defect this surfaced, fixed 2026-10-05
 
-`PdfStampComposer` fits the certificate scan into A4 minus a **28pt** margin, so a tall
-certificate reaches into the **26–66pt** strip band and a signature is drawn on top of it.
-This affects **templated documents today**, not only BYO. It is unobserved because no
-signing has completed end to end against a real callback
-(`zoop-callback-e2e-on-public-host` is still open) and because a small scan is not upscaled,
-so it often leaves room.
-
-A promise that every page carries a mark cannot be kept until the composer reserves that
-band, which makes the fix a prerequisite rather than a separate cleanup.
+`PdfStampComposer` used to fit the certificate scan into A4 minus a **28pt** margin, so a
+tall certificate reached into the **26–66pt** strip band and a signature was drawn on top of
+it — on templated documents, not only BYO. The composer now keeps the scan above
+`SIGNATURE_BAND_TOP_PT` (66pt), so the certificate page honours the every-page promise like
+any other page. That value mirrors `ZoopSignCoordinate` (`FOOTER_Y_PT + BOX_HEIGHT_PT`);
+move both together.
 
 ---
 
 ## 5. The CR sequence
 
-Four changes, in dependency order. See ROADMAP Track A.
+Three changes, in dependency order (the signature-band fix in section 4 has landed). See ROADMAP Track A.
 
 | | Change | Why separate |
 |---|---|---|
 | 0 | `signing-auth` (already queued) | BYO does not create it, it makes it urgent — a public upload UI widens that hole. `/api/agreements/*/draft` is named in the row. |
-| 1 | `estamp-signature-band` | Section 4. Independent of BYO, fixes today's defect, unblocks the every-page promise. |
 | 2 | `byo-document-upload` | BYO end to end, **block-only**. |
-| 3 | `byo-every-page-signatures` | The footer-band pre-pass, the all-or-nothing decision, the disclosure + acknowledgement UI. Needs 1 and 2. |
+| 3 | `byo-every-page-signatures` | The footer-band pre-pass, the all-or-nothing decision, the disclosure + acknowledgement UI. Needs 2. |
 
 **The scope cut that makes CR-2 tractable: ship block-only.** No detection, no disclosure,
 no page rail. Honest (we state where signatures appear), reversible, and nothing already

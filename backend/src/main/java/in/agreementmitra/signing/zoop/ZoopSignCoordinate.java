@@ -81,7 +81,8 @@ record ZoopSignCoordinate(int pageNum, int xCoord, int yCoord) {
    * <p>This value and where the renderer actually stops printing have to agree. They are in
    * different modules on purpose (layout belongs to {@code documents}), so the agreement is
    * enforced from both ends against {@code PageFurniture}: a real render asserts the band is empty,
-   * and this adapter asserts the strip lands inside it.
+   * and this adapter asserts the strip lands inside it. The prepended certificate page is not
+   * rendered, so {@code PdfStampComposer.SIGNATURE_BAND_TOP_PT} mirrors the band's top by hand.
    */
   private static final float FOOTER_Y_PT = 26f;
 
