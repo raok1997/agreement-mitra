@@ -47,6 +47,30 @@ class DutyEngineTest {
         .isTrue();
   }
 
+  private static String zzRule(String id, String usage, String extra) {
+    return rule("- { minMonths: 1, maxMonths: 12, fixedAmount: \"100\" }", extra)
+        .replace("id: ZZ-test", "id: " + id)
+        .replace("usage: RESIDENTIAL", "usage: " + usage);
+  }
+
+  @Test
+  void aReviewedResidentialRuleDoesNotMakeCommercialInTheSameStateChargeable() {
+    String hash = TestRules.rules(zzRule("ZZ-res", "RESIDENTIAL", "")).get(0).contentHash();
+    RuleSetRegistry registry =
+        new RuleSetRegistry(
+            TestRules.rules(
+                zzRule("ZZ-res", "RESIDENTIAL", "counselReview: { contentHash: \"" + hash + "\" }"),
+                zzRule("ZZ-com", "COMMERCIAL", "")));
+    DutyEngine strict =
+        new DutyEngine(registry, List.of(), List.of(), new StampPaperPlanner(), false);
+
+    assertThat(registry.all())
+        .filteredOn(r -> strict.isChargeable(r.ref()))
+        .extracting(RuleSet::usage)
+        .containsExactly(DutyBasis.Usage.RESIDENTIAL);
+    assertThat(strict.chargeableStates()).containsExactly("ZZ");
+  }
+
   @Test
   void minimumAppliesBeforeRounding() {
     DutyEngine engine =

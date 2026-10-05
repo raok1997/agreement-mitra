@@ -121,7 +121,7 @@ const faqs = [
   },
   {
     q: "Which cities do you serve?",
-    a: "You can draft agreements for Telangana and Karnataka, residential or commercial. Where we can also stamp and eSign is on the status board on our home page. If your state is not listed, write to us.",
+    a: "You can draft residential rental agreements for Telangana and Karnataka. Where we can also stamp and eSign is on the status board on our home page. If your state is not listed, write to us.",
   },
   {
     q: "What happens if something goes wrong?",

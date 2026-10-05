@@ -6,9 +6,7 @@ The published-template registry: catalog metadata persisted and served for selec
 bodies staying resources. Selection records a template id on the agreement.
 
 **Backfilled 2026-09-05** from the archived change's `ADDED` delta, which was archived on 2026-07-13 without its spec fold running (see `openspec/BASELINE-FOLD-GAP.md`). The text below is the archived delta verbatim, not a re-derivation.
-
 ## Requirements
-
 ### Requirement: A registry persists published catalog metadata, never template bodies
 
 The system SHALL persist a **template catalog** in Postgres: one row per catalog entry carrying
@@ -202,3 +200,33 @@ introduced.
 - **THEN** it passes: the catalog is exposed only through the existing `documents.api` named interface
   (extended with the catalog port and controller), the entity/repository/service/`LayerSource` stay
   package-private in `documents.template`, and no disallowed cross-module dependency is introduced
+
+### Requirement: The template picker offers only the templates in the release
+
+The template picker SHALL offer only state-specific residential templates: a catalog entry whose state is the national dimension (`IN`), or whose type is anything other than `residential`, SHALL NOT be listed, counted in a filter option, or selectable from the picker.
+
+Both exclusions are a presentation rule of the picker. The entries stay published, the catalog API
+continues to list them, and an agreement already pinned to one stays readable and editable from
+My Agreements. Whether such an agreement can be **paid for** is decided by the server, never by this
+rule (see `jurisdiction-eligibility`).
+
+#### Scenario: National templates are not offered
+
+- **GIVEN** the catalog lists a published national (`IN`) residential template
+- **WHEN** the template picker renders
+- **THEN** no card is shown for it
+- **AND** `IN` is not among the state filter options
+
+#### Scenario: Commercial templates are not offered
+
+- **GIVEN** the catalog lists published TG residential and TG commercial templates
+- **WHEN** the template picker renders
+- **THEN** a card is shown for TG residential and none for TG commercial
+- **AND** no type filter offers `commercial`
+- **AND** a search for "commercial" shows no card
+
+#### Scenario: A hidden template stays published
+
+- **WHEN** the catalog API lists templates without filters
+- **THEN** the commercial and national entries are still returned
+

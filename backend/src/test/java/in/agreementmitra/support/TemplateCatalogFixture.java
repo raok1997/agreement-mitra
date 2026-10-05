@@ -62,17 +62,23 @@ public final class TemplateCatalogFixture {
     return seed(jdbc, NATIONAL_STATE);
   }
 
-  /** Seed a published row for one state, returning its id. */
+  /** Seed a published residential row for one state, returning its id. */
   public static UUID seed(JdbcTemplate jdbc, String state) {
+    return seed(jdbc, state, TYPE);
+  }
+
+  /** Seed a published row for one (state, type), returning its id. */
+  public static UUID seed(JdbcTemplate jdbc, String state, String type) {
     UUID templateId = UUID.randomUUID();
-    String name = "Residential Rental (" + state + ")";
+    String name =
+        Character.toUpperCase(type.charAt(0)) + type.substring(1) + " Rental (" + state + ")";
     jdbc.update(
         "INSERT INTO template (id, name, description, type, state, language, version, status,"
             + " layer_set_ref, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
         templateId,
         name,
         name + " blurb",
-        TYPE,
+        type,
         state,
         "en",
         VERSION,

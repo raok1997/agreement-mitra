@@ -1,6 +1,25 @@
+<script lang="ts">
+import type { TemplateSummary } from "../api/templateCatalog";
+
+/**
+ * v1 is residential only (2026-10-05): the picker offers state-specific residential templates and
+ * nothing else. An allow-list, so a type added to the catalog later is not offered by accident.
+ * National ("IN") and commercial templates stay published server-side and draftable through the
+ * API; this is presentation only, and the server's per-rule eligibility gate is authoritative.
+ * Commercial comes back when its duty rules carry a counsel review, which fails the backend
+ * tripwire ShippedCommercialRulesUnreviewedTest -- lift the type check here in the same commit.
+ */
+export function isOffered(t: TemplateSummary): boolean {
+  return (
+    t.state.trim().toUpperCase() !== "IN" &&
+    t.type.trim().toLowerCase() === "residential"
+  );
+}
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { listTemplates, type TemplateSummary } from "../api/templateCatalog";
+import { listTemplates } from "../api/templateCatalog";
 import { fetchEligibleOrNone } from "../api/jurisdictions";
 
 // The State x Type picker: the entry step of the capture flow. Lists PUBLISHED catalog entries
@@ -15,10 +34,6 @@ import { fetchEligibleOrNone } from "../api/jurisdictions";
 const emit = defineEmits<{
   (e: "select", dimensions: { state: string; type: string }): void;
 }>();
-
-// The national ("IN") templates stay published server-side but are hidden from the picker: customers
-// choose their state, and every listed state carries its own template.
-const NATIONAL_STATE = "IN";
 
 const STATE_NAMES: Record<string, string> = {
   KA: "Karnataka",
@@ -98,9 +113,7 @@ async function load(): Promise<void> {
       listTemplates(),
       fetchEligibleOrNone(),
     ]);
-    rows.value = templates.filter(
-      (t) => t.state.trim().toUpperCase() !== NATIONAL_STATE,
-    );
+    rows.value = templates.filter(isOffered);
     eligibleStates.value = eligible;
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Could not load templates.";
@@ -119,8 +132,7 @@ onMounted(load);
     <div>
       <h2 class="text-base font-semibold text-slate-800">Choose a template</h2>
       <p class="text-sm text-slate-500">
-        Pick the agreement type for your state. More states and types are on the
-        way.
+        Pick the rental agreement for your state. More states are on the way.
       </p>
     </div>
 
@@ -130,7 +142,8 @@ onMounted(load);
         v-model="query"
         type="search"
         placeholder="Search templates"
-        class="rounded border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
+        class="rounded border border-slate-300 px-3 py-2 text-sm"
+        :class="types.length > 1 ? 'sm:col-span-2' : 'sm:col-span-3'"
         data-testid="picker-search"
       />
       <select
@@ -142,6 +155,7 @@ onMounted(load);
         <option v-for="s in states" :key="s" :value="s">{{ s }}</option>
       </select>
       <select
+        v-if="types.length > 1"
         v-model="typeFilter"
         class="rounded border border-slate-300 px-3 py-2 text-sm"
         data-testid="filter-type"

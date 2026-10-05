@@ -373,6 +373,17 @@ describe("LandingPage", () => {
       expect(esign?.a).toBeDefined();
       expect(esign!.a.startsWith("Yes")).toBe(false);
     });
+
+    // v1 is residential only; commercial returns with the picker's isOffered rule.
+    it("offers residential agreements only in the cities answer", () => {
+      const all = faqs(mount(LandingPage));
+      const cities = all.find((f) => f.q === "Which cities do you serve?");
+      expect(cities?.a).toBeDefined();
+      for (const word of ["Telangana", "Karnataka", "residential"])
+        expect(cities!.a).toContain(word);
+      const faqText = all.map((f) => `${f.q} ${f.a}`).join(" ").toLowerCase();
+      expect(faqText).not.toContain("commercial");
+    });
   });
 
   it("makes no unearned legal claim and renders no raw HTML", () => {

@@ -64,6 +64,20 @@ Cloudflare Pages variables of the same names — then rebuild `caddy` and Pages 
 backend. A missed place shows "being issued", never a wrong value; a malformed value refuses
 startup / fails the build.
 
+**Ops / config: stop charging on unreviewed rules.** Commercial is kept off paid fulfilment by
+its rules carrying no counsel review, which holds only while unreviewed rules are disallowed;
+prod beta runs with them allowed. So, in this order:
+- [ ] Before the flip, list commercial agreements that are paid or have an open checkout, and
+      cancel/refund them (expected none — founding team only, but checked). A paid agreement
+      passes fulfilment on its frozen quote, and a checkout opened under `true` can settle after
+      the flip.
+- [ ] Once the residential rules carry their counsel reviews, set
+      `RULES_STAMP_DUTY_ALLOW_UNREVIEWED=false` in `deploy/env/backend.env`. A state whose
+      residential rule is still unreviewed becomes unpayable: a late KA review means a TG-only
+      release, **not** keeping `true`.
+- [ ] Verify on the running backend: the startup WARN "allow-unreviewed=true: customers may be
+      charged on UNREVIEWED stamp duty" is absent.
+
 **Code: one OpenSpec change each, in this order. Changes on the same line can run in
 parallel.**
 
@@ -72,16 +86,8 @@ release, which takes `tg-commercial-statutory-section-optional` and the commerci
 `ka-stamp-duty-counsel-review` (the uncapped commercial rate) off the critical path. The rows
 stay on the register for the release that brings commercial back.
 
-0. `residential-only-release` (new, first): hide commercial templates from the picker, the same
-   way `IN` is hidden today, and remove commercial from customer-facing copy (home-page FAQ "Which
-   cities", capture form). **Also decide whether the server must refuse a commercial order.**
-   Hiding it in the picker is UI-only, so an API caller could still create and pay for one.
-   Check whether paid eligibility is per `(state, type)` rule file. If it is, leaving the
-   commercial rules without a counsel review keeps them unpayable in prod, and the change only
-   needs a test that pins this. If eligibility is per state, refuse commercial on the server.
-   Runs in parallel with `legal-policy-pages` below; `terms-release-revision` waits for it.
-1. `terms-release-revision` (new, after `residential-only-release`; §1 already names KAVISAT
-   TEK LABS LLP as the contracting party, and "residential" there becomes correct for v1):
+1. `terms-release-revision` (new; §1 already names KAVISAT
+   TEK LABS LLP as the contracting party, and "residential" there is correct for v1):
    §2/§5 (live status), §7 (price basis),
    and §8 (SHCIL vs Telangana), with counsel answers folded in as they arrive. §5's "Today
    that is Telangana" must agree with the home-page status board (`src/content/releaseStatus.ts`,
