@@ -20,3 +20,7 @@ export const CONTACT_EMAIL = "support@agreementmitra.com";
 
 // Not Intl: it renders "₹499.00".
 export const formatRupees = (n: number): string => `₹${n}`;
+
+/** The /contact banner: the policies are drafts, the contact facts are not (legal-policy-pages D8). */
+export const CONTACT_PAGE_BANNER =
+  "Our policies are drafts pending review by Indian counsel. The contact details below are current.";

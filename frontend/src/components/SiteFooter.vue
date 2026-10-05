@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// The site footer, shared by the landing page and /terms. It discloses the legal entity operating
+// The site footer, shared by the landing page and the policy pages (/terms, /privacy, /refunds,
+// /contact). It discloses the legal entity operating
 // the service (operating-entity-disclosure D5). It reads no env: the views pass the resolved
 // entity, so the component renders the same whatever is in a developer's .env or shell. Values are
 // build-time constants, so the footer makes no request, and they render as escaped text only.
@@ -30,9 +31,27 @@ defineProps<{ entity: OperatingEntity }>();
           Registered office: {{ entity.registeredOffice }}
         </p>
       </div>
-      <div class="flex items-center gap-4">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <a class="font-medium text-ink-600 hover:text-brand-700" href="/terms">
           Terms of service
+        </a>
+        <a
+          class="font-medium text-ink-600 hover:text-brand-700"
+          href="/privacy"
+        >
+          Privacy
+        </a>
+        <a
+          class="font-medium text-ink-600 hover:text-brand-700"
+          href="/refunds"
+        >
+          Refunds
+        </a>
+        <a
+          class="font-medium text-ink-600 hover:text-brand-700"
+          href="/contact"
+        >
+          Contact
         </a>
         <a
           class="font-medium text-ink-600 hover:text-brand-700"

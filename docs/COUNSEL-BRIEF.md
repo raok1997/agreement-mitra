@@ -342,6 +342,35 @@ agreement's reference, the account that deleted it and the time, with no party d
 intend to keep it on the same three-year horizon as our other records and would like to know
 whether that is a permissible period for it.
 
+**A draft privacy policy now exists** — the separate document `PRIVACY-POLICY.md` (Annexure C),
+published at `agreementmitra.com/privacy`. Terms §15 now only points to it, and deliberately
+does not say whether the policy forms part of the terms: **that is the question in this
+paragraph, and it is yours to answer.** We drafted only what we could check against the system
+as built; purposes and lawful basis, retention, your-rights, the grievance officer and
+cross-border transfer are marked as gaps for you. The checks behind each drafted statement:
+
+- *What we collect* — party and agreement details (`V2`, `V7`, `V13` migrations; the full
+  form answers are kept); sign-in name, email, verified-email flag and the provider's account
+  identifier (`V11`); the signed PDF and audit trail stored byte-for-byte as the provider
+  issues them (`ZoopEsignProvider`, `V4`); stamp-certificate scans and the certificate's
+  printed details (`V14`); payment records with no card, UPI or bank field (`V16`, `V17`);
+  the requesting IP address — full IPv4, IPv6 /64 — for abuse prevention, and a shortened form
+  in security logs (`ClientSourceResolver`, `SecurityEvents`).
+- *What we do not hold* — no Aadhaar number, VID or OTP field, column or log line exists. **One
+  qualification for you:** the provider's signature page on the signed PDF we store may show a
+  **masked** Aadhaar number (as we understand the eSign framework provides). The policy says
+  so; the bolded statement above, and terms §9, are worded as though no part of the number
+  ever reaches us. Please tell us whether either needs to change.
+- *Who receives it* — by role: eSign provider (it also emails each party its invitation), payment
+  gateway, the stamp-certificate issuing authority (via staff on its portal), email delivery
+  (including the draft PDF to every party **before** payment), sign-in provider, hosting and
+  storage, a content-delivery and network-security provider all traffic passes through, and the
+  web-font provider every visitor's browser contacts.
+- *Cookies and storage* — session, CSRF and a short-lived sign-in binding cookie only
+  (`SessionCookies`); the edge provider may set its own bot-detection cookie; the drafting form
+  keeps answers, including party details, in the browser's local storage, which signing out does
+  not clear.
+
 (c) **The service is deliberately available without an account.** A user can generate,
 pay for and sign an agreement without registering. We would like to know how acceptance of
 the terms should be captured in that flow so as to be binding — and whether the absence of a
@@ -629,13 +658,15 @@ the executed instrument needs to be drawn to the parties' attention.
 
 ---
 
-# Annexure C — Draft terms of service
+# Annexure C — Draft terms of service and privacy policy
 
-The draft accompanies this brief as the separate document `TERMS-OF-SERVICE.md`. The same
-text is published to customers at `agreementmitra.com/terms`, marked on its face as a draft
-pending your review.
+The drafts accompany this brief as the separate documents `TERMS-OF-SERVICE.md` and
+`PRIVACY-POLICY.md`. The same texts are published to customers at `agreementmitra.com/terms`
+and `agreementmitra.com/privacy`, each marked on its face as a draft pending your review. The
+refunds page (`/refunds`) shows terms §11 itself and the contact page carries no policy text,
+so neither has a document of its own.
 
-It is a separate document rather than being set out inline so that what you review is
+Each is a separate document rather than being set out inline so that what you review is
 word-for-word what the customer reads, with no intermediate transcription that could fall out
 of step. Annexures A and B are reproduced inline because the template wording they carry has
 no equivalent published face.

@@ -48,10 +48,10 @@ one-off hand-edit of HTML per article.
   marketing page from shipping the whole 188 KB application bundle.
 - **An article publishing pipeline for periodic rental/property content.**
   Articles are authored as typed source and rendered to static pages by a build
-  script -- the shape `scripts/render-terms.mjs` already establishes for the terms
+  script -- the shape `scripts/render-legal-docs.mjs` already establishes for the terms
   of service. Adding an article means adding one content file, not editing HTML,
   the sitemap, and the index by hand.
-- **The gate is a test, not the script.** `render-terms.mjs` documents this
+- **The gate is a test, not the script.** `render-legal-docs.mjs` documents this
   discipline in its own header, and the `terms-doc-ungated` register row records
   what happens without it: that generator silently broke when vitest 4 dropped
   `vite-node` and nothing failed. The article pipeline ships with its gate wired
@@ -112,7 +112,7 @@ signer).
   asset, `frontend/public/_redirects` -- **the SPA fallback must not shadow real
   files**, which is the one genuinely delicate interaction in this change.
 - **New source**: an articles content directory plus its render script and tests,
-  following `src/content/termsOfService.ts` + `scripts/render-terms.mjs`.
+  following `src/content/termsOfService.ts` + `scripts/render-legal-docs.mjs`.
 - **Existing views**: `LandingPage.vue` keeps the FAQ as the single source its
   structured data is generated from, so the `LandingPage.test.ts` parity assertion
   is strengthened rather than dropped.

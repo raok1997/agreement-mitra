@@ -28,18 +28,34 @@ section when the release goes out. Founding-team beta ends with this release.
 **Counsel (engaged, review in progress).** `tg-stamp-duty-counsel-review`,
 `ka-stamp-duty-counsel-review`, `rental-deed-lease-vs-licence`,
 `tos-below-duty-stamp-choice`, `term-partial-month-rounding` (how a state counts a part-month),
-and the ToS gaps marked for counsel (§8, §11, §12, §15 DPDP notice, §16 liability, §17
+and the ToS gaps marked for counsel (§8, §11, §12, §15 — now a pointer to `/privacy`, and Q6(b) decides whether the privacy notice
+is part of the terms — §16 liability, §17
 disputes). The ToS status banner ("a draft … pending review") cannot stay up for real
 customers. "Reviewed by Indian counsel" may appear in copy only once
 `template-counsel-signoff-gate` records the review (`docs/LEGAL-POSTURE.md`). The disclaimer's
 "we wrote the template and we stand behind it" (user decision 2026-10-05) does not reach real
 customers until counsel has reviewed it against §16 (`docs/COUNSEL-BRIEF.md` Q6(d)(i)) — in all
 three carriers: `LegalDisclaimer.vue`, the `documents.footer.screen-notice` default, and any
-`DOCUMENT_FOOTER_SCREEN_NOTICE` override. Not yet written, each needing new legal text that
-names KAVISAT TEK LABS LLP: a **Privacy Policy** (the LLP is the data fiduciary under the DPDP
-Act), a **Refund/Cancellation policy** and a **Contact** page. Also ask: may ToS §1 name the LLP
+`DOCUMENT_FOOTER_SCREEN_NOTICE` override. The **Privacy Policy** (the LLP is the data
+fiduciary under the DPDP Act), **Refund/Cancellation** and **Contact** pages are drafted
+(`legal-policy-pages`), with the privacy text's own counsel gaps; what they need before real
+customers see them is the checklist below. Also ask: may ToS §1 name the LLP
 as the contracting party while its LLPIN is still being issued (the site says "LLPIN: being
 issued" until then)?
+
+**Policy pages: production readiness.** `/terms`, `/privacy`, `/refunds` and `/contact` do not
+reach real customers until every box is ticked:
+- [ ] Counsel reviews `docs/TERMS-OF-SERVICE.md` and `docs/PRIVACY-POLICY.md`. Record the
+      reviewer, the date and the git commit.
+- [ ] Every `counsel` / `product` gap in both documents is closed or explicitly accepted.
+- [ ] **Blocking:** a grievance officer is named and the Data Protection Board route is stated
+      (privacy clause `grievance`).
+- [ ] Q6(b) is answered and ToS §15 is updated to match.
+- [ ] The draft banners are removed.
+- [ ] The LLPIN and registered office are set (see Ops / config below).
+- [ ] The policy pages are checked live.
+- [ ] The privacy inventory is re-checked against every change merged since counsel's review,
+      `mobile-otp-auth` in particular.
 
 **Template sign-off checklist (manual; v1 form of `template-counsel-signoff-gate`).** No code
 enforces template review for this release (decided 2026-10-05); this checklist does, and the
@@ -92,11 +108,7 @@ stay on the register for the release that brings commercial back.
    and §8 (SHCIL vs Telangana), with counsel answers folded in as they arrive. §5's "Today
    that is Telangana" must agree with the home-page status board (`src/content/releaseStatus.ts`,
    TG stamping "In integration" today), and its national-template sentence is stale (the picker
-   hides `IN` templates) ·
-   `legal-policy-pages` (new): the Privacy Policy,
-   Refund/Cancellation and Contact pages named in the counsel paragraph above. Generate them
-   from the same data-module pattern as the terms, so refund wording is ToS §11 rather than a
-   second copy, and the privacy text renders as a marked counsel gap until §15 is answered.
+   hides `IN` templates)
 2. Terms-acceptance checkpoint (under "Other queued non-goals"; after
    `terms-release-revision`, because it records which version was accepted) ·
    `rental-default-commercial-terms` together with `stamp-quote-capture-defaults` (same root;
@@ -321,7 +333,7 @@ whichever one matters to you.
 | `stamp-inventory-aware-planning` | Plans use the denominations the state issues, not what the stamp vendor has in stock. Pass a stock-narrowed medium from `StampProvider` once a vendor inventory API exists. | `state-stamp-duty-quoting` | 2026-09-16 | Low |
 | `lease-registration-workflow` | Quotes now tell customers that registration may be required (every lease, per the researched TG law). Nothing helps them do it: no Sub-Registrar booking, and no registration fee (0.2% in TG, from 2021-09-02) in the quote. | `state-stamp-duty-quoting` | 2026-09-16 | Medium |
 | `zeptomail-production-provisioning` | ZeptoMail is chosen for production sending but **no account exists**. Two external, sequential steps, neither startable from this repo: (a) submit the **Customer Validation form** — ZeptoMail enforces a transactional-only policy and reviews new accounts, typically **2–3 business days**; (b) publish **SPF + DKIM** for the sending domain against ZeptoMail and verify alignment before the first production send. Until both pass, `MAIL_PROVIDER=smtp` against a production host sends nothing (or sends unauthenticated mail that lands in spam). Descoped from `signed-delivery-and-closure` tasks 7.6/7.7: lead-time work on a third party, not code. **2026-10-05: product owner reports the external steps complete; what remains is switching the production config from test to live** (`MAIL_PROVIDER=smtp`, the ZeptoMail host and token) and one real send that lands in an inbox, not spam. | `signed-delivery-and-closure` | 2026-09-11 | High — blocks the first production send; now a config switch, no lead time |
-| `terms-doc-ungated` | `npm run terms:doc` regenerates `docs/TERMS-OF-SERVICE.md`, customer-facing legal text — and **no gate invokes it**. `npm run build` does not, and the parity test (`termsOfService.test.ts:15-20`) reads the committed file in-process, so it passes with the generator completely broken. That is exactly how it broke unnoticed when vitest 4 dropped `vite-node`. Wire the generator (or a regenerate-and-diff check) into a gate so a broken generator fails something. | `frontend-dev-dep-refresh` | 2026-09-11 | Medium-high — a silent-failure path on a legal document |
+| `terms-doc-ungated` | `npm run legal:doc` regenerates `docs/TERMS-OF-SERVICE.md` and `docs/PRIVACY-POLICY.md` (since `legal-policy-pages`), customer-facing legal text — and **no gate invokes it**. `npm run build` does not, and the staleness tests (`legalDocs.test.ts`) read the committed files in-process, so it passes with the generator completely broken. That is exactly how it broke unnoticed when vitest 4 dropped `vite-node`. Wire the generator (or a regenerate-and-diff check) into a gate so a broken generator fails something. | `frontend-dev-dep-refresh` | 2026-09-11 | Medium-high — a silent-failure path on a legal document |
 | `zeptomail-bounce-webhook` | Wire ZeptoMail's bounce webhook into the delivery permanent-failure path, so `SENT` can mean "arrived" rather than "the provider accepted it". **The CR shipped calling this "additive"; it is not** — `EmailSender.send` returns `void` and `signed_document_delivery` holds no provider message id, so **no correlation key exists** to join a bounce back to a recipient row. Scope: a forward-only migration for the correlation key, a changed `EmailSender` signature (both adapters + `markSent`), an HMAC/secret-verified inbound endpoint, and a bounce payload contract **that cannot be established without a live ZeptoMail account** — so it is blocked on `zeptomail-production-provisioning`, and may force ZeptoMail's HTTP API over SMTP, reopening design D7's one-adapter choice. A new inbound webhook must follow the existing webhooks' pattern from `anonymous-surface-abuse-controls`: listed as excluded in `RouteClassifier` (HMAC is its control) and emitting `SecurityEvents.webhookVerificationFailed` on a failed verification. Until it lands, treat delivery status as best-effort and rely on the durable in-app copy. | `signed-delivery-and-closure` | 2026-09-11 | High — blocks the first production send; a hard bounce is silent today |
 | `rental-deed-lease-vs-licence` | **Counsel ruling owed on the instrument type.** `rental-document-content-v2` removed the "(Leave & Licence)" label (a Maharashtra form) from the national subtitle and recital because it contradicted the rest of the deed -- but that was a *de-contradiction, not a ruling*. Still open: (a) is a residential tenancy in KA/TG properly a **lease**, and should the vocabulary move to **Lessor/Lessee** to match the sibling commercial set (customer-visible across form labels + frontend copy, so not a drift fix); (b) confirm the stamp basis follows from that -- **this is a dependency of `state-stamp-duty-quoting`**, which seeds Karnataka Stamp Act 1957 **Article 30, the lease article**, and an instrument assessed under the wrong article is under-stamped and inadmissible under s.35 Indian Stamp Act until duty + penalty is paid; (c) low-priority drafting nit, ask in the same pass: the recital sits *inside* `Now This Agreement Witnesseth` where Indian deeds conventionally place it above. `docs/COUNSEL-BRIEF.md` Part A holds the drafted questions (**unsent, no counsel engaged**); its Q1 is this one. Same pass (`landing-page-release-copy`): does the IT Act 2000 First Schedule exclusion of instruments transferring an interest in immovable property reach an Aadhaar-eSigned lease? The home-page FAQ dropped its unconditional "Yes" pending this. | `rental-document-content-v2` | 2026-09-10 | High -- blocks the first real customer; blocks `state-stamp-duty-quoting` |
 | `template-counsel-signoff-gate` | Nothing prevents an unreviewed authored template from shipping. Every agreement pins `templateContentHash` + `layerVersions` (`Agreement.pinEffectiveTemplate`), which makes "was this content reviewed?" answerable -- but no gate consults it. Wire counsel sign-off to the content hash so a template edited after review cannot generate a deed silently. Raised by the CR as "still owed before the first real customer". **2026-10-05: deferred past v1** -- the first release is covered by the manual "Template sign-off checklist" above, and no code is added for it now. Grounding for the automated version (done 2026-10-05, not yet proposed): the 2026-09-07 placement in `docs/LEGAL-POSTURE.md` item 1 (a Gradle task hashing raw YAML) cannot work, because agreements pin the canonical *effective-model* hash computed inside package-private `TemplateResolver`/`CanonicalJson`, so the build-time half must be a test inside `documents.template`; the runtime half belongs beside `jurisdiction.require` at finalise and checkout (drafting untouched), with an `allow-unreviewed` flag plumbed like the stamp-duty one; approvals live in a separate file (the template `meta` is inside the hash); `POST /{id}/draft` keeps a stale pin today. | `rental-document-content-v2` | 2026-09-10 | Medium -- manual checklist covers v1; the risk it leaves is a template edit slipping past the checklist after release |

@@ -1,8 +1,9 @@
-// Writes docs/TERMS-OF-SERVICE.md from the one source of the terms text
-// (src/content/termsOfService.ts). Run `npm run terms:doc` from frontend/ after changing a clause.
+// Writes every counsel-facing policy document (docs/TERMS-OF-SERVICE.md, docs/PRIVACY-POLICY.md) from
+// its one source under src/content/, as listed in src/content/legalDocs.ts. Run `npm run legal:doc`
+// from frontend/ after changing a clause.
 //
 // Loads the TypeScript sources through Vite's own `ssrLoadModule` rather than a second, hand-kept
-// copy of the terms in JavaScript. The parity test is the real gate for whether the committed
+// copy of the policy text in JavaScript. The parity test is the real gate for whether the committed
 // markdown matches the source; this script is what keeps you from satisfying it by hand.
 //
 // It used to run under the `vite-node` BINARY, which was never a declared dependency -- it resolved
@@ -13,8 +14,8 @@
 //
 // Every option below is load-bearing -- each was added because omitting it caused a real failure:
 //   root            -- else module ids resolve against process.cwd(), so this works via
-//                      `npm run terms:doc` but dies with MODULE_NOT_FOUND when invoked as
-//                      `node frontend/scripts/render-terms.mjs`. The vite-node version was
+//                      `npm run legal:doc` but dies with MODULE_NOT_FOUND when invoked as
+//                      `node frontend/scripts/render-legal-docs.mjs`. The vite-node version was
 //                      cwd-independent and losing that would be a silent regression.
 //   ws: false       -- middleware mode has no httpServer, so Vite otherwise stands up its OWN
 //                      WebSocket server on :24678 bound to ALL interfaces, unauthenticated. This
@@ -23,9 +24,9 @@
 //   noDiscovery     -- else the dependency scanner races server.close() and prints ~80 lines of
 //                      esbuild stack trace WHILE STILL EXITING 0 with correct output.
 //   server.close()  -- in a finally, else the Vite server keeps the event loop alive and the
-//                      process never exits. `npm run terms:doc` would appear to hang forever.
+//                      process never exits. `npm run legal:doc` would appear to hang forever.
 // The real vite.config.ts is loaded deliberately (no `configFile: false`), so this resolves modules
-// exactly as termsOfService.test.ts does; divergence would surface as a stale legal document.
+// exactly as legalDocs.test.ts does; divergence would surface as a stale legal document.
 
 import { writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -43,15 +44,21 @@ const server = await createServer({
 });
 
 try {
-  const { renderTermsMarkdown } = await server.ssrLoadModule("/src/content/termsMarkdown.ts");
-  const { TERMS_DOC_PATH } = await server.ssrLoadModule("/src/content/termsDocPath.ts");
+  const { renderLegalMarkdown } = await server.ssrLoadModule(
+    "/src/content/legalMarkdown.ts",
+  );
+  const { LEGAL_DOCS } = await server.ssrLoadModule(
+    "/src/content/legalDocs.ts",
+  );
 
-  const target = resolve(frontendRoot, TERMS_DOC_PATH);
-  writeFileSync(target, renderTermsMarkdown(), "utf8");
-  console.log(`Wrote ${target}`);
+  for (const entry of LEGAL_DOCS) {
+    const target = resolve(frontendRoot, entry.docPath);
+    writeFileSync(target, renderLegalMarkdown(entry), "utf8");
+    console.log(`Wrote ${target}`);
+  }
 } finally {
   // Swallow teardown failures only. If ssrLoadModule threw -- the routine failure mode, a syntax
-  // or import error in the terms source -- a rejecting close() here would replace that error and
+  // or import error in a policy source -- a rejecting close() here would replace that error and
   // hide the actual cause. The process still exits non-zero on the original throw.
   try {
     await server.close();

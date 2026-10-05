@@ -64,7 +64,7 @@ The rupee figures SHALL come from a single frontend constant, which SHALL equal 
 - **THEN** both the total and the included duty are equal
 
 #### Scenario: The constant matches the published terms
-- **GIVEN** the ToS clause whose heading starts "7. " in `termsOfService.ts`
+- **GIVEN** the ToS clause with id `our-fee` (§7), looked up by id
 - **WHEN** its body is searched for "INR <total> where the stamp duty on your agreement is INR <included duty> or less", built from the constant
 - **THEN** it is found
 
@@ -96,7 +96,7 @@ The panel SHALL NOT promise more than those clauses. Its rupee figures and day c
 
 #### Scenario: Guarantee figures match the terms
 - **GIVEN** the guarantees constant
-- **WHEN** the ToS clauses headed "8. ", "11. " and "14. " are searched for clause-local phrases built from the constant: "refund you INR <n>" (§8), "ask for INR <n> before starting it again" (§11), and for §14 "within <word> working day of payment", "more than <word> working days late", "INR <n> for each further working day, up to INR <cap>" and the support hours
+- **WHEN** the ToS clauses with ids `stamp-duty` (§8), `refunds` (§11) and `availability-and-support` (§14), looked up by id, are searched for clause-local phrases built from the constant: "refund you INR <n>" (§8), "ask for INR <n> before starting it again" (§11), and for §14 "within <word> working day of payment", "more than <word> working days late", "INR <n> for each further working day, up to INR <cap>" and the support hours
 - **THEN** every phrase is found in its clause
 
 #### Scenario: The old pillar copy is gone

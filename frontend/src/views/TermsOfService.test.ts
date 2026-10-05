@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import TermsOfService from "./TermsOfService.vue";
-import { TERMS_CLAUSES } from "../content/termsOfService";
+import { clauseById } from "../content/legalDocument";
+import { TERMS_OF_SERVICE } from "../content/termsOfService";
 import { CONTACT_EMAIL } from "../content/promises";
 
 // The page is published DELIBERATELY unfinished (docs/LEGAL-POSTURE.md item 2: a draft beats
@@ -19,7 +20,7 @@ describe("TermsOfService", () => {
 
   it("renders every clause", () => {
     const text = mount(TermsOfService).text();
-    for (const clause of TERMS_CLAUSES) {
+    for (const clause of TERMS_OF_SERVICE.clauses) {
       expect(text).toContain(clause.heading);
     }
   });
@@ -27,7 +28,9 @@ describe("TermsOfService", () => {
   it("shows a visible gap for every clause we have not written", () => {
     const wrapper = mount(TermsOfService);
     const gaps = wrapper.findAll('[data-testid="terms-gap"]');
-    const unwritten = TERMS_CLAUSES.filter((c) => c.status !== "drafted");
+    const unwritten = TERMS_OF_SERVICE.clauses.filter(
+      (c) => c.status !== "drafted",
+    );
 
     expect(unwritten.length).toBeGreaterThan(0);
     expect(gaps).toHaveLength(unwritten.length);
@@ -62,15 +65,14 @@ describe("TermsOfService", () => {
     // The fee, the compensation for our own error and the turnaround are now decided, so they are
     // stated. What a customer gets back once we have already bought their certificate is not, and
     // it stays a visible gap rather than acquiring a plausible-looking number.
-    const byHeading = (needle: string) =>
-      TERMS_CLAUSES.find((c) => c.heading.includes(needle));
+    const byId = (id: string) => clauseById(TERMS_OF_SERVICE, id);
 
-    expect(byHeading("Our fee")?.status).toBe("drafted");
-    expect(byHeading("Availability and support")?.status).toBe("drafted");
-    expect(byHeading("Refunds")?.status).toBe("product");
+    expect(byId("our-fee").status).toBe("drafted");
+    expect(byId("availability-and-support").status).toBe("drafted");
+    expect(byId("refunds").status).toBe("product");
     // Retention is decided (three years); what remains on it is a legal question, not a
     // commercial one, so it carries a counsel gap rather than a product one.
-    expect(byHeading("How long we keep things")?.status).toBe("counsel");
+    expect(byId("retention").status).toBe("counsel");
   });
 
   it("states the price as a rule, not as a single number that hides the duty", () => {
@@ -157,10 +159,12 @@ describe("TermsOfService operator details", () => {
   });
 
   it("renders values as text, never as HTML", () => {
-    const source = readFileSync(
-      resolve(process.cwd(), "src/views/TermsOfService.vue"),
-      "utf8",
-    );
-    expect(source).not.toContain("v-html");
+    for (const file of [
+      "src/views/TermsOfService.vue",
+      "src/components/OperatorDetails.vue",
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), "utf8");
+      expect(source, file).not.toContain("v-html");
+    }
   });
 });

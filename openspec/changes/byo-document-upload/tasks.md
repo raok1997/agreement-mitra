@@ -131,7 +131,7 @@ change):
 - [ ] 9.1 Edit the terms generator source (never `docs/TERMS-OF-SERVICE.md` directly) so the
       terms cover a customer-supplied instrument, including that a Word upload is converted
       and that the converted document is what is signed, and regenerate via
-      `npm run terms:doc`.
+      `npm run legal:doc`.
 - [ ] 9.2 Record in `docs/LEGAL-POSTURE.md` what the declaration attests to and what the
       integrity record is for a BYO agreement (uploaded-bytes hash, not a template pin).
 

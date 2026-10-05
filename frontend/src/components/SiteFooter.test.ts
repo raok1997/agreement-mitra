@@ -57,9 +57,13 @@ describe("SiteFooter", () => {
     ).toContain(ISSUED.registeredOffice);
   });
 
-  it("links to the terms and to the support mailbox", () => {
+  it("links to every policy page and to the support mailbox", () => {
     const wrapper = mount(SiteFooter, { props: { entity: NOT_YET_ISSUED } });
-    expect(wrapper.find('footer a[href="/terms"]').exists()).toBe(true);
+    for (const path of ["/terms", "/privacy", "/refunds", "/contact"]) {
+      expect(wrapper.find(`footer a[href="${path}"]`).exists(), path).toBe(
+        true,
+      );
+    }
     expect(wrapper.get('footer a[href^="mailto:"]').attributes("href")).toBe(
       `mailto:${CONTACT_EMAIL}`,
     );

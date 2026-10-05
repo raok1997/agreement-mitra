@@ -7,6 +7,9 @@ import TemplatePicker from "./components/TemplatePicker.vue";
 import AuthCallback from "./views/AuthCallback.vue";
 import LandingPage from "./views/LandingPage.vue";
 import TermsOfService from "./views/TermsOfService.vue";
+import PrivacyPolicy from "./views/PrivacyPolicy.vue";
+import RefundPolicy from "./views/RefundPolicy.vue";
+import ContactPage from "./views/ContactPage.vue";
 import StaffConsole from "./views/StaffConsole.vue";
 import AgreementStatus from "./views/AgreementStatus.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./views/linkCopy";
@@ -37,11 +40,22 @@ const editError = ref<string | null>(null);
 //   "/terms"         -> the published terms of service, reachable without app chrome or a session
 //                       (the in-product disclaimer links here, and it must open for a reader who
 //                       has no account and is halfway through paying)
+//   "/privacy", "/refunds", "/contact"
+//                    -> the other policy pages, public and chrome-free like /terms
 //   "/auth/callback" -> the OAuth landing the backend 302s to, which exchanges the
 //                       handoff for a session and then drops the caller into the app
 // Anything else falls through to the app so deep links do not dead-end on the marketing page.
 type Route =
-  "landing" | "app" | "callback" | "staff" | "recover" | "openLink" | "terms";
+  | "landing"
+  | "app"
+  | "callback"
+  | "staff"
+  | "recover"
+  | "openLink"
+  | "terms"
+  | "privacy"
+  | "refunds"
+  | "contact";
 
 /** `/agreement/<uuid>` - the link emailed to the parties after payment. */
 const AGREEMENT_LINK =
@@ -51,6 +65,9 @@ function routeFor(pathname: string): Route {
   if (pathname === "/auth/callback") return "callback";
   if (pathname === "/staff") return "staff";
   if (pathname === "/terms") return "terms";
+  if (pathname === "/privacy") return "privacy";
+  if (pathname === "/refunds") return "refunds";
+  if (pathname === "/contact") return "contact";
   if (pathname === "/recover") return "recover";
   if (AGREEMENT_LINK.test(pathname)) return "openLink";
   if (pathname === "/" || pathname === "") return "landing";
@@ -129,10 +146,10 @@ function leaveCallback(): void {
   // started from inside the app.
   navigate("/start", "replace");
 }
-// The terms are reached from a link on whatever screen the reader was on, so "Back" means back --
-// the browser's own history, which is the only thing that knows where they came from. A directly
-// opened /terms has nowhere to return to, so it falls through to the marketing page.
-function leaveTerms(): void {
+// The policy pages are reached from a link on whatever screen the reader was on, so "Back" means
+// back -- the browser's own history, which is the only thing that knows where they came from. A
+// directly opened policy page has nowhere to return to, so it falls through to the marketing page.
+function leaveLegalPage(): void {
   if (window.history.length > 1) window.history.back();
   else navigate("/", "replace");
 }
@@ -296,7 +313,10 @@ function onSavedToAccount(): void {
   </section>
   <!-- The terms of service. Like the landing page it is public and chrome-free: it is linked from
        the in-product disclaimer, and a reader following that link is not necessarily signed in. -->
-  <TermsOfService v-else-if="route === 'terms'" @back="leaveTerms" />
+  <TermsOfService v-else-if="route === 'terms'" @back="leaveLegalPage" />
+  <PrivacyPolicy v-else-if="route === 'privacy'" @back="leaveLegalPage" />
+  <RefundPolicy v-else-if="route === 'refunds'" @back="leaveLegalPage" />
+  <ContactPage v-else-if="route === 'contact'" @back="leaveLegalPage" />
   <!-- "/" is the public marketing page: full-bleed, no app chrome, no API calls. -->
   <LandingPage v-else-if="route === 'landing'" @start="enterApp" />
 

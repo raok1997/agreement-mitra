@@ -288,7 +288,7 @@ so it scales with rent just as badly and costs INR 399 more in every case).
 
 **One text, two faces.** The terms live in `frontend/src/content/termsOfService.ts`. The page
 at `/terms` renders from it and `docs/TERMS-OF-SERVICE.md` — the copy counsel reads, and
-Annexure C of the brief — is *generated* from it (`npm run terms:doc`), with a test that
+Annexure C of the brief — is *generated* from it (`npm run legal:doc`), with a test that
 fails the build when the two drift. Two hand-kept copies of a legal text is the same class of
 defect as the Telangana clause above, and it was avoidable here.
 

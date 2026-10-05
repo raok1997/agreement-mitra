@@ -396,6 +396,59 @@ describe("App route switch", () => {
     wrapper.unmount();
   });
 
+  it.each([
+    ["/privacy", "privacy-policy"],
+    ["/refunds", "refund-policy"],
+    ["/contact", "contact-page"],
+  ])(
+    "serves %s chrome-free and without touching the template or agreement API",
+    async (path, testId) => {
+      window.history.replaceState({}, "", path);
+      const wrapper = mount(App);
+      await flushPromises();
+
+      expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(true);
+      expect(wrapper.find('[data-testid="terms-draft-banner"]').exists()).toBe(
+        true,
+      );
+      expect(wrapper.find("header").exists()).toBe(false);
+      expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(false);
+      expect(mockedList).not.toHaveBeenCalled();
+      expect(mockedCreate).not.toHaveBeenCalled();
+      wrapper.unmount();
+    },
+  );
+
+  it("leaves a directly opened policy page for the home page", async () => {
+    // jsdom accumulates history entries across tests, so pin the length to "nothing to go back to".
+    const length = vi.spyOn(window.history, "length", "get").mockReturnValue(1);
+    try {
+      window.history.replaceState({}, "", "/privacy");
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.get('[data-testid="legal-back"]').trigger("click");
+      await flushPromises();
+      expect(window.location.pathname).toBe("/");
+      expect(wrapper.find('[data-testid="hero-start"]').exists()).toBe(true);
+      wrapper.unmount();
+    } finally {
+      length.mockRestore();
+    }
+  });
+
+  it("links every policy page from the home page footer", async () => {
+    window.history.replaceState({}, "", "/");
+    const wrapper = mount(App);
+    await flushPromises();
+    for (const path of ["/terms", "/privacy", "/refunds", "/contact"]) {
+      expect(wrapper.find(`footer a[href="${path}"]`).exists(), path).toBe(
+        true,
+      );
+    }
+    wrapper.unmount();
+  });
+
   it("falls through unknown deep links to the app, not the marketing page", async () => {
     window.history.replaceState({}, "", "/start/anything");
     const wrapper = mount(App);

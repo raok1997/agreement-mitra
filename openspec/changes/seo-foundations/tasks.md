@@ -44,7 +44,7 @@ before task 3.1 if you disagree -- after publication it costs a redirect.
 - [ ] 3.4 Implement the content-hash review binding (D3): an article declaring
       legal assertions must carry a review record whose SHA-256 matches its body,
       mirroring the `rules` counsel-review idiom
-- [ ] 3.5 Write the render script (following `scripts/render-terms.mjs` --
+- [ ] 3.5 Write the render script (following `scripts/render-legal-docs.mjs` --
       reuse its documented Vite options, they are each load-bearing) emitting one
       static HTML page per article with its own head, canonical and `Article`
       structured data
@@ -64,6 +64,9 @@ before task 3.1 if you disagree -- after publication it costs a redirect.
       recovery token) and no `robots.txt`-disallowed prefix can enter the sitemap
 - [ ] 4.3 Keep `robots.txt` hand-written (D5) and update its comment to describe
       the generated sitemap and the article paths
+- [ ] 4.4 Give `/privacy`, `/refunds` and `/contact` (added by `legal-policy-pages`) the
+      same per-route treatment planned for `/terms`: title, metadata, prerendered entry and
+      sitemap entry
 
 ## 5. Performance
 

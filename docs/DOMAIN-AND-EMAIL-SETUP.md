@@ -54,7 +54,7 @@ steps, and neither depends on the site being deployed.
    terms of service (`frontend/src/views/LandingPage.vue`, `frontend/index.html`,
    `frontend/src/content/termsOfService.ts` -> clause 19). If you change it,
    change it in all three; a test asserts the page only ever links one address,
-   and the terms doc is regenerated with `npm run terms:doc`.
+   and the terms doc is regenerated with `npm run legal:doc`.
 5. Once the domain is verified, add aliases rather than burning user seats. On the
    free plan each **user** is one of your five, but **aliases are free and
    unlimited**. Suggested: `hello@`, `legal@`, `noreply@`, and `dmarc@` all as

@@ -15,7 +15,7 @@ See `proposal.md` -- Why. The constraints that shape the approach:
   finding. Every dependency added here is a permanent tax on that gate, so
   transitive-dependency count is a first-class selection criterion, not a detail.
 - **Two in-repo precedents to follow rather than reinvent.**
-  `scripts/render-terms.mjs` establishes how to render typed content through Vite
+  `scripts/render-legal-docs.mjs` establishes how to render typed content through Vite
   without a second copy of the content, and documents four load-bearing options
   that were each added after a real failure. `template-definition` and the `rules`
   counsel review establish how authored YAML is compiled, content-hashed, and bound

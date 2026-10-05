@@ -1,0 +1,108 @@
+<!-- GENERATED FILE - DO NOT EDIT.
+     Source: frontend/src/content/privacyPolicy.ts. Regenerate: `npm run legal:doc` from
+     frontend/. frontend/src/content/legalDocs.test.ts fails when this file is stale. -->
+
+# AgreementMitra — Privacy Policy (DRAFT)
+
+**Last updated:** 5 October 2026
+
+> This is a draft, published during a restricted beta and pending review by Indian counsel. Sections marked below are deliberately incomplete. It describes what the service does with personal data today; it is not yet the full notice the law requires.
+
+Gaps are marked below. **FOR COUNSEL** is a section we have deliberately not
+written because it is not ours to write.
+
+---
+
+## 1. Who we are
+
+AgreementMitra is a service provided by KAVISAT TEK LABS LLP. Under the Digital Personal Data Protection Act, 2023, KAVISAT TEK LABS LLP is the data fiduciary for the personal data processed through AgreementMitra: we decide why and how it is processed. In this policy, "we" and "us" mean KAVISAT TEK LABS LLP.
+
+## 2. What we collect
+
+We collect the details you enter about the parties (name, parentage and address), the email address and any telephone number you give for each party, and the content of the agreement itself, including every answer you give in the form.
+
+If you sign in, we keep your account sign-in details: the name and email address of the account you sign in with, whether that email address has been verified, and the identifier the sign-in provider assigns to the account.
+
+When an agreement is signed, we store the signed PDF and the signing audit trail exactly as the eSign provider issues them. They are the provider's evidence of the signing, and they may include identity details the provider obtains from Aadhaar, such as the signer's name and postal code and how well the name matched.
+
+When our staff buy a stamp certificate for you, we keep stamp-certificate scans and the details printed on the certificate, which include the parties' names and details of the property.
+
+When you pay, we keep payment records: the amount, the payment gateway's order and payment references, and the agreement the payment was for, which links the payment to your account if that agreement is saved to one.
+
+To prevent abuse of the service, we record the IP address that some requests come from, such as a request to recover an agreement link: the full address for IPv4, and only the network part for IPv6. Our security logs record a shortened form of it.
+
+## 3. What we do not hold
+
+We never ask for or store your Aadhaar number, virtual ID or Aadhaar one-time password. Signers authenticate on the eSign provider's own page, and the provider handles them. The signature and audit trail the provider adds to the signed PDF may show part of an Aadhaar number in masked form, as the eSign framework provides. The terms of service's clause on electronic signature says more about what the provider does rather than us.
+
+We hold no card, UPI or bank details. The payment gateway collects them directly on its own checkout.
+
+## 4. Why we process it
+
+> **GAP - FOR COUNSEL.** The purposes for which we process personal data, and the lawful basis for each under the Digital Personal Data Protection Act, 2023, are with counsel and deliberately not drafted by us.
+
+## 5. Who receives it
+
+We share personal data only with the service providers the service needs in order to work. We describe them by role rather than by company, because the company that fills a role can change.
+
+The eSign provider receives each signer's name and email address and the agreement to be signed, and emails each party its signing invitation.
+
+The payment gateway receives the amount and our order reference, and collects your payment details on its own checkout page, which sets its own cookies.
+
+The stamp-certificate issuing authority receives the parties' names and details of the property, which our staff enter on its portal to buy your certificate.
+
+Our email delivery provider carries the emails we send: the draft agreement to every party once their contact details are confirmed, the signed agreement once everyone has signed, and links to recover an agreement.
+
+The sign-in provider you choose tells us your name and email address when you sign in.
+
+Our hosting and storage providers hold the data described in this policy on our behalf.
+
+Our content delivery and network security provider sits in front of our site. All traffic to the site passes through it, including what you type into the form.
+
+Our web-font provider serves the fonts our pages use. Your browser fetches them from it directly, which shares your IP address and browser details with that provider.
+
+## 6. Cookies and browser storage
+
+The cookies we set on our own domain are strictly necessary for the service: a session cookie that keeps you signed in, a security cookie that protects forms against cross-site request forgery, and a short-lived sign-in binding cookie that ties a sign-in to the browser that started it. The network security provider in front of our site may set its own cookie to tell people from automated traffic. We set no advertising or analytics cookies.
+
+The payment gateway's checkout page sets its own, third-party cookies when you pay.
+
+While you draft, the form keeps your answers, including the parties' details, in your browser's local storage so that a reload does not lose them. They are cleared when you save and continue or reset the form, and a saved draft older than 24 hours is discarded when you come back to the form. Signing out does not clear them, so on a shared device, reset the form when you finish.
+
+## 7. How long we keep it
+
+> **GAP - FOR COUNSEL.** How long we keep each kind of personal data described here, and whether the periods in the terms of service are the right ones under the Act, is with counsel. Until it is settled, this policy states no period of its own.
+
+How long we keep an agreement and its signing records is set out in the terms of service's clause on how long we keep things and deletion.
+
+## 8. Drafts you delete
+
+When you delete a draft, we keep a record that it was deleted -- its reference, the account that deleted it and the time -- and none of the parties' details.
+
+## 9. Your rights
+
+> **GAP - FOR COUNSEL.** Your rights as a data principal -- access, correction, erasure and nomination -- and how to exercise them are with counsel and deliberately not drafted by us.
+
+## 10. Grievances
+
+> **GAP - FOR COUNSEL.** The grievance officer and the route to the Data Protection Board of India are with counsel. Until they are named here, you can write to support@agreementmitra.com about anything in this policy.
+
+## 11. Processing outside India
+
+> **GAP - FOR COUNSEL.** Whether any of our service providers processes personal data outside India, and what follows from that under the Act, is with counsel.
+
+## 12. Changes to this policy
+
+We will change this policy as the service changes and as counsel completes the sections marked above. Changes are published on this page with a new last-updated date.
+
+---
+
+## Operator details
+
+These identifiers are deployment data, set from configuration when issued; they are not part of
+the clause text above. This document shows the committed defaults.
+
+- **Legal name:** KAVISAT TEK LABS LLP
+- **LLPIN:** being issued
+- **Registered office:** to be confirmed
+- **Support:** support@agreementmitra.com

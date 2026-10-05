@@ -4,41 +4,16 @@
 // customer, who reads it at /terms, and counsel, who reads it as a document (docs/TERMS-OF-SERVICE.md,
 // attached to docs/COUNSEL-BRIEF.md Q6). Two hand-maintained copies of a legal text is precisely the
 // failure docs/LEGAL-POSTURE.md exists to prevent, so there is one source -- this file -- and the
-// markdown is RENDERED from it by scripts/render-terms.mjs. termsOfService.test.ts fails if the two
+// markdown is RENDERED from it by scripts/render-legal-docs.mjs. legalDocs.test.ts fails if the two
 // have drifted, which makes the drift unmissable rather than merely unlikely.
 //
-// STATUS IS PART OF THE CONTENT, NOT A FOOTNOTE. Every clause carries a `status`:
-//   "drafted"  -- we wrote it and we mean it, subject to counsel's review of the whole
-//   "counsel"  -- a deliberate GAP. We have not written it because it is not ours to write.
-//   "product"  -- a commercial term nobody has decided yet. NOT a guess, and never to be filled in
-//                 by inference: a wrong number here is a number counsel then reviews as intended.
-// A "counsel" or "product" clause renders as a visible gap on the page. That is the honest thing to
-// publish during founding-team beta -- a marked hole beats a confident invention, and it beats
-// having no terms at all (docs/LEGAL-POSTURE.md item 2).
+// What each clause status means, and why clauses are named by id: see legalDocument.ts.
 
-export type ClauseStatus = "drafted" | "counsel" | "product";
+import { clauseById, type Clause, type LegalDocument } from "./legalDocument";
 
-export interface Clause {
-  /** Section heading, rendered as an <h2> on the page and "## " in the markdown. */
-  heading: string;
-  /** Body paragraphs. Plain text: no markup, no interpolation -- it is a legal text, not a template. */
-  body: string[];
-  status: ClauseStatus;
-  /** For a non-"drafted" clause: what is missing and who owes it. Rendered as the visible gap note. */
-  gap?: string;
-}
-
-/** Shown at the head of both faces. The page must never look like a settled document. */
-export const TERMS_STATUS_BANNER =
-  "This is a draft, published during a restricted beta and pending review by Indian counsel. " +
-  "Sections marked below are deliberately incomplete. We publish it in this state because a draft " +
-  "you can read beats terms that do not exist -- not because it is finished.";
-
-/** The date the draft last changed. Bumped by hand when a clause changes. */
-export const TERMS_LAST_UPDATED = "5 October 2026";
-
-export const TERMS_CLAUSES: Clause[] = [
+const CLAUSES: Clause[] = [
   {
+    id: "who-we-are",
     heading: "1. Who we are",
     status: "drafted",
     body: [
@@ -47,6 +22,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "what-the-service-does",
     heading: "2. What the service does",
     status: "drafted",
     body: [
@@ -57,6 +33,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "not-legal-advice",
     heading: "3. We are not a law firm, and this is not legal advice",
     status: "drafted",
     body: [
@@ -66,6 +43,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "template-documents",
     heading: "4. Documents are generated from templates",
     status: "drafted",
     body: [
@@ -75,6 +53,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "jurisdictions",
     heading: "5. Where we can stamp and eSign",
     status: "drafted",
     body: [
@@ -85,6 +64,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "what-you-tell-us",
     heading: "6. What you tell us",
     status: "drafted",
     body: [
@@ -93,6 +73,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "our-fee",
     heading: "7. Our fee",
     status: "drafted",
     body: [
@@ -103,6 +84,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "stamp-duty",
     heading: "8. Stamp duty",
     status: "counsel",
     gap: "Our legal position when we buy a stamp certificate for you -- whether we do so as your agent, and what follows from that -- is with counsel. Until that is settled, treat this clause as descriptive rather than as a statement of who bears what -- in particular, whether duty we have paid on your behalf is recoverable, and from whom. What we do when we get it wrong is settled and stated below.",
@@ -115,6 +97,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "electronic-signature",
     heading: "9. Electronic signature and identity",
     status: "drafted",
     body: [
@@ -126,6 +109,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "drafts",
     heading: "10. Drafts, and drafts you abandon",
     status: "drafted",
     body: [
@@ -137,6 +121,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "refunds",
     heading: "11. Refunds and cancellation",
     status: "product",
     gap: "One case is still open: what you get back once we have already bought your stamp certificate. Duty paid to the state is not ours to return, whether any of it can be recovered is limited by law, and whether the certificate is yours rather than ours in the first place is a question we have put to counsel. We would rather leave this blank than state a rule we may have no right to apply. No external customer has yet paid us, so no refund has been asked for or refused.",
@@ -147,6 +132,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "retention",
     heading: "12. How long we keep things, and deletion",
     status: "counsel",
     gap: "Three questions here are with counsel and their answers may change what this clause says. Whether one party may have a jointly executed instrument deleted when the other party's continued access to it depends on us. Whether three years is the right period, given that a tenancy dispute usually arises at or after the end of the term rather than when the agreement was made. And whether the eSign provider's audit trail carries a retention obligation of its own, separate from ours. See also the data-protection clause below.",
@@ -157,6 +143,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "acceptable-use",
     heading: "13. Acceptable use",
     status: "drafted",
     body: [
@@ -167,6 +154,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "availability-and-support",
     heading: "14. Availability and support",
     status: "drafted",
     body: [
@@ -178,28 +166,30 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "personal-data",
     heading: "15. Your personal data",
     status: "counsel",
-    gap: "A privacy notice under the Digital Personal Data Protection Act, 2023 -- the purposes, the basis, the retention period, your rights and how to exercise them -- is with counsel, including whether it must be a separate notice rather than a clause in these terms. What appears here now is a description of what we hold, not the notice.",
+    gap: "Whether the privacy notice under the Digital Personal Data Protection Act, 2023 must stand apart from these terms or form part of them is with counsel. Until that is answered, the privacy policy is a separate document and this clause only points to it.",
     body: [
-      "We collect the details you enter about the parties (name, parentage and address), the email address and any telephone number you give for each party, and the content of the agreement itself. We store the signed PDF and the signing audit trail.",
-      "We do not hold Aadhaar numbers, virtual IDs or one-time passwords. See the electronic-signature clause above for what the eSign provider handles rather than us.",
-      "When you delete a draft, we keep a record that it was deleted -- its reference, the account that deleted it and the time -- and none of the parties' details.",
+      "What personal data we hold, why, and who receives it is set out in our privacy policy at agreementmitra.com/privacy.",
     ],
   },
   {
+    id: "liability",
     heading: "16. Our liability",
     status: "counsel",
     gap: "The limitation of liability is with counsel and is deliberately not drafted by us. Nothing in these terms should be read as limiting our liability until this clause exists.",
     body: [],
   },
   {
+    id: "disputes",
     heading: "17. Disputes and governing law",
     status: "counsel",
     gap: "Governing law, jurisdiction and the dispute-resolution route are with counsel, as is whether the Consumer Protection Act, 2019 and its e-commerce rules constrain what these terms may say or require us to publish anything further.",
     body: [],
   },
   {
+    id: "changes",
     heading: "18. Changes to these terms",
     status: "drafted",
     body: [
@@ -208,6 +198,7 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
   {
+    id: "contact",
     heading: "19. Contact",
     status: "drafted",
     body: [
@@ -215,3 +206,19 @@ export const TERMS_CLAUSES: Clause[] = [
     ],
   },
 ];
+
+export const TERMS_OF_SERVICE: LegalDocument = {
+  title: "Terms of Service",
+  lastUpdated: "5 October 2026",
+  banner:
+    "This is a draft, published during a restricted beta and pending review by Indian counsel. " +
+    "Sections marked below are deliberately incomplete. We publish it in this state because a draft " +
+    "you can read beats terms that do not exist -- not because it is finished.",
+  clauses: CLAUSES,
+};
+
+// Clauses other pages render, resolved here so a wrong id fails on import rather than at render.
+/** §11, rendered whole at /refunds. */
+export const TERMS_REFUNDS_CLAUSE = clauseById(TERMS_OF_SERVICE, "refunds");
+/** §19, rendered whole at /contact. */
+export const TERMS_CONTACT_CLAUSE = clauseById(TERMS_OF_SERVICE, "contact");

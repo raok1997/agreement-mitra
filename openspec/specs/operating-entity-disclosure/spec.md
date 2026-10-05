@@ -17,7 +17,7 @@ A test SHALL fail when the two differ. A test SHALL fail when §1 of the terms o
 - **THEN** it passes only if the two strings are identical
 
 #### Scenario: Terms name the same party
-- **GIVEN** the body of §1 of `TERMS_CLAUSES`
+- **GIVEN** the body of terms-of-service clause `who-we-are` (§1), looked up by id
 - **WHEN** the frontend test suite runs
 - **THEN** it passes only if that body contains the frontend legal-name constant verbatim
 
@@ -105,12 +105,12 @@ It SHALL NOT print a placeholder. The frontend SHALL NOT display a GSTIN.
 - **THEN** the legal name is `KAVISAT TEK LABS LLP` and the GSTIN and LLPIN accessors are empty
 
 ### Requirement: The site footer discloses the operator without a network call
-The landing page and the terms page SHALL render one shared footer component, given the resolved operator entity. It SHALL contain:
+The landing page, the terms page and the policy pages (`/privacy`, `/refunds`, `/contact`) SHALL render one shared footer component, given the resolved operator entity. It SHALL contain:
 
 - the sentence "AgreementMitra is a service of KAVISAT TEK LABS LLP.";
 - the LLPIN, or the being-issued statement;
 - the registered office, when configured;
-- a link to `/terms`;
+- links to `/terms`, `/privacy`, `/refunds` and `/contact`;
 - a `mailto:` link to `CONTACT_EMAIL`.
 
 Every value SHALL come from build-time constants, and rendering the footer SHALL make no network request. The footer SHALL render values as escaped text, never as HTML.
@@ -125,36 +125,40 @@ The frontend SHALL read the operator variables only by naming each one. It SHALL
 - **WHEN** `/terms` renders
 - **THEN** it contains the shared footer with the operator sentence, the `/terms` link and the `mailto:` link
 
+#### Scenario: Footer links the policy pages
+- **WHEN** the footer component mounts
+- **THEN** it contains links with `href` `/terms`, `/privacy`, `/refunds` and `/contact`
+
 #### Scenario: No request issued
 - **GIVEN** the global `fetch` is spied
 - **WHEN** the footer component mounts
 - **THEN** `fetch` is never called
 
 ### Requirement: The terms of service name the operator and show its details outside the clause text
-§1 of the terms of service SHALL state, in plain text with no interpolation, that the service is provided by KAVISAT TEK LABS LLP and that "we" and "us" mean that LLP. The LLPIN and the registered office SHALL NOT appear in any clause body or gap note.
+§1 of the terms of service SHALL state, in plain text with no interpolation, that the service is provided by KAVISAT TEK LABS LLP and that "we" and "us" mean that LLP. The LLPIN and the registered office SHALL NOT appear in any clause body or gap note of any policy document.
 
-Both the `/terms` page and the generated `docs/TERMS-OF-SERVICE.md` SHALL carry an "Operator details" section after the clauses. The section SHALL give:
+The `/terms` and `/privacy` pages and the generated `docs/TERMS-OF-SERVICE.md` and `docs/PRIVACY-POLICY.md` SHALL each carry an "Operator details" section after the clauses. The section SHALL give:
 
 - the legal name;
 - the LLPIN, or the being-issued statement;
 - the registered office, or a to-be-confirmed statement;
 - the support email.
 
-The generated document SHALL render that section from the committed defaults, never from the build environment. The section is deployment data and SHALL NOT form part of the text whose version a terms acceptance records.
+The generated documents SHALL render that section from the committed defaults, never from the build environment. The section is deployment data and SHALL NOT form part of the text whose version a terms acceptance records.
 
 #### Scenario: Page shows operator details
 - **GIVEN** an operator entity with no LLPIN
 - **WHEN** `/terms` renders with that entity
 - **THEN** an "Operator details" section after the last clause names KAVISAT TEK LABS LLP and says the LLPIN is being issued
 
-#### Scenario: Generated document is environment-independent
-- **GIVEN** `VITE_OPERATOR_LLPIN` is stubbed to `ACA-1234` and the terms modules are re-imported
-- **WHEN** `renderTermsMarkdown()` runs
-- **THEN** its output is identical to the output with the variable unset, and contains no `ACA-1234`
+#### Scenario: Generated documents are environment-independent
+- **GIVEN** `VITE_OPERATOR_LLPIN` is stubbed to `ACA-1234` and the policy modules are re-imported
+- **WHEN** `renderLegalMarkdown()` runs for the terms of service and for the privacy policy
+- **THEN** each output is identical to the output with the variable unset, and contains no `ACA-1234`
 
 #### Scenario: Clause text holds no identifier
 - **WHEN** the frontend test suite runs
-- **THEN** no clause body or gap note contains the text `LLPIN` or `GSTIN`
+- **THEN** no clause body or gap note of any policy document contains the text `LLPIN` or `GSTIN`
 
 ### Requirement: The signed-agreement email names the operator
 Both signed-agreement delivery messages SHALL end, after a blank line, with the operator line:

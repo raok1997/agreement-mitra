@@ -1,6 +1,6 @@
 <!-- GENERATED FILE - DO NOT EDIT.
-     Source: frontend/src/content/termsOfService.ts. Regenerate: `npm run terms:doc` from
-     frontend/. frontend/src/content/termsOfService.test.ts fails when this file is stale. -->
+     Source: frontend/src/content/termsOfService.ts. Regenerate: `npm run legal:doc` from
+     frontend/. frontend/src/content/legalDocs.test.ts fails when this file is stale. -->
 
 # AgreementMitra — Terms of Service (DRAFT)
 
@@ -155,13 +155,9 @@ The service is currently in a restricted beta and is not offered with any wider 
 
 ## 15. Your personal data
 
-> **GAP - FOR COUNSEL.** A privacy notice under the Digital Personal Data Protection Act, 2023 -- the purposes, the basis, the retention period, your rights and how to exercise them -- is with counsel, including whether it must be a separate notice rather than a clause in these terms. What appears here now is a description of what we hold, not the notice.
+> **GAP - FOR COUNSEL.** Whether the privacy notice under the Digital Personal Data Protection Act, 2023 must stand apart from these terms or form part of them is with counsel. Until that is answered, the privacy policy is a separate document and this clause only points to it.
 
-We collect the details you enter about the parties (name, parentage and address), the email address and any telephone number you give for each party, and the content of the agreement itself. We store the signed PDF and the signing audit trail.
-
-We do not hold Aadhaar numbers, virtual IDs or one-time passwords. See the electronic-signature clause above for what the eSign provider handles rather than us.
-
-When you delete a draft, we keep a record that it was deleted -- its reference, the account that deleted it and the time -- and none of the parties' details.
+What personal data we hold, why, and who receives it is set out in our privacy policy at agreementmitra.com/privacy.
 
 ## 16. Our liability
 

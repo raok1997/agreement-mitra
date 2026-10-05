@@ -5,13 +5,13 @@ import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { assertOperatorEnv } from "./src/content/operatorFacts";
 
-// From this file, never process.cwd(): render-terms.mjs runs from anywhere, and the gate must read
-// exactly the .env files Vite bakes from.
+// From this file, never process.cwd(): render-legal-docs.mjs runs from anywhere, and the gate must
+// read exactly the .env files Vite bakes from.
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
   // Fail closed on a malformed operator identifier (operating-entity-disclosure D4). Runs for build,
-  // dev, Vitest and render-terms alike; loadEnv reads .env* files plus process.env.
+  // dev, Vitest and render-legal-docs alike; loadEnv reads .env* files plus process.env.
   assertOperatorEnv(loadEnv(mode, frontendDir, "VITE_OPERATOR_"));
 
   return {
