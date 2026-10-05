@@ -348,6 +348,17 @@ class Agreement implements Persistable<UUID> {
   }
 
   /**
+   * The owner rule, defined once: an <b>unowned</b> agreement admits anyone presenting its id (the
+   * unguessable id is a bearer capability); a <b>claimed</b> one admits only its owner. A null
+   * caller (anonymous) is admitted only to an unowned agreement. Every customer route that is
+   * owner-scoped once claimed applies this. Deliberately NOT the rule of the owner-only edit or of
+   * unowned-only recovery.
+   */
+  boolean admits(UUID callerIdentityId) {
+    return ownerIdentityId == null || ownerIdentityId.equals(callerIdentityId);
+  }
+
+  /**
    * Fully replace the mutable rental terms (edit). The party list is replaced separately via {@link
    * #clearSigners} + {@link #addSigner}. The term in months is re-derived from the new dates. Only
    * valid pre-signing-request (the service enforces the freeze); anti-mass-assignment fields (id,

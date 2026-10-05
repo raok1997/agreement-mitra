@@ -185,10 +185,7 @@ public class AgreementService {
    */
   @Transactional(readOnly = true)
   public Optional<AgreementResponse> findByIdForReader(UUID id, UUID callerIdentityId) {
-    return repository
-        .findById(id)
-        .filter(a -> a.ownerIdentityId() == null || a.ownerIdentityId().equals(callerIdentityId))
-        .map(this::toResponse);
+    return repository.findById(id).filter(a -> a.admits(callerIdentityId)).map(this::toResponse);
   }
 
   /**
@@ -203,10 +200,7 @@ public class AgreementService {
    */
   @Transactional(readOnly = true)
   public boolean isAccessibleBy(UUID id, UUID callerIdentityId) {
-    return repository
-        .findById(id)
-        .filter(a -> a.ownerIdentityId() == null || a.ownerIdentityId().equals(callerIdentityId))
-        .isPresent();
+    return repository.findById(id).filter(a -> a.admits(callerIdentityId)).isPresent();
   }
 
   /**
@@ -353,7 +347,7 @@ public class AgreementService {
     Agreement agreement =
         repository
             .findByIdForUpdate(agreementId)
-            .filter(a -> a.ownerIdentityId() == null || a.ownerIdentityId().equals(identityId))
+            .filter(a -> a.admits(identityId))
             .orElseThrow(
                 () ->
                     new ResourceNotFoundException(

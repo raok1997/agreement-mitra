@@ -140,20 +140,6 @@ async function describeProblem(res: Response): Promise<string> {
 }
 
 /**
- * Fetch the agreement's rental-agreement PDF preview and return an object URL suitable for
- * embedding in an `<iframe>`/`<object>`. The preview is rendered on demand and not stored. The
- * caller owns the returned URL and MUST `URL.revokeObjectURL` it when replacing or unmounting.
- */
-export async function fetchAgreementPreview(
-  agreementId: string,
-): Promise<string> {
-  const res = await apiFetch(`${BASE}/agreements/${agreementId}/preview`);
-  if (!res.ok) throw new CustomerFacingError(await describeProblem(res));
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
-}
-
-/**
  * Generate the agreement's document and store it as the signable draft (replaces the manual PDF
  * upload for the guided flow). Throws a friendly message on failure -- including the `409` case when
  * the draft is locked because signing has already started.

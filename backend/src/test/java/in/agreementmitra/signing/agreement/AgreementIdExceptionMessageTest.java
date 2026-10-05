@@ -34,10 +34,10 @@ class AgreementIdExceptionMessageTest {
 
   @Test
   void draftUploadForAnUnknownAgreement() {
-    when(repository.findById(ID)).thenReturn(Optional.empty());
+    when(repository.findByIdForUpdate(ID)).thenReturn(Optional.empty());
     DraftService drafts = new DraftService(repository, mock(BlobStore.class), signingRequestQuery);
 
-    assertThatThrownBy(() -> drafts.attachDraft(ID, "%PDF-1.4\n".getBytes()))
+    assertThatThrownBy(() -> drafts.attachDraft(ID, null, "%PDF-1.4\n".getBytes()))
         .isInstanceOf(ResourceNotFoundException.class)
         .hasMessageContaining(AgreementIds.redact(ID))
         .message()

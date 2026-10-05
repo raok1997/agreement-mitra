@@ -21,8 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The upload is untrusted: bytes are validated by magic signature (not the declared content
  * type), never parsed/rendered, never logged, and the attacker-controlled filename is never used.
  * Storage key is derived from the parsed {@code UUID} (no path traversal). Side-effect order is
- * fixed — <b>validate → freeze-check → store → attach</b> — so a rejected upload never overwrites
- * the stored blob.
+ * fixed — <b>owner-check → validate → freeze-check → store → attach</b> — so a rejected upload
+ * never overwrites the stored blob, and a non-owner learns nothing about the agreement's state.
  */
 @Service
 public class DraftService {
@@ -51,15 +51,24 @@ public class DraftService {
    * Validate and store {@code bytes} as the agreement's draft, then record the storage key on the
    * aggregate.
    *
-   * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
+   * <p>Owner-scoped once claimed ({@link Agreement#admits}): a non-owner gets the same 404 as an
+   * unknown id, before any other check. The row is loaded under the write lock {@code claim} takes,
+   * so an upload and a claim serialise. The blob write stays under that lock because the storage
+   * key is fixed per agreement. Work that depends only on the bytes (parsing, conversion) belongs
+   * <b>before</b> this call, never inside it, so it does not hold the lock.
+   *
+   * @param callerIdentityId the authenticated caller, or null when anonymous
+   * @throws ResourceNotFoundException if the agreement does not exist or is claimed by someone else
+   *     (mapped to 404)
    * @throws InvalidUploadException if the bytes are not a PDF or are empty (mapped to 400)
    * @throws ConflictException if a signing request already exists — the draft is finalized (409)
    */
   @Transactional
-  public void attachDraft(UUID agreementId, byte[] bytes) {
+  public void attachDraft(UUID agreementId, UUID callerIdentityId, byte[] bytes) {
     Agreement agreement =
         repository
-            .findById(agreementId)
+            .findByIdForUpdate(agreementId)
+            .filter(a -> a.admits(callerIdentityId))
             .orElseThrow(
                 () ->
                     new ResourceNotFoundException(

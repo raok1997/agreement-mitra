@@ -254,8 +254,10 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.PUT, "/api/agreements/*")
                     .authenticated()
                     // Sandbox agreement surface - scoped to the exact create + read-by-id paths
-                    // (NOT /api/agreements/**) so future sub-paths stay denied by default. These
-                    // are unauthenticated today; TEMPORARY - tighten when an auth mechanism lands.
+                    // (NOT /api/agreements/**) so future sub-paths stay denied by default.
+                    // Create is anonymous by design; the read is owner-scoped in the HANDLER (an
+                    // unclaimed agreement answers any id holder, a claimed one only its owner,
+                    // with the same 404 for "not yours" as for "unknown").
                     .requestMatchers(HttpMethod.POST, "/api/agreements")
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*")
@@ -275,21 +277,20 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, SIGNED_DOCUMENT_PATH)
                     .permitAll()
                     // Document preview (CR-3b) - scoped to the exact sub-path (NOT
-                    // /api/agreements/**). Anonymous like the rest of the agreement/draft surface;
-                    // TEMPORARY - tighten (ownership) when an auth mechanism lands. Renders on
-                    // demand and stores nothing.
+                    // /api/agreements/**). Permitted here and owner-scoped in the HANDLER, exactly
+                    // like GET /api/agreements/* (no-oracle 404, checked before any render).
+                    // Renders on demand and stores nothing.
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/preview")
                     .permitAll()
                     // Generate-as-draft (CR-3c) - render + store as the signable draft. Scoped to
-                    // the exact sub-path. Anonymous like the rest of the agreement/draft surface;
-                    // TEMPORARY - tighten (ownership) when an auth mechanism lands. Overwrite until
+                    // the exact sub-path. Permitted here and owner-scoped in the HANDLER, exactly
+                    // like GET /api/agreements/* (no-oracle 404, before the 409). Overwrite until
                     // signing, then locked (409) by the shared draft freeze rule.
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/document")
                     .permitAll()
                     // Finalise (place the order) - the end of the customer's involvement. Scoped to
-                    // the exact sub-path. Anonymous like the rest of the drafting surface;
-                    // TEMPORARY - tighten with them when ownership authorization lands, and move
-                    // behind payment confirmation when the payment gate arrives.
+                    // the exact sub-path. Permitted here and owner-scoped in the HANDLER, exactly
+                    // like GET /api/agreements/* (no-oracle 404, before any 409).
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/finalise")
                     .permitAll()
                     // Customer payment surface (razorpay-payment CR). Permitted here and
@@ -308,7 +309,8 @@ class SecurityConfig {
                     .permitAll()
                     // Pre-payment contact confirmation (post-payment-continuity CR, design D16).
                     // Anonymous like the rest of this surface and scoped to the exact sub-path. The
-                    // route accepts CONTACTS ONLY and refuses an owned or frozen agreement, so it
+                    // route accepts CONTACTS ONLY, serves an unowned agreement or its own owner,
+                    // and refuses a paid or closed one, so it
                     // is strictly weaker than PUT /api/agreements/* (which stays authenticated):
                     // a caller holding the id can redirect their own agreement's notifications,
                     // which the id already entitles them to, but cannot touch rent, dates, or the
@@ -328,8 +330,9 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/stamp-quote")
                     .permitAll()
                     // Draft upload - scoped to the exact sub-path (NOT /api/agreements/**) so the
-                    // posture stays fail-closed. Anonymous like the rest of the capability surface
-                    // (the id is the credential); rate limited as a capability write.
+                    // posture stays fail-closed. Permitted here and owner-scoped in the HANDLER,
+                    // like GET /api/agreements/* (no-oracle 404, before the not-a-PDF 400 and the
+                    // 409); rate limited as a capability write.
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/draft")
                     .permitAll()
                     // Form-projection schema (template-form-projection) - a public read of

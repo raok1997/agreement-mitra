@@ -210,13 +210,18 @@ public class SigningRequestService {
    *
    * <p>Idempotent: finalising twice returns the same reference and does not place a second order.
    *
-   * @throws ResourceNotFoundException if no such agreement exists (mapped to 404)
+   * <p>Owner-scoped once claimed: the owner check is the first step, so a non-owner gets the
+   * unknown-agreement 404 before any closure, draft or jurisdiction refusal can reveal state.
+   *
+   * @param callerIdentityId the authenticated caller, or null when anonymous
+   * @throws ResourceNotFoundException if no such agreement exists, or it is claimed by someone else
+   *     (mapped to 404)
    * @throws ConflictException if the agreement has no generated/uploaded draft to finalise (409)
    */
-  public FinaliseResponse finalise(UUID agreementId) {
+  public FinaliseResponse finalise(UUID agreementId, UUID callerIdentityId) {
     AgreementResponse agreement =
         agreementService
-            .findById(agreementId)
+            .findByIdForReader(agreementId, callerIdentityId)
             .orElseThrow(
                 () ->
                     new ResourceNotFoundException(

@@ -36,10 +36,11 @@ import {
   getPaymentProgress,
   payForAgreement,
 } from "../api/payments";
-import { isSignedIn, whenReady } from "../api/authStore";
+import { isSignedIn, reconcile, whenReady } from "../api/authStore";
 import { busyMessage } from "../api/http";
 import { hasProblemType, PROBLEM } from "../api/problems";
 import {
+  AGREEMENT_UNAVAILABLE_MESSAGE,
   customerMessage,
   JURISDICTION_UNSUPPORTED_MESSAGE,
   TERMS_FROZEN_MESSAGE,
@@ -863,9 +864,22 @@ async function openContactStep(): Promise<void> {
     }));
     contactStep.value = true;
   } catch (e) {
-    payError.value =
-      busyMessage(e) ?? "Could not load the party details. Please try again.";
+    payError.value = unavailable(e)
+      ? AGREEMENT_UNAVAILABLE_MESSAGE
+      : (busyMessage(e) ??
+        "Could not load the party details. Please try again.");
   }
+}
+
+/**
+ * Whether a pay-path call was refused as not found: unknown, or claimed by an account this session
+ * is not signed in as. A 404 does not trip the client's 401/403 hook, so re-check the session here,
+ * or a header still showing an ended session would contradict the message.
+ */
+function unavailable(e: unknown): boolean {
+  if (!hasProblemType(e, PROBLEM.notFound)) return false;
+  void reconcile();
+  return true;
 }
 
 /**
@@ -919,7 +933,9 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
     // and retrying refuses forever, so the message has to name the real condition instead.
     contactError.value = hasProblemType(e, PROBLEM.contactsFrozen)
       ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
-      : customerMessage(
+      : unavailable(e)
+        ? AGREEMENT_UNAVAILABLE_MESSAGE
+        : customerMessage(
           e,
           "Could not save those contact details. Please try again.",
         );
@@ -971,7 +987,9 @@ async function finaliseAndPay(selection: StampSelection): Promise<void> {
     // retry can never succeed, so do not invite one: say what this agreement CAN still do.
     payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
       ? JURISDICTION_UNSUPPORTED_MESSAGE
-      : customerMessage(e, "Could not start payment. Please try again.");
+      : unavailable(e)
+        ? AGREEMENT_UNAVAILABLE_MESSAGE
+        : customerMessage(e, "Could not start payment. Please try again.");
   } finally {
     paying.value = false;
   }

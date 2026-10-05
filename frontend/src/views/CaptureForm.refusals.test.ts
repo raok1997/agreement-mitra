@@ -6,6 +6,8 @@ import * as agreements from "../api/agreements";
 import * as documentPreview from "../api/documentPreview";
 import * as templateForm from "../api/templateForm";
 import * as jurisdictions from "../api/jurisdictions";
+import * as authStore from "../api/authStore";
+import { AGREEMENT_UNAVAILABLE_MESSAGE } from "./refusalMessages";
 import type { FormSchema } from "../api/templateForm";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import ContactConfirmation, {
@@ -39,6 +41,7 @@ vi.mock("../api/authStore", async () => {
   return {
     isSignedIn: ref(false),
     whenReady: vi.fn(() => Promise.resolve()),
+    reconcile: vi.fn(() => Promise.resolve()),
   };
 });
 vi.mock("../api/agreements", async (importOriginal) => {
@@ -55,6 +58,7 @@ const JURISDICTION = "urn:agreementmitra:problem:jurisdiction-unsupported";
 const DRAFT_FROZEN = "urn:agreementmitra:problem:draft-frozen";
 const CONTACT_REQUIRED = "urn:agreementmitra:problem:contact-required";
 const RENDER_BUSY = "urn:agreementmitra:problem:render-busy";
+const NOT_FOUND = "urn:agreementmitra:problem:resource-not-found";
 
 function problem(
   status: number,
@@ -213,24 +217,38 @@ async function fillAndSave(wrapper: ReturnType<typeof mount>) {
   await flushPromises();
 }
 
-/** Create, confirm unchanged contacts, choose a stamp value: finalise + payment run for real. */
-async function payFromCaptureForm(): Promise<string> {
+/** Create, then press "Finalise and pay": the contact step loads the agreement. */
+async function openContactStep(): Promise<ReturnType<typeof mount>> {
   const wrapper = mount(CaptureForm);
   await flushPromises();
   await fillAndSave(wrapper);
   await wrapper.find('[data-testid="finalise-and-pay"]').trigger("click");
   await flushPromises();
+  return wrapper;
+}
+
+/** Confirm the contacts, changed (so PATCH /contacts runs for real) or as loaded. */
+async function confirmContacts(
+  wrapper: ReturnType<typeof mount>,
+  email = "",
+): Promise<void> {
   wrapper.findComponent(ContactConfirmation).vm.$emit(
     "confirm",
     AGREEMENT.signers.map((s) => ({
       id: s.id,
       name: s.name,
       role: s.role,
-      email: s.email ?? "",
+      email: email || (s.email ?? ""),
       mobile: s.mobile ?? "",
     })) as PartyContact[],
   );
   await flushPromises();
+}
+
+/** Create, confirm unchanged contacts, choose a stamp value: finalise + payment run for real. */
+async function payFromCaptureForm(): Promise<string> {
+  const wrapper = await openContactStep();
+  await confirmContacts(wrapper);
   wrapper.findComponent(StampQuoteStep).vm.$emit("confirm", {
     stampValueMinorUnits: 130000,
   });
@@ -271,7 +289,10 @@ describe("CaptureForm refusals through the real API client", () => {
     URL.createObjectURL = vi.fn(() => "blob:stub");
     URL.revokeObjectURL = vi.fn();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(authStore.reconcile).mockClear();
+  });
 
   it("(a) explains a jurisdiction refusal at finalise", async () => {
     routes["POST /api/agreements/agr-1/finalise"] = problem(409, JURISDICTION);
@@ -356,5 +377,56 @@ describe("CaptureForm refusals through the real API client", () => {
     const message = await saveEdit();
 
     expect(message).toContain("try again in 7 seconds");
+  });
+
+  // A 404 on the pay path: the agreement is unknown, or claimed by an account this session is not
+  // signed in as (draft-attach-owner-gate D4). One message for both, and the session is re-checked.
+
+  it("(i) says the agreement is not available when the contact step's load is refused", async () => {
+    vi.mocked(agreements.getAgreement).mockImplementation(async () => {
+      throw await agreements.AgreementHttpError.from(problem(404, NOT_FOUND)());
+    });
+
+    const wrapper = await openContactStep();
+    const message = wrapper.get('[data-testid="pay-error"]').text();
+
+    expect(message).toBe(AGREEMENT_UNAVAILABLE_MESSAGE);
+    expect(message).not.toContain("Could not load the party details");
+    expect(authStore.reconcile).toHaveBeenCalled();
+  });
+
+  it("(j) says the same when saving the contacts is refused", async () => {
+    routes["PATCH /api/agreements/agr-1/contacts"] = problem(404, NOT_FOUND);
+
+    const wrapper = await openContactStep();
+    await confirmContacts(wrapper, "changed@example.com");
+
+    expect(wrapper.findComponent(ContactConfirmation).props("error")).toBe(
+      AGREEMENT_UNAVAILABLE_MESSAGE,
+    );
+    expect(authStore.reconcile).toHaveBeenCalled();
+  });
+
+  it("(k) says the same when finalise is refused", async () => {
+    routes["POST /api/agreements/agr-1/finalise"] = problem(404, NOT_FOUND);
+
+    const message = await payFromCaptureForm();
+
+    expect(message).toBe(AGREEMENT_UNAVAILABLE_MESSAGE);
+    expect(message).not.toContain("Could not start payment");
+    expect(message).not.toContain("request failed:");
+    expect(authStore.reconcile).toHaveBeenCalled();
+  });
+
+  it("(l) says the same when the checkout call after finalise is refused", async () => {
+    routes["POST /api/agreements/agr-1/payment/order"] = problem(404, NOT_FOUND);
+
+    const message = await payFromCaptureForm();
+
+    expect(message).toBe(AGREEMENT_UNAVAILABLE_MESSAGE);
+  });
+
+  it("(m) never describes an account in the not-available message", () => {
+    expect(AGREEMENT_UNAVAILABLE_MESSAGE).not.toMatch(/@|\bby\b|owner|claimed/i);
   });
 });

@@ -23,8 +23,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for {@link DraftService} — mocked collaborators, no Spring, no I/O. Covers magic-byte
- * validation, the freeze rule, the side-effect order (a rejected upload must never touch storage),
- * and the storage key derivation.
+ * validation, the owner gate, the freeze rule, the side-effect order (a rejected upload must never
+ * touch storage), and the storage key derivation.
  */
 @ExtendWith(MockitoExtension.class)
 class DraftServiceTest {
@@ -38,6 +38,14 @@ class DraftServiceTest {
     return new DraftService(repository, blobStore, signingRequestQuery);
   }
 
+  private static final UUID CALLER = UUID.randomUUID();
+
+  /** The agreement loads under the write lock and admits {@link #CALLER}. */
+  private void admitted(UUID id) {
+    when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(agreement));
+    when(agreement.admits(CALLER)).thenReturn(true);
+  }
+
   private static byte[] validPdf() {
     return "%PDF-1.4\n...".getBytes();
   }
@@ -46,10 +54,10 @@ class DraftServiceTest {
   void validPdfIsStoredUnderUuidDerivedKeyAndAttached() {
     UUID id = UUID.randomUUID();
     byte[] bytes = validPdf();
-    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    admitted(id);
     when(signingRequestQuery.existsForAgreement(id)).thenReturn(false);
 
-    service().attachDraft(id, bytes);
+    service().attachDraft(id, CALLER, bytes);
 
     String expectedKey = "drafts/" + id + ".pdf";
     verify(blobStore).put(eq(expectedKey), eq(bytes), eq("application/pdf"));
@@ -59,9 +67,9 @@ class DraftServiceTest {
   @Test
   void unknownAgreementIsNotFoundAndStoresNothing() {
     UUID id = UUID.randomUUID();
-    when(repository.findById(id)).thenReturn(Optional.empty());
+    when(repository.findByIdForUpdate(id)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> service().attachDraft(id, validPdf()))
+    assertThatThrownBy(() -> service().attachDraft(id, CALLER, validPdf()))
         .isInstanceOf(ResourceNotFoundException.class);
 
     verifyNoInteractions(blobStore, signingRequestQuery);
@@ -70,9 +78,9 @@ class DraftServiceTest {
   @Test
   void nonPdfContentIsRejectedAndStoresNothing() {
     UUID id = UUID.randomUUID();
-    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    admitted(id);
 
-    assertThatThrownBy(() -> service().attachDraft(id, "<html>not a pdf</html>".getBytes()))
+    assertThatThrownBy(() -> service().attachDraft(id, CALLER, "<html>not a pdf</html>".getBytes()))
         .isInstanceOf(InvalidUploadException.class);
 
     verify(blobStore, never()).put(any(), any(), any());
@@ -82,9 +90,9 @@ class DraftServiceTest {
   @Test
   void emptyUploadIsRejected() {
     UUID id = UUID.randomUUID();
-    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    admitted(id);
 
-    assertThatThrownBy(() -> service().attachDraft(id, new byte[0]))
+    assertThatThrownBy(() -> service().attachDraft(id, CALLER, new byte[0]))
         .isInstanceOf(InvalidUploadException.class);
 
     verify(blobStore, never()).put(any(), any(), any());
@@ -93,10 +101,10 @@ class DraftServiceTest {
   @Test
   void subSignatureUploadIsRejectedWithoutError() {
     UUID id = UUID.randomUUID();
-    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    admitted(id);
 
     // 1–4 bytes — shorter than "%PDF-"; must be a clean 400, not an IndexOutOfBounds.
-    assertThatThrownBy(() -> service().attachDraft(id, new byte[] {'%', 'P', 'D'}))
+    assertThatThrownBy(() -> service().attachDraft(id, CALLER, new byte[] {'%', 'P', 'D'}))
         .isInstanceOf(InvalidUploadException.class);
 
     verify(blobStore, never()).put(any(), any(), any());
@@ -105,16 +113,31 @@ class DraftServiceTest {
   @Test
   void uploadIsFrozenOnceASigningRequestExists() {
     UUID id = UUID.randomUUID();
-    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    admitted(id);
     when(signingRequestQuery.existsForAgreement(id)).thenReturn(true);
 
-    assertThatThrownBy(() -> service().attachDraft(id, validPdf()))
+    assertThatThrownBy(() -> service().attachDraft(id, CALLER, validPdf()))
         .isInstanceOfSatisfying(
             ConflictException.class,
             e -> assertThat(e.kind()).isEqualTo(ConflictException.Kind.DRAFT_FROZEN));
 
     // Frozen — the blob is never overwritten and the key is never re-attached.
     verify(blobStore, never()).put(any(), any(), any());
+    verify(agreement, never()).attachDraft(any());
+  }
+
+  @Test
+  void aNonOwnerIsNotFoundBeforeAnyContentCheckAndStoresNothing() {
+    UUID id = UUID.randomUUID();
+    when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(agreement));
+    when(agreement.admits(CALLER)).thenReturn(false);
+
+    // A non-PDF body: the owner check answers first, so the refusal is the unknown-id 404.
+    assertThatThrownBy(() -> service().attachDraft(id, CALLER, "<html/>".getBytes()))
+        .isInstanceOf(ResourceNotFoundException.class);
+
+    verify(repository, never()).findById(any());
+    verifyNoInteractions(blobStore, signingRequestQuery);
     verify(agreement, never()).attachDraft(any());
   }
 }

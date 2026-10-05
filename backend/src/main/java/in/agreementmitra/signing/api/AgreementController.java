@@ -69,13 +69,15 @@ public class AgreementController {
    * <p>Idempotent: finalising twice returns the same reference and places no second order. 404 for
    * an unknown agreement; 409 if there is no generated draft to finalise.
    *
-   * <p>Unauthenticated today, exactly like the rest of the anonymous drafting surface (create /
-   * draft / generate). TEMPORARY - tighten together with them when ownership authorization lands.
-   * When the payment gate arrives, order placement moves behind payment confirmation.
+   * <p>Owner-scoped like {@link #get}: an unclaimed agreement may be finalised by any caller
+   * presenting the id; a claimed one only by its owner. Anyone else gets the same 404 as an unknown
+   * id, before any 409 can reveal the agreement's state. The route is {@code permitAll}, so {@code
+   * identityId} may be null.
    */
   @PostMapping("/{id}/finalise")
-  public FinaliseResponse finalise(@PathVariable UUID id) {
-    return signingRequestService.finalise(id);
+  public FinaliseResponse finalise(
+      @PathVariable UUID id, @AuthenticationPrincipal UUID identityId) {
+    return signingRequestService.finalise(id, identityId);
   }
 
   @PostMapping
@@ -178,12 +180,14 @@ public class AgreementController {
    * Render the agreement's rental-agreement document and return it as an <b>inline</b> PDF for
    * on-screen preview. Rendered on demand and <b>not stored</b> (that is the generate step). {@code
    * id} is bound as a {@link UUID} (a non-UUID path is a 400 before any work); an unknown id is a
-   * 404. The response is marked {@code no-store} (the PDF carries party PII) and the bytes are
-   * never logged. Returns the PDF bytes only.
+   * 404, and so is a claimed agreement for anyone but its owner (checked before any render). The
+   * response is marked {@code no-store} (the PDF carries party PII) and the bytes are never logged.
+   * Returns the PDF bytes only.
    */
   @GetMapping("/{id}/preview")
-  public ResponseEntity<byte[]> preview(@PathVariable UUID id) {
-    byte[] pdf = agreementDocumentService.renderPreview(id);
+  public ResponseEntity<byte[]> preview(
+      @PathVariable UUID id, @AuthenticationPrincipal UUID identityId) {
+    byte[] pdf = agreementDocumentService.renderPreview(id, identityId);
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_PDF)
         .header(
@@ -201,15 +205,19 @@ public class AgreementController {
    * + identity), store ({@code attachDraft}), then pin ({@code pinEffectiveTemplate}) -- so a
    * rejected/frozen store pins nothing. Overwrites any prior draft while no signing request exists;
    * {@code attachDraft} rejects with 409 once one does (draft locked, no re-pin). 404 for an
-   * unknown agreement; a non-UUID path is a 400. Returns the agreement id only.
+   * unknown agreement, and for a claimed one unless the caller owns it -- each of the three steps
+   * re-checks, so a claim landing mid-request stops the remaining writes. A non-UUID path is a 400.
+   * Returns the agreement id only.
    */
   @PostMapping("/{id}/document")
-  public ResponseEntity<Map<String, UUID>> generateDocument(@PathVariable UUID id) {
+  public ResponseEntity<Map<String, UUID>> generateDocument(
+      @PathVariable UUID id, @AuthenticationPrincipal UUID identityId) {
     DocumentProjectionResult result =
-        agreementDocumentService.renderForDraft(id); // 404 if the agreement is unknown
-    draftService.attachDraft(id, result.pdf()); // validate -> freeze-check (409) -> store -> attach
+        agreementDocumentService.renderForDraft(id, identityId); // 404 if unknown or not theirs
+    // owner-check -> validate -> freeze-check (409) -> store -> attach
+    draftService.attachDraft(id, identityId, result.pdf());
     agreementDocumentService.pinEffectiveTemplate(
-        id, result.identity(), result.executionDate()); // pin after a stored draft
+        id, identityId, result.identity(), result.executionDate()); // pin after a stored draft
     return ResponseEntity.ok(Map.of("agreementId", id));
   }
 
@@ -217,17 +225,20 @@ public class AgreementController {
    * Upload the agreement's draft PDF as multipart form-data (exactly one file part). {@code id} is
    * bound as a {@link UUID} so a non-UUID path is a 400 (type mismatch) before any storage key is
    * built — no path traversal. The attacker-controlled filename and declared content type are never
-   * used. Returns the agreement id only — never the stored bytes.
+   * used. Owner-scoped once claimed: a non-owner gets the same 404 as an unknown id, never the 409
+   * of a frozen draft. Returns the agreement id only — never the stored bytes.
    */
   @PostMapping("/{id}/draft")
   public ResponseEntity<Map<String, UUID>> uploadDraft(
-      @PathVariable UUID id, MultipartHttpServletRequest request) {
+      @PathVariable UUID id,
+      @AuthenticationPrincipal UUID identityId,
+      MultipartHttpServletRequest request) {
     Map<String, MultipartFile> files = request.getFileMap();
     if (files.size() != 1) {
       throw new InvalidUploadException("expected exactly one file part, got " + files.size());
     }
     MultipartFile file = files.values().iterator().next();
-    draftService.attachDraft(id, readBytes(file));
+    draftService.attachDraft(id, identityId, readBytes(file));
     return ResponseEntity.ok(Map.of("agreementId", id));
   }
 

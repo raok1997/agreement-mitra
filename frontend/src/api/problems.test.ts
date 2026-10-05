@@ -75,6 +75,7 @@ describe("PROBLEM", () => {
       paymentRequired: "urn:agreementmitra:problem:payment-required",
       csrf: "urn:agreementmitra:problem:csrf",
       renderBusy: "urn:agreementmitra:problem:render-busy",
+      notFound: "urn:agreementmitra:problem:resource-not-found",
     });
   });
 });

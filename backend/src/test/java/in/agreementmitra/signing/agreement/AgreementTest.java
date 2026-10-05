@@ -162,6 +162,25 @@ class AgreementTest {
   }
 
   @Test
+  void anUnownedAgreementAdmitsAnyCallerIncludingAnonymous() {
+    Agreement agreement = newAgreement();
+
+    assertThat(agreement.admits(null)).isTrue();
+    assertThat(agreement.admits(UUID.randomUUID())).isTrue();
+  }
+
+  @Test
+  void aClaimedAgreementAdmitsOnlyItsOwner() {
+    Agreement agreement = newAgreement();
+    UUID owner = UUID.randomUUID();
+    agreement.claimBy(owner);
+
+    assertThat(agreement.admits(owner)).isTrue();
+    assertThat(agreement.admits(UUID.randomUUID())).isFalse();
+    assertThat(agreement.admits(null)).isFalse();
+  }
+
+  @Test
   void replaceTermsRewritesTermsAndRederivesTheMonthTerm() {
     Agreement agreement = newAgreement();
 

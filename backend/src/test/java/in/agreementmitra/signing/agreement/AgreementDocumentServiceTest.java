@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import ch.qos.logback.classic.Level;
 import in.agreementmitra.AgreementIds;
 import in.agreementmitra.RenderCapacityException;
+import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.documents.DocumentRenderException;
 import in.agreementmitra.documents.RenderPriority;
@@ -95,7 +96,7 @@ class AgreementDocumentServiceTest {
                 1));
     when(documentProjection.generate(any())).thenReturn(aResult());
 
-    service.renderForDraft(id);
+    service.renderForDraft(id, null);
 
     ArgumentCaptor<DocumentProjectionRequest> req =
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
@@ -115,7 +116,7 @@ class AgreementDocumentServiceTest {
     when(repository.findById(id)).thenReturn(Optional.of(agreement));
     when(documentProjection.generate(any())).thenReturn(aResult());
 
-    service.renderForDraft(id);
+    service.renderForDraft(id, null);
 
     ArgumentCaptor<DocumentProjectionRequest> req =
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
@@ -139,7 +140,7 @@ class AgreementDocumentServiceTest {
     when(repository.findById(id)).thenReturn(Optional.of(agreement));
     when(documentProjection.generate(any())).thenReturn(aResult());
 
-    service.renderForDraft(id);
+    service.renderForDraft(id, null);
 
     ArgumentCaptor<DocumentProjectionRequest> req =
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
@@ -158,7 +159,7 @@ class AgreementDocumentServiceTest {
     when(repository.findById(id)).thenReturn(Optional.of(agreement));
     when(documentProjection.generate(any())).thenReturn(aResult());
 
-    service.renderForDraft(id);
+    service.renderForDraft(id, null);
 
     ArgumentCaptor<DocumentProjectionRequest> req =
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
@@ -176,7 +177,7 @@ class AgreementDocumentServiceTest {
     when(repository.findById(id)).thenReturn(Optional.of(agreement));
     when(documentProjection.generate(any())).thenReturn(aResult());
 
-    service.renderPreview(id);
+    service.renderPreview(id, null);
 
     ArgumentCaptor<DocumentProjectionRequest> req =
         ArgumentCaptor.forClass(DocumentProjectionRequest.class);
@@ -344,10 +345,10 @@ class AgreementDocumentServiceTest {
   void pinningRecordsTheDraftExecutionDateAndStoringADraftClearsIt() {
     UUID id = UUID.randomUUID();
     Agreement agreement = draft();
-    when(repository.findById(id)).thenReturn(Optional.of(agreement));
+    when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(agreement));
 
     service.pinEffectiveTemplate(
-        id, new EffectiveTemplateIdentity("rental", "h", Map.of("base", 1)), "2026-09-10");
+        id, null, new EffectiveTemplateIdentity("rental", "h", Map.of("base", 1)), "2026-09-10");
     assertThat(agreement.draftExecutionDate()).isEqualTo(LocalDate.parse("2026-09-10"));
 
     agreement.attachDraft("drafts/uploaded.pdf");
@@ -360,5 +361,68 @@ class AgreementDocumentServiceTest {
     verify(documentProjection, never()).generate(any(), anyMap(), any());
     verify(documentProjection, never()).generate(any(), anyMap());
     verify(documentProjection, never()).generate(any());
+  }
+
+  // --- owner gate (draft-attach-owner-gate, design D2) ---
+
+  private static Agreement claimedBy(UUID owner) {
+    Agreement agreement = draft();
+    agreement.claimBy(owner);
+    return agreement;
+  }
+
+  @Test
+  void aNonOwnersPreviewAndDraftRenderAreRefusedBeforeAnyRender() {
+    UUID id = UUID.randomUUID();
+    when(repository.findById(id)).thenReturn(Optional.of(claimedBy(UUID.randomUUID())));
+
+    assertThatThrownBy(() -> service.renderPreview(id, UUID.randomUUID()))
+        .isInstanceOf(ResourceNotFoundException.class);
+    assertThatThrownBy(() -> service.renderForDraft(id, null))
+        .isInstanceOf(ResourceNotFoundException.class);
+
+    verifyNoInteractions(documentProjection, templateCatalog);
+  }
+
+  @Test
+  void theOwnersPreviewIsRendered() {
+    UUID id = UUID.randomUUID();
+    UUID owner = UUID.randomUUID();
+    when(repository.findById(id)).thenReturn(Optional.of(claimedBy(owner)));
+    when(documentProjection.generate(any())).thenReturn(aResult());
+
+    assertThat(service.renderPreview(id, owner)).isNotEmpty();
+  }
+
+  @Test
+  void aNonOwnersPinWritesNothingAndLoadsUnderTheLock() {
+    UUID id = UUID.randomUUID();
+    Agreement agreement = claimedBy(UUID.randomUUID());
+    when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(agreement));
+
+    assertThatThrownBy(
+            () ->
+                service.pinEffectiveTemplate(
+                    id,
+                    UUID.randomUUID(),
+                    new EffectiveTemplateIdentity("rental", "h", Map.of("base", 1)),
+                    "2026-09-10"))
+        .isInstanceOf(ResourceNotFoundException.class);
+
+    verify(repository, never()).findById(any());
+    assertThat(agreement.templateContentHash()).isNull();
+    assertThat(agreement.draftExecutionDate()).isNull();
+  }
+
+  @Test
+  void stampRenderStaysCallerLessOnAClaimedAgreement() {
+    UUID id = UUID.randomUUID();
+    Agreement agreement = renderedTgDraft(id, null);
+    agreement.claimBy(UUID.randomUUID());
+    currentTemplateHash(PINNED_HASH);
+    when(documentProjection.generate(any(), anyMap(), eq(RenderPriority.FULFILMENT)))
+        .thenReturn(resultWithHash(PINNED_HASH));
+
+    assertThat(service.renderForStamp(id, new BigDecimal("100.00"))).isPresent();
   }
 }

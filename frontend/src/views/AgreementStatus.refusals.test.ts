@@ -3,6 +3,9 @@ import { flushPromises, mount } from "@vue/test-utils";
 import AgreementStatus from "./AgreementStatus.vue";
 import * as payments from "../api/payments";
 import * as signing from "../api/signingProgress";
+import * as stampQuote from "../api/stampQuote";
+import * as authStore from "../api/authStore";
+import { AGREEMENT_UNAVAILABLE_MESSAGE } from "./refusalMessages";
 import type { AgreementView } from "../api/client";
 
 // "Complete payment" through the REAL payForAgreement -> startCheckout, against a stubbed fetch that
@@ -61,7 +64,7 @@ vi.mock("../api/signingProgress", async (importOriginal) => {
 });
 vi.mock("../api/authStore", async () => {
   const { ref } = await import("vue");
-  return { isSignedIn: ref(false) };
+  return { isSignedIn: ref(false), reconcile: vi.fn(() => Promise.resolve()) };
 });
 
 const AGREEMENT = {
@@ -80,8 +83,29 @@ const AGREEMENT = {
   type: "residential",
 } as AgreementView;
 
+// The checkout-order refusal each case answers with; a case overrides it before clicking.
+let orderRefusal: { type: string; status: number };
+
+function mountAndPay() {
+  const wrapper = mount(AgreementStatus, {
+    props: {
+      agreement: AGREEMENT,
+      pollIntervalMs: 20,
+      pollWait: () => new Promise<void>(() => {}),
+    },
+  });
+  return flushPromises()
+    .then(() => wrapper.get('[data-testid="status-pay"]').trigger("click"))
+    .then(() => flushPromises())
+    .then(() => wrapper);
+}
+
 describe("AgreementStatus refusals through the real payment client", () => {
   beforeEach(() => {
+    orderRefusal = {
+      type: "urn:agreementmitra:problem:jurisdiction-unsupported",
+      status: 409,
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn((input: string, init: RequestInit = {}) => {
@@ -90,16 +114,10 @@ describe("AgreementStatus refusals through the real payment client", () => {
           throw new Error(`unrouted request: ${key}`);
         }
         return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              type: "urn:agreementmitra:problem:jurisdiction-unsupported",
-              status: 409,
-            }),
-            {
-              status: 409,
-              headers: { "Content-Type": "application/problem+json" },
-            },
-          ),
+          new Response(JSON.stringify(orderRefusal), {
+            status: orderRefusal.status,
+            headers: { "Content-Type": "application/problem+json" },
+          }),
         );
       }),
     );
@@ -119,7 +137,10 @@ describe("AgreementStatus refusals through the real payment client", () => {
       parties: [],
     });
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(authStore.reconcile).mockClear();
+  });
 
   it("explains a jurisdiction refusal at checkout instead of sending the customer to support", async () => {
     const wrapper = mount(AgreementStatus, {
@@ -140,5 +161,33 @@ describe("AgreementStatus refusals through the real payment client", () => {
     );
     expect(text).not.toContain("Contact support");
     expect(text).not.toContain("request failed:");
+  });
+
+  // draft-attach-owner-gate: a 404 here means this session is not the owner's. Sign in, not support.
+
+  it("says the agreement is not available when the stamp quote is refused 404", async () => {
+    vi.mocked(stampQuote.getStampQuote).mockRejectedValueOnce(
+      new stampQuote.StampQuoteHttpError(404),
+    );
+
+    const text = (await mountAndPay()).text();
+
+    expect(text).toContain(AGREEMENT_UNAVAILABLE_MESSAGE);
+    expect(text).not.toContain("Contact support");
+    expect(authStore.reconcile).toHaveBeenCalled();
+  });
+
+  it("says the same when the checkout order is refused 404 not-found", async () => {
+    orderRefusal = {
+      type: "urn:agreementmitra:problem:resource-not-found",
+      status: 404,
+    };
+
+    const text = (await mountAndPay()).text();
+
+    expect(text).toContain(AGREEMENT_UNAVAILABLE_MESSAGE);
+    expect(text).not.toContain("Contact support");
+    expect(text).not.toContain("request failed:");
+    expect(authStore.reconcile).toHaveBeenCalled();
   });
 });

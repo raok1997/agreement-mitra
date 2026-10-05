@@ -176,8 +176,13 @@ class AgreementCapturePersistenceIntegrationTest {
         new HttpEntity<>(bearer(session)),
         AgreementResponse.class);
     when(documentProjection.generate(any())).thenReturn(fakeResult());
+    // Claimed, so generate is owner-scoped: the owner's session is required.
     assertThat(
-            rest.postForEntity("/api/agreements/{id}/document", null, String.class, id)
+            rest.exchange(
+                    "/api/agreements/" + id + "/document",
+                    HttpMethod.POST,
+                    new HttpEntity<>(bearer(session)),
+                    String.class)
                 .getStatusCode())
         .isEqualTo(HttpStatus.OK);
     assertThat(

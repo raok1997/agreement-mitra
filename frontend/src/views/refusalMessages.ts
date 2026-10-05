@@ -25,6 +25,15 @@ export const TERMS_FROZEN_MESSAGE =
   "Contact support if something in it is wrong.";
 
 /**
+ * A capture-form pay-path call was refused 404: the agreement is unknown, or claimed by an account
+ * this session is not signed in as. Reads the same for both and never names the account, so it is
+ * not an ownership oracle. Not the status view's link message: here the customer pressed a button.
+ */
+export const AGREEMENT_UNAVAILABLE_MESSAGE =
+  "This agreement isn't available here. If it has been saved to an account, sign in with that " +
+  "account to continue.";
+
+/**
  * The error's own message when it was written for customers, otherwise `fallback`. An allowlist:
  * an API HTTP error's message is a status string, and a runtime error's message is not ours.
  */
