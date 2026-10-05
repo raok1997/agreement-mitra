@@ -14,9 +14,10 @@ import org.springframework.data.domain.Persistable;
 
 /**
  * The single-use, short-lived code carried in the SPA redirect after a successful callback. Stores
- * only the hash of the raw handoff (never the raw value) bound to the resolved identity. It carries
- * NO session material -- it is exchanged exactly once at {@code /session/exchange} for an opaque
- * session, then consumed; a leaked redirect is inert after first use or expiry.
+ * only the hash of the raw handoff (never the raw value) bound to the resolved identity, and the
+ * hash of the login-binding nonce of the browser that started the login (login-browser-binding D2).
+ * It carries NO session material -- it is exchanged exactly once at {@code /session/exchange} for
+ * an opaque session, then consumed; a leaked redirect is inert after first use or expiry.
  *
  * <p>{@code toString()} is id-only -- never the hash or the identity.
  */
@@ -41,6 +42,9 @@ class LoginHandoff implements Persistable<UUID> {
   @Column(name = "consumed_at")
   private Instant consumedAt;
 
+  @Column(name = "browser_binding_hash")
+  private String browserBindingHash;
+
   @Transient private boolean isNew = true;
 
   protected LoginHandoff() {
@@ -48,16 +52,24 @@ class LoginHandoff implements Persistable<UUID> {
   }
 
   private LoginHandoff(
-      UUID id, String handoffHash, UUID identityId, Instant createdAt, Instant expiresAt) {
+      UUID id,
+      String handoffHash,
+      UUID identityId,
+      Instant createdAt,
+      Instant expiresAt,
+      String browserBindingHash) {
     this.id = id;
     this.handoffHash = handoffHash;
     this.identityId = identityId;
     this.createdAt = createdAt;
     this.expiresAt = expiresAt;
+    this.browserBindingHash = browserBindingHash;
   }
 
-  static LoginHandoff create(String handoffHash, UUID identityId, Instant expiresAt) {
-    return new LoginHandoff(UUID.randomUUID(), handoffHash, identityId, Instant.now(), expiresAt);
+  static LoginHandoff create(
+      String handoffHash, UUID identityId, Instant expiresAt, String browserBindingHash) {
+    return new LoginHandoff(
+        UUID.randomUUID(), handoffHash, identityId, Instant.now(), expiresAt, browserBindingHash);
   }
 
   @Override
@@ -67,6 +79,10 @@ class LoginHandoff implements Persistable<UUID> {
 
   UUID identityId() {
     return identityId;
+  }
+
+  String browserBindingHash() {
+    return browserBindingHash;
   }
 
   @Override
@@ -95,7 +111,7 @@ class LoginHandoff implements Persistable<UUID> {
 
   @Override
   public String toString() {
-    // Id only -- never the handoff hash or identity.
+    // Id only -- never the handoff hash, binding hash or identity.
     return "LoginHandoff{id=" + id + "}";
   }
 }

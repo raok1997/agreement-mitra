@@ -3,9 +3,11 @@ package in.agreementmitra.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import in.agreementmitra.identity.oauth.HandoffService;
+import in.agreementmitra.identity.support.SecretTokens;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.RawClient;
 import in.agreementmitra.support.SessionCookie;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,7 +31,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * The session cookie end to end (cookie-session-auth task 5.1), against the real chain and real
  * Postgres. Uses {@link RawClient} -- never the harness CSRF interceptor -- so every cookie and
- * header sent is exactly what the test set. Handoffs come from the real {@link HandoffService}.
+ * header sent is exactly what the test set. Handoffs come from the real {@link HandoffService},
+ * each bound to its own login-binding nonce, which every exchange presents unless a test says
+ * otherwise -- so a refusal here is for the reason the test names, not for a missing binding.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(HarnessTestConfig.class)
@@ -55,39 +59,57 @@ class SessionCookieIntegrationTest {
     raw = RawClient.on(port);
   }
 
-  private String handoffFor(String subject) {
+  /** A handoff and the raw login-binding nonce it is bound to. */
+  private record Bound(String handoff, String nonce) {}
+
+  private Bound handoffFor(String subject) {
     UUID identityId =
         identityService.findOrCreate(
             "google", subject, subject + "@example.com", true, "T " + subject);
-    return handoffService.issue(identityId);
+    String nonce = new SecretTokens().newToken();
+    return new Bound(handoffService.issue(identityId, nonce), nonce);
   }
 
-  /** Headers carrying the given cookies (one Cookie header) and, if csrf, the matching header. */
   private static HttpHeaders headers(String sessionValue, boolean csrf) {
+    return headers(sessionValue, null, csrf);
+  }
+
+  /**
+   * Headers carrying the given cookies (one Cookie header) and, if csrf, the matching header. A
+   * null session or binding is omitted.
+   */
+  private static HttpHeaders headers(String sessionValue, String bindingNonce, boolean csrf) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
-    StringBuilder cookie = new StringBuilder();
+    List<String> cookies = new ArrayList<>();
     if (sessionValue != null) {
-      cookie.append(SessionCookie.header(sessionValue));
+      cookies.add(SessionCookie.header(sessionValue));
+    }
+    if (bindingNonce != null) {
+      cookies.add(SessionCookie.loginBindingHeader(bindingNonce));
     }
     if (csrf) {
-      if (!cookie.isEmpty()) {
-        cookie.append("; ");
-      }
-      cookie.append(CSRF_COOKIE).append('=').append(PRESENTED_CSRF);
+      cookies.add(CSRF_COOKIE + "=" + PRESENTED_CSRF);
       headers.set(CSRF_HEADER, PRESENTED_CSRF);
     }
-    if (!cookie.isEmpty()) {
-      headers.set(HttpHeaders.COOKIE, cookie.toString());
+    if (!cookies.isEmpty()) {
+      headers.set(HttpHeaders.COOKIE, String.join("; ", cookies));
     }
     return headers;
   }
 
-  private ResponseEntity<String> exchange(String handoff, String priorSession, boolean csrf) {
+  /** Exchange a bound handoff, presenting its own binding. */
+  private ResponseEntity<String> exchange(Bound bound, String priorSession, boolean csrf) {
+    return exchange(bound.handoff(), bound.nonce(), priorSession, csrf);
+  }
+
+  private ResponseEntity<String> exchange(
+      String handoff, String bindingNonce, String priorSession, boolean csrf) {
     return raw.exchange(
         "/api/auth/session/exchange",
         HttpMethod.POST,
-        new HttpEntity<>("{\"handoff\":\"" + handoff + "\"}", headers(priorSession, csrf)),
+        new HttpEntity<>(
+            "{\"handoff\":\"" + handoff + "\"}", headers(priorSession, bindingNonce, csrf)),
         String.class);
   }
 
@@ -136,7 +158,7 @@ class SessionCookieIntegrationTest {
 
   @Test
   void exchangeWithoutCsrfIsRefusedAndLeavesTheHandoffUnconsumed() {
-    String handoff = handoffFor("cookie-nocsrf");
+    Bound handoff = handoffFor("cookie-nocsrf");
 
     ResponseEntity<String> refused = exchange(handoff, null, false);
     assertThat(refused.getStatusCode().value()).isEqualTo(403);
@@ -148,7 +170,7 @@ class SessionCookieIntegrationTest {
 
   @Test
   void aReusedOrExpiredHandoffIsRefusedWithNoSessionCookie() {
-    String handoff = handoffFor("cookie-reuse");
+    Bound handoff = handoffFor("cookie-reuse");
     assertThat(exchange(handoff, null, true).getStatusCode().value()).isEqualTo(200);
 
     ResponseEntity<String> reused = exchange(handoff, null, true);
@@ -158,7 +180,8 @@ class SessionCookieIntegrationTest {
     UUID expiredIdentity =
         identityService.findOrCreate(
             "google", "cookie-expired", "cookie-expired@example.com", true, "T expired");
-    String expired = handoffService.issue(expiredIdentity);
+    String expiredNonce = new SecretTokens().newToken();
+    Bound expired = new Bound(handoffService.issue(expiredIdentity, expiredNonce), expiredNonce);
     jdbc.update(
         "UPDATE login_handoff SET expires_at = now() - interval '1 minute' WHERE identity_id = ?",
         expiredIdentity);
@@ -186,11 +209,28 @@ class SessionCookieIntegrationTest {
   void aBadHandoffWhileSignedInLeavesThePriorSessionIntact() {
     String sessionA = sessionFrom(exchange(handoffFor("cookie-keep-a"), null, true));
 
-    ResponseEntity<String> refused = exchange("garbage-handoff", sessionA, true);
+    // A non-blank binding is present, so the unknown handoff is the only reason for the refusal.
+    ResponseEntity<String> refused =
+        exchange("garbage-handoff", new SecretTokens().newToken(), sessionA, true);
     assertThat(refused.getStatusCode().value()).isEqualTo(401);
     assertThat(SessionCookie.setCookies(refused.getHeaders(), SessionCookie.NAME)).isEmpty();
 
     assertThat(me(sessionA).getStatusCode().value()).isEqualTo(200);
+  }
+
+  @Test
+  void aHandoffBoundToAnotherBrowserLeavesThePriorSessionIntact() {
+    String sessionA = sessionFrom(exchange(handoffFor("cookie-bound-a"), null, true));
+    Bound other = handoffFor("cookie-bound-b");
+
+    ResponseEntity<String> refused =
+        exchange(other.handoff(), new SecretTokens().newToken(), sessionA, true);
+    assertThat(refused.getStatusCode().value()).isEqualTo(401);
+    assertThat(SessionCookie.setCookies(refused.getHeaders(), SessionCookie.NAME)).isEmpty();
+
+    ResponseEntity<Map<String, Object>> stillA = me(sessionA);
+    assertThat(stillA.getStatusCode().value()).isEqualTo(200);
+    assertThat(stillA.getBody()).containsEntry("email", "cookie-bound-a@example.com");
   }
 
   @Test

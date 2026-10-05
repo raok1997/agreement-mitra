@@ -98,9 +98,14 @@ travels only as the `__Host-am_session` HttpOnly cookie (no Bearer), with double
 protection on every unsafe request. The OTP verify endpoint therefore mints through
 `SessionService`, then calls the identity module's package-private
 `SessionCookies.establish` **only on success** (sets the cookie, rotates the CSRF token,
-revokes any prior session last), and is itself CSRF-protected. It inherits the
-`login-browser-binding` gap (a verify result not bound to the initiating browser), which
-must close before this CR's flow ships. The `auth.cookie.secure` startup guard keys on the
+revokes any prior session last), and is itself CSRF-protected. `login-browser-binding`
+bound only the **Google** flow (a `__Host-am_login` nonce checked at callback and exchange);
+it does **not** cover OTP. CSRF on the verify POST is not the test -- that CR's own exchange
+was CSRF-protected and still exploitable. The test is whether attacker-chosen verify inputs
+(a challenge id and code, or any magic/WhatsApp link) can reach an SPA route that submits
+them in the victim's browser. If any route does, bind the challenge to the requesting
+browser, with its own cookie setter (sharing `am_login` means a Google and an OTP login
+started together overwrite each other's binding); if none does, the gap does not apply. The `auth.cookie.secure` startup guard keys on the
 Google URIs today; if this CR adds a provider-neutral public-origin property, the guard
 should move to it rather than be weakened.
 
@@ -247,8 +252,8 @@ SPA                         AuthController            OtpService              DB
   bounded by the env pepper.
 - **Session value exposure** -- resolved by `cookie-session-auth`: the value is an
   HttpOnly cookie no script can read. Residual: any XSS can still *ride* the session while
-  the page is open (tracked as `spa-content-security-policy`), and the verify step inherits
-  the `login-browser-binding` gap (see D4). No PII is in the value.
+  the page is open (tracked as `spa-content-security-policy`), and whether the verify step
+  needs its own browser binding depends on D4's URL-input test. No PII is in the value.
 - **Single-instance rate-limiter and session store** -- correct only for one instance;
   multi-instance needs a shared store (D6). Sandbox is single-instance; flagged.
 - **Un-owned PII lives server-side** -- anonymous drafts hold party names/emails (and, in

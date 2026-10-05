@@ -63,8 +63,7 @@ class AgreementOwnershipIntegrationTest {
     UUID identityId =
         identityService.findOrCreate(
             "google", subject, subject + "@example.com", true, "T " + subject);
-    String handoff = handoffService.issue(identityId);
-    return sessionService.exchange(handoff).value();
+    return StaffSessions.forIdentity(handoffService, sessionService, identityId);
   }
 
   private static HttpHeaders bearer(String session) {

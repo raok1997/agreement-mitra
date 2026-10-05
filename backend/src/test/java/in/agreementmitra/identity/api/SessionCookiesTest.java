@@ -249,6 +249,96 @@ class SessionCookiesTest {
     assertCsrfAttributes(insecureResponse.getCookie("XSRF-TOKEN"), false);
   }
 
+  @Test
+  void theLoginBindingCookieIsHardenedInSecureMode() {
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    cookies(true, repo(true)).setLoginBinding(response, "n1");
+
+    List<String> binding = setCookies(response, "__Host-am_login");
+    assertThat(binding).hasSize(1);
+    // loginStateTtl (5 min) + handoffTtl (60 s) + the 60 s margin.
+    assertThat(binding.get(0))
+        .startsWith("__Host-am_login=n1;")
+        .contains("HttpOnly")
+        .contains("Secure")
+        .contains("SameSite=Lax")
+        .contains("Path=/")
+        .contains("Max-Age=420")
+        .doesNotContain("Domain");
+  }
+
+  @Test
+  void theLoginBindingCookieDropsSecureAndThePrefixInInsecureMode() {
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    cookies(false, repo(false)).setLoginBinding(response, "n1");
+
+    assertThat(setCookies(response, "__Host-am_login")).isEmpty();
+    List<String> binding = setCookies(response, "am_login");
+    assertThat(binding).hasSize(1);
+    assertThat(binding.get(0))
+        .startsWith("am_login=n1;")
+        .contains("HttpOnly")
+        .contains("SameSite=Lax")
+        .contains("Path=/")
+        .contains("Max-Age=420")
+        .doesNotContain("Secure")
+        .doesNotContain("Domain");
+  }
+
+  @Test
+  void clearingTheLoginBindingCarriesTheNamePathAndSecureItWasSetWith() {
+    MockHttpServletResponse secure = new MockHttpServletResponse();
+    cookies(true, repo(true)).clearLoginBinding(secure);
+    assertThat(setCookies(secure, "__Host-am_login").get(0))
+        .startsWith("__Host-am_login=;")
+        .contains("Max-Age=0")
+        .contains("Secure")
+        .contains("Path=/");
+
+    MockHttpServletResponse insecure = new MockHttpServletResponse();
+    cookies(false, repo(false)).clearLoginBinding(insecure);
+    assertThat(setCookies(insecure, "am_login").get(0))
+        .startsWith("am_login=;")
+        .contains("Max-Age=0")
+        .contains("Path=/")
+        .doesNotContain("Secure");
+  }
+
+  @Test
+  void logoutClearAlsoExpiresTheLoginBinding() {
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    cookies(true, repo(true)).clear(new MockHttpServletRequest(), response);
+
+    assertThat(setCookies(response, "__Host-am_login").get(0))
+        .contains("Max-Age=0")
+        .contains("Secure")
+        .contains("Path=/");
+  }
+
+  @Test
+  void readLoginBindingReadsOnlyTheConfiguredName() {
+    SessionCookies secure = cookies(true, repo(true));
+
+    MockHttpServletRequest unprefixed = new MockHttpServletRequest();
+    unprefixed.setCookies(new Cookie("am_login", "planted"));
+    assertThat(secure.readLoginBinding(unprefixed)).isNull();
+
+    MockHttpServletRequest blank = new MockHttpServletRequest();
+    blank.setCookies(new Cookie("__Host-am_login", " "));
+    assertThat(secure.readLoginBinding(blank)).isNull();
+
+    MockHttpServletRequest present = new MockHttpServletRequest();
+    present.setCookies(new Cookie("__Host-am_login", "n1"));
+    assertThat(secure.readLoginBinding(present)).isEqualTo("n1");
+
+    MockHttpServletRequest insecure = new MockHttpServletRequest();
+    insecure.setCookies(new Cookie("am_login", "n2"));
+    assertThat(cookies(false, repo(false)).readLoginBinding(insecure)).isEqualTo("n2");
+  }
+
   /** The repository writes a servlet Cookie; SameSite rides it as an attribute. */
   private static void assertCsrfAttributes(Cookie cookie, boolean secure) {
     assertThat(cookie).isNotNull();

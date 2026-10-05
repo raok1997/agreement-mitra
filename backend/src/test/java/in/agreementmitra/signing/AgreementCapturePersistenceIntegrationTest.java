@@ -14,6 +14,7 @@ import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestPdfs;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -73,8 +74,7 @@ class AgreementCapturePersistenceIntegrationTest {
     UUID identityId =
         identityService.findOrCreate(
             "google", subject, subject + "@example.com", true, "T " + subject);
-    String handoff = handoffService.issue(identityId);
-    return sessionService.exchange(handoff).value();
+    return StaffSessions.forIdentity(handoffService, sessionService, identityId);
   }
 
   private static HttpHeaders bearer(String session) {

@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
  * can inject it; still Modulith-internal.
  *
  * <p>The session value is 256 bits of strong randomness, returned to the caller exactly once at
- * {@link #exchange(String)} and persisted only as a keyed hash. Authentication re-hashes a
+ * {@link #exchange(String, String)} and persisted only as a keyed hash. Authentication re-hashes a
  * presented bearer value and looks up a live row; logout deletes it. No value is ever logged.
  */
 @Service
@@ -54,11 +54,12 @@ public class SessionService {
   /**
    * Consume a single-use handoff and mint an opaque session for the bound identity. Returns the
    * session value (once) plus the identity summary. Throws {@link InvalidLoginException} if the
-   * handoff is unknown, reused, or expired -- minting nothing.
+   * handoff is unknown, reused, expired, or bound to a browser other than the one presenting {@code
+   * bindingNonce} -- minting nothing. The nonce rule lives in {@link HandoffService#consume}.
    */
   @Transactional
-  public SessionIssued exchange(String handoff) {
-    UUID identityId = handoffService.consume(handoff);
+  public SessionIssued exchange(String handoff, String bindingNonce) {
+    UUID identityId = handoffService.consume(handoff, bindingNonce);
     IdentitySummary summary =
         identityService
             .summary(identityId)

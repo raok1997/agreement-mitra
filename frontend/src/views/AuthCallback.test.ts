@@ -39,6 +39,16 @@ describe("AuthCallback", () => {
     expect(wrapper.text()).toContain("couldn't complete sign-in");
   });
 
+  it("shows the error without calling the exchange when the server redirected to #error", async () => {
+    setHash("#error");
+    const wrapper = mount(AuthCallback);
+    await flushPromises();
+
+    expect(mockedComplete).not.toHaveBeenCalled();
+    expect(wrapper.emitted("done")).toBeUndefined();
+    expect(wrapper.text()).toContain("start again from this browser");
+  });
+
   it("shows an error and does not emit done when the exchange fails", async () => {
     setHash("#handoff=bad");
     mockedComplete.mockRejectedValue(new Error("nope"));
@@ -48,6 +58,6 @@ describe("AuthCallback", () => {
 
     expect(mockedComplete).toHaveBeenCalledWith("bad");
     expect(wrapper.emitted("done")).toBeUndefined();
-    expect(wrapper.text()).toContain("couldn't complete sign-in");
+    expect(wrapper.text()).toContain("start again from this browser");
   });
 });

@@ -9,11 +9,22 @@ public final class SessionCookie {
 
   public static final String NAME = "__Host-am_session";
 
+  /** The secure-mode login-binding cookie (login-browser-binding D1). */
+  public static final String LOGIN_BINDING_NAME = "__Host-am_login";
+
+  /** The insecure-mode login-binding cookie, ignored in secure mode. */
+  public static final String INSECURE_LOGIN_BINDING_NAME = "am_login";
+
   private SessionCookie() {}
 
   /** A {@code Cookie} header value carrying the given session value. */
   public static String header(String value) {
     return NAME + "=" + value;
+  }
+
+  /** A {@code Cookie} header value carrying the given secure-mode login-binding nonce. */
+  public static String loginBindingHeader(String nonce) {
+    return LOGIN_BINDING_NAME + "=" + nonce;
   }
 
   /** Every {@code Set-Cookie} header for {@code name}, in response order. */

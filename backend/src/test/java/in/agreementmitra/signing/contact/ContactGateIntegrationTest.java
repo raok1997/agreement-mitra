@@ -11,6 +11,7 @@ import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.SigningRequests;
+import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestPdfs;
 import java.util.List;
 import java.util.Map;
@@ -113,7 +114,7 @@ class ContactGateIntegrationTest {
         identityService.findOrCreate(
             "google", subject, subject + "@example.com", true, "T " + subject);
     jdbc.update("UPDATE agreement SET owner_identity_id = ? WHERE id = ?", ownerId, agreementId);
-    return sessionService.exchange(handoffService.issue(ownerId)).value();
+    return StaffSessions.forIdentity(handoffService, sessionService, ownerId);
   }
 
   private static HttpHeaders bearer(String session) {

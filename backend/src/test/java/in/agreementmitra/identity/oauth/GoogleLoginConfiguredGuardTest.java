@@ -36,7 +36,7 @@ class GoogleLoginConfiguredGuardTest {
 
   @Test
   void callbackFailsClosedWhenNotConfigured() {
-    assertThatThrownBy(() -> service.handleCallback("code", "state"))
+    assertThatThrownBy(() -> service.handleCallback("code", "state", "nonce"))
         .isInstanceOf(InvalidLoginException.class);
   }
 }

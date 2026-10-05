@@ -1,6 +1,8 @@
 package in.agreementmitra.support;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -10,7 +12,7 @@ import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 
 /**
- * Adds a fixed, matching CSRF cookie + header to every unsafe request, merged into any {@code
+ * Adds a fixed, matching CSRF cookie + header to every unsafe request, merged into every {@code
  * Cookie} header the test already set (e.g. the session cookie). The cookie name MUST match
  * identity's {@code AuthWebConfig.csrfTokenRepository} bean in secure mode and {@code
  * SecurityConfig}'s fallback repository.
@@ -33,13 +35,21 @@ public final class CsrfTestInterceptor implements ClientHttpRequestInterceptor {
     return execution.execute(request, body);
   }
 
-  /** Merge the CSRF cookie into the request's single Cookie header and set the matching header. */
+  /**
+   * Merge every Cookie header the test set, plus the CSRF cookie, into one Cookie header and set
+   * the matching CSRF header. Joining all of them matters: keeping only the first would silently
+   * drop e.g. a login-binding cookie sent as a second header, and a negative test would then pass
+   * for the wrong reason.
+   */
   public static void apply(HttpHeaders headers) {
     String csrfCookie = COOKIE_NAME + "=" + TOKEN;
-    String existing = headers.getFirst(HttpHeaders.COOKIE);
-    headers.set(
-        HttpHeaders.COOKIE,
-        existing == null || existing.isBlank() ? csrfCookie : existing + "; " + csrfCookie);
+    List<String> cookies = new ArrayList<>();
+    List<String> existing = headers.get(HttpHeaders.COOKIE);
+    if (existing != null) {
+      existing.stream().filter(value -> value != null && !value.isBlank()).forEach(cookies::add);
+    }
+    cookies.add(csrfCookie);
+    headers.set(HttpHeaders.COOKIE, String.join("; ", cookies));
     headers.set(HEADER_NAME, TOKEN);
   }
 }

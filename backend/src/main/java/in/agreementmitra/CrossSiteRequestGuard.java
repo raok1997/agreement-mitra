@@ -34,6 +34,10 @@ import org.springframework.web.util.pattern.PathPatternParser;
  * top-level navigation back from Google) and the vendor webhooks (server-to-server, authorized by
  * their own HMAC). Registered in the security chain after {@code CsrfFilter} and before the rate
  * limiter, and always on -- it is not part of the limits switch.
+ *
+ * <p>{@code GET /api/auth/google/start} must never join the exemptions: it sets the login-binding
+ * cookie, so a cross-site {@code /start} would let any page overwrite a victim's binding and abort
+ * their in-flight login (login-browser-binding D5).
  */
 final class CrossSiteRequestGuard extends OncePerRequestFilter {
 
