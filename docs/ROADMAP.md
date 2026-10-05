@@ -44,8 +44,8 @@ issued" until then)?
 **Template sign-off checklist (manual; v1 form of `template-counsel-signoff-gate`).** No code
 enforces template review for this release (decided 2026-10-05); this checklist does, and the
 release does not go out until every box is ticked:
-- [ ] Counsel reviews the rendered PDF of each template the picker offers — TG and KA ×
-      residential and commercial — **including** the hard-coded execution paragraph ("IN
+- [ ] Counsel reviews the rendered PDF of each template the picker offers — TG and KA
+      residential (commercial is hidden for v1) — **including** the hard-coded execution paragraph ("IN
       WITNESS WHEREOF … Aadhaar eSign", `TemplateCompiler.java`) and the footer screen notice,
       neither of which lives in the template files.
 - [ ] Record here the reviewer, the date and the **git commit** the PDFs were rendered from.
@@ -67,8 +67,23 @@ startup / fails the build.
 **Code: one OpenSpec change each, in this order. Changes on the same line can run in
 parallel.**
 
-1. `terms-release-revision` (new; §1 already names KAVISAT TEK LABS LLP as the contracting
-   party): stale §1 (residential only), §2/§5 (live status), §7 (price basis),
+**v1 is residential only (decided 2026-10-05).** Commercial templates are hidden for the
+release, which takes `tg-commercial-statutory-section-optional` and the commercial half of
+`ka-stamp-duty-counsel-review` (the uncapped commercial rate) off the critical path. The rows
+stay on the register for the release that brings commercial back.
+
+0. `residential-only-release` (new, first): hide commercial templates from the picker, the same
+   way `IN` is hidden today, and remove commercial from customer-facing copy (home-page FAQ "Which
+   cities", capture form). **Also decide whether the server must refuse a commercial order.**
+   Hiding it in the picker is UI-only, so an API caller could still create and pay for one.
+   Check whether paid eligibility is per `(state, type)` rule file. If it is, leaving the
+   commercial rules without a counsel review keeps them unpayable in prod, and the change only
+   needs a test that pins this. If eligibility is per state, refuse commercial on the server.
+   Runs in parallel with `stamp-certificate-price-reconciliation` and `legal-policy-pages`
+   below; `terms-release-revision` waits for it.
+1. `terms-release-revision` (new, after `residential-only-release`; §1 already names KAVISAT
+   TEK LABS LLP as the contracting party, and "residential" there becomes correct for v1):
+   §2/§5 (live status), §7 (price basis),
    and §8 (SHCIL vs Telangana), with counsel answers folded in as they arrive. §5's "Today
    that is Telangana" must agree with the home-page status board (`src/content/releaseStatus.ts`,
    TG stamping "In integration" today), and its national-template sentence is stale (the picker
@@ -81,9 +96,8 @@ parallel.**
    `terms-release-revision`, because it records which version was accepted) ·
    `rental-default-commercial-terms` together with `stamp-quote-capture-defaults` (same root;
    needs a product decision first)
-3. Small fixes as direct commits, any time: `tg-commercial-statutory-section-optional`,
-   `estamp-signature-band`, `capture-required-fields-drift` (product to confirm which side
-   is right)
+3. Small fixes as direct commits, any time: `estamp-signature-band`,
+   `capture-required-fields-drift` (product to confirm which side is right)
 
 **Triggers this release reaches: decide before launch, do or explicitly defer.**
 CR-7 `ci-pipeline` and the OSV build-tool scope ("revisit before any production / real-PII
