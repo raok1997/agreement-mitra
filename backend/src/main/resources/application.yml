@@ -332,7 +332,9 @@ documents:
     # hidden in print media, so it never reaches the executed instrument (a deliberate decision --
     # counsel brief Q6(d)). Lives here, not in the documents module, for the same reason
     # platform-url does: the module holds no brand literal and no legal copy. Blank omits it.
-    screen-notice: ${DOCUMENT_FOOTER_SCREEN_NOTICE:AgreementMitra is not a law firm and this is not legal advice. This document is generated from a template and is not reviewed by a lawyer for your circumstances. See the terms of service at agreementmitra.com/terms.}
+    # Same wording as frontend LegalDisclaimer.vue (LegalDisclaimer.test.ts holds them equal). The
+    # whole value is double-quoted because the wording contains ": ", which breaks a plain scalar.
+    screen-notice: "${DOCUMENT_FOOTER_SCREEN_NOTICE:The wording of this agreement is ours: we wrote the template and we stand behind it. The facts you enter and the choices you make are yours, so check them before you sign. We are not a law firm, no lawyer reviews your agreement for your circumstances, and this is not legal advice; see the terms of service at agreementmitra.com/terms.}"
 
 # Anonymous-surface abuse controls (anonymous-surface-abuse-controls). The product is no-login, so
 # rate limiting is the compensating control (docs/DEPLOYMENT.md). Keys are the client address the

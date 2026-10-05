@@ -35,12 +35,18 @@ passed `openspec validate --strict`. Removed in `d8bc395`; the baseline is clean
 - **Beta scope.** Production is founding-team only, no real customers, as of 2026-09-07.
   This bounds exposure to roughly nil — and it expires. Several judgements below hold only
   while it does.
-- **Honest marketing.** Verified 2026-09-07: the live landing copy leads on transparency
-  ("nothing hidden until checkout"), says "early access… the unvarnished state of things",
-  and marks each feature Live / In integration / Planned. **There is no correctness claim to
-  walk back.** Keep it that way: "reviewed by Indian counsel" only becomes sayable after
-  counsel has actually reviewed. Correctness stays *product strategy*
-  (`docs/PRODUCT-FEATURE-SET.md`), not a claim in copy.
+- **Honest marketing.** The home page (`frontend/src/views/LandingPage.vue`, openspec
+  `landing-page`) states the price — "₹499 when your stamp duty is ₹100 or less", never "all-in"
+  — and three guarantees that restate ToS §8, §11 and §14 with their qualifiers. Every figure
+  comes from `src/content/promises.ts`, which a test pins to the ToS clause bodies and the
+  backend fee defaults. **Only the `#status` board says what is live** (`src/content/releaseStatus.ts`);
+  a test rejects liveness wording anywhere else on the page, and another refuses a "live"
+  stamping row while that state's rule files carry `counselReview: null`. Forbidden in copy,
+  and tested: "100%", "legally guaranteed", "guaranteed valid", "legally valid agreement",
+  "court-approved", "government-approved", "reviewed by counsel / a lawyer", "lawyer-reviewed".
+  "Reviewed by Indian counsel" only becomes sayable after `template-counsel-signoff-gate` records
+  the review. Correctness stays *product strategy* (`docs/PRODUCT-FEATURE-SET.md`), not a claim
+  in copy.
 
 ## What does not protect us yet
 
@@ -190,6 +196,15 @@ step before payment, and the payment confirmation. It also renders under the on-
 document preview, as a screen-only sibling of the provenance line, configured as
 `documents.footer.screen-notice` in `application.yml` so the `documents` module still holds
 no legal copy of its own. Every instance links to `/terms`.
+
+The wording (2026-10-05, `landing-page-release-copy`) leads with what we stand behind: "The
+wording of this agreement is ours: we wrote the template and we stand behind it. The facts you
+enter and the choices you make are yours, so check them before you sign. We are not a law firm, no
+lawyer reviews your agreement for your circumstances, and this is not legal advice." A test holds
+the screen-notice default equal to the component text. **Release condition:** "we stand behind it"
+is a quality statement and does not ship to real customers until counsel has reviewed it against
+ToS §16 (brief Q6(d); ROADMAP release Counsel line). Setting `DOCUMENT_FOOTER_SCREEN_NOTICE` in an
+environment overrides the default and forks the "one wording" — keep any override identical.
 
 It is **not** printed inside the executed deed, and not in a downloaded draft PDF either: the
 mechanism is print-suppression, and unlike the provenance line the notice has no per-page

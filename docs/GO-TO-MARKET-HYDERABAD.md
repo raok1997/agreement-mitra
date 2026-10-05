@@ -188,6 +188,9 @@ players don't build. You will **not** win on price or ad spend vs. NoBroker.
   Act 1908 S.17(1)(d) **[FACT]**. *This is why 11-month is the standard product.*
   - **[FLAG]** Several sites phrase it as "more than 11 months = compulsory
     registration." That's imprecise. Use the **12-month / one-year** threshold.
+  - **[FLAG]** Not settled for Telangana: the TG rule file sets `requiredWhenTermMonthsOver: 0`
+    (UNVERIFIED, with counsel in `tg-stamp-duty-counsel-review`), so do not assert "11 months
+    avoids registration in Telangana" in copy; the home page FAQ is state-relative for this reason.
 - **Stamp duty rate: get it from the primary source, don't quote blogs.** Blog/
   competitor figures (0.4% vs 0.5% vs tiered "0.4% for 0–10 yrs…") **conflict and
   several are contradicted by the official schedule** **[FLAG]**. Authority =

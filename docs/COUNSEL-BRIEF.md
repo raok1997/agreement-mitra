@@ -360,6 +360,16 @@ into a PDF, so it appears in neither the executed instrument nor a draft PDF the
 downloads. **The question we have left open is whether it should appear in the executed
 document after all**, and it is a one-line change for us either way.
 
+- **(d)(i) The wording itself.** The notice now reads: "The wording of this agreement is ours: we
+  wrote the template and we stand behind it. The facts you enter and the choices you make are
+  yours, so check them before you sign. We are not a law firm, no lawyer reviews your agreement
+  for your circumstances, and this is not legal advice; see the terms of service." We would like
+  your view on whether "we stand behind it" is an express representation about the template's
+  quality, and how it sits with our liability clause (terms §16, which is still blank for you to
+  complete). The same sentence appears in three places: the on-screen notice component, the
+  configured default under the document preview, and any environment override of that default.
+  It will not reach a paying customer until you have reviewed it.
+
 ---
 
 # Part C — Insurance

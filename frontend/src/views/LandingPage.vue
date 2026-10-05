@@ -4,88 +4,102 @@
 // search traffic sees (the Hyderabad SEO play in docs/GO-TO-MARKET-HYDERABAD.md),
 // so it must render instantly and never depend on the backend being up.
 //
-// Copy discipline: the signing vertical still runs on a STUBBED eSign provider
-// (docs/ROADMAP.md "Where we are"), so nothing here promises live Aadhaar eSign
-// as a bookable service. The draft builder is real and free, and that is what the
-// primary CTA sells. The status section states the rest plainly.
+// Copy discipline (openspec landing-page spec):
+//   - each recurring message has ONE owning section: no login -> hero; stamp duty in
+//     the price and free to draft -> #price;
+//   - the #status board (src/content/releaseStatus.ts) is the only statement of what
+//     is live -- nothing else here asserts or denies availability;
+//   - every price, guarantee figure and contact detail comes from src/content/promises.ts,
+//     which is pinned to the terms and the backend fee config by test;
+//   - no "legally valid" or "reviewed by counsel" claim, and no raw-HTML binding.
+// The FAQ is mirrored as FAQPage JSON-LD in index.html; LandingPage.test.ts holds them equal.
 import wordmark from "../assets/logo-wordmark.svg";
+import {
+  CONTACT_EMAIL,
+  GUARANTEES,
+  PRICE,
+  SUPPORT_HOURS,
+  formatRupees,
+} from "../content/promises";
+import { RELEASE_STATE_LABEL, RELEASE_STATUS } from "../content/releaseStatus";
 
 const emit = defineEmits<{ (e: "start"): void }>();
 
-const CONTACT_EMAIL = "support@agreementmitra.com";
+const total = formatRupees(PRICE.totalRupees);
+const includedDuty = formatRupees(PRICE.includedDutyRupees);
+const refund = formatRupees(GUARANTEES.certificateRefundRupees);
+const retryCharge = formatRupees(GUARANTEES.signerRetryChargeRupees);
+const perDay = formatRupees(GUARANTEES.delayCreditPerDayRupees);
+const cap = formatRupees(GUARANTEES.delayCreditCapRupees);
 
 const steps = [
   {
     n: "1",
     title: "Answer a short form",
-    body: "Parties, property, rent, deposit, dates. No account, no OTP, no app download to get started.",
+    body: "Parties, property, rent, deposit and dates.",
   },
   {
     n: "2",
     title: "Watch the agreement build itself",
-    body: "A live preview of the actual document updates as you type, so you never pay to find out what you are getting.",
+    body: "The actual document updates as you type, so you know exactly what you are getting.",
   },
   {
     n: "3",
-    title: "Add e-stamp duty",
-    body: "The stamp value for your state and rent is computed and shown in the total before you pay. No surprise line items.",
+    title: "Pay, and we stamp it",
+    body: "We buy the stamp certificate and attach it to your agreement.",
   },
   {
     n: "4",
     title: "Sign with Aadhaar OTP",
-    body: "Both parties sign remotely from their phones. The signed PDF and a tamper-evident audit trail land in your inbox.",
+    body: "Both parties sign from their phones. The signed PDF and its audit trail come to your inbox.",
   },
 ];
 
-const pillars = [
-  {
-    title: "Priced in the open",
-    body: "Stamp duty is a pass-through cost that most portals bury until checkout. We compute it and show the all-in total up front, itemised. If the number changes, you see why.",
-  },
-  {
-    title: "No login to start",
-    body: "You should not have to hand over a phone number to find out what a rental agreement costs. Draft anonymously; sign in only if you want to save and come back to it.",
-  },
-  {
-    title: "Correct for your state, in your language",
-    body: "Rental law is state law. We are building a rules engine that generates jurisdiction-correct clauses instead of one national fill-in-the-blank PDF, with Indic-script rendering built in from day one.",
-  },
+const inclusions = [
+  `stamp duty up to ${includedDuty}`,
+  "buying and attaching the stamp certificate",
+  "Aadhaar eSign",
 ];
 
-// Honest status board. Keep this in sync with docs/ROADMAP.md -- it is the one
-// place on the site that makes a claim about what a visitor can actually do today.
-const status = [
-  { label: "Guided agreement builder", state: "live" as const },
-  { label: "Live document preview", state: "live" as const },
-  { label: "Download a draft PDF", state: "live" as const },
-  { label: "Save and resume with Google", state: "live" as const },
-  { label: "E-stamp duty on the real exchange", state: "soon" as const },
-  { label: "Aadhaar OTP eSign", state: "soon" as const },
-  { label: "Telugu and Hindi agreements", state: "planned" as const },
+const guarantees = [
+  {
+    title: `We fix a wrong stamp certificate, and refund ${refund}.`,
+    body: `If a certificate we buy for you is rejected or wrongly denominated because we got it wrong, we put it right at our cost and refund you ${refund}.`,
+    qualifier:
+      "Only when the mistake is ours. Reduced by any discount you received.",
+    section: 8,
+  },
+  {
+    title: "Signing failed? We re-send it at no charge.",
+    body: "If a signing request fails or expires, we send a fresh one.",
+    qualifier: `If it keeps failing at the signer's end, we may ask ${retryCharge} before restarting. Where we can't tell whose failure it was, we treat it as ours.`,
+    section: 11,
+  },
+  {
+    title: "Late through our fault? We pay you back.",
+    body: `We aim to stamp your agreement within ${GUARANTEES.stampTargetWorkingDaysText} working day of payment; an order paid outside business hours counts from the next working day. If we are more than ${GUARANTEES.delayGraceWorkingDaysText} working days late through something that was ours, we refund ${perDay} for each further working day, up to ${cap}.`,
+    qualifier:
+      "Not while we wait on details from you or a signer we can't reach, or during a stamp-portal or eSign outage or a public holiday. Reduced by any discount you received.",
+    section: 14,
+  },
 ];
-
-const statusCopy: Record<string, string> = {
-  live: "Live now",
-  soon: "In integration",
-  planned: "Planned",
-};
 
 const faqs = [
   {
     q: "Why are most rental agreements in India for 11 months?",
-    a: "Under the Registration Act, 1908, a lease of twelve months or more must be registered with the sub-registrar. An eleven-month term stays below that threshold, which is why it became the default for residential tenancies. It is a registration question, not a validity question: an eleven-month agreement is still a binding contract, it simply does not need to be registered.",
+    a: "Because the Registration Act, 1908 requires a lease for a term longer than a year to be registered with the sub-registrar, and an 11-month term stays under that national line. States can add their own rules, and some may require registration for shorter leases. Before you pay, we show whether your agreement may need registering for its state and term. Registration is a separate step from stamping and is not part of our service.",
   },
   {
     q: "Is an Aadhaar OTP signature legally valid?",
-    a: "Yes. Aadhaar eSign is an electronic signature recognised under the Information Technology Act, 2000, and is issued through a licensed eSign Service Provider working with a Certifying Authority. The signed PDF carries a digital signature certificate plus an audit trail recording who signed, when, and from where.",
+    a: "Aadhaar eSign is an electronic signature recognised under the Information Technology Act, 2000, issued through a licensed eSign Service Provider working with a Certifying Authority. The signed PDF carries a digital signature certificate and an audit trail recording who signed, when, and from where.",
   },
   {
-    q: "What does stamp duty cost?",
-    a: "It depends on your state and on the rent and deposit in your agreement, because stamp duty is levied by the state government and the slabs differ. We compute it for your specific agreement and show it as its own line in the total before you pay, rather than folding it into a single opaque price.",
+    q: "What does it cost?",
+    a: `${total} in total when the stamp duty on your agreement is ${includedDuty} or less. Where the duty is higher, you see the stamp amount and the exact total before you pay, and there is never a second bill. Stamp duty is set by your state from the rent, deposit and term, and we cannot change it.`,
   },
   {
     q: "Does a stamped agreement mean it is registered?",
-    a: "No, and the difference matters. Stamping pays the state duty on the document. Registration is a separate act of recording the lease with the sub-registrar, and it is what the twelve-month rule is about. A stamped, eSigned eleven-month agreement is not a registered lease.",
+    a: "No. Stamping pays the state's duty on the document. Registration is a separate act of recording the lease with the sub-registrar. A stamped, eSigned agreement is not a registered lease.",
   },
   {
     q: "Do I need an account?",
@@ -93,7 +107,11 @@ const faqs = [
   },
   {
     q: "Which cities do you serve?",
-    a: "You can build, preview and download an agreement for Telangana or Karnataka today, residential or commercial, with the stamp duty computed for your own rent and deposit. Stamping and eSign are live for Telangana first; Karnataka follows once its duty figures clear legal review and we can buy its certificates. If your state is not covered yet, write to us and we will tell you where you sit in the queue.",
+    a: "You can draft agreements for Telangana and Karnataka, residential or commercial. Where we can also stamp and eSign is on the status board on our home page. If your state is not listed, write to us.",
+  },
+  {
+    q: "What happens if something goes wrong?",
+    a: `The guarantees on our home page cover the main things that can go wrong on our side: a wrong stamp certificate, a failed signature and a late delivery. For anything else, write to ${CONTACT_EMAIL}. We answer ${SUPPORT_HOURS}.`,
   },
 ];
 
@@ -123,8 +141,9 @@ function start(): void {
         </a>
         <div class="hidden items-center gap-7 text-sm text-ink-600 md:flex">
           <a class="hover:text-brand-700" href="#how">How it works</a>
-          <a class="hover:text-brand-700" href="#why">Why us</a>
-          <a class="hover:text-brand-700" href="#status">What is live</a>
+          <a class="hover:text-brand-700" href="#price">Price</a>
+          <a class="hover:text-brand-700" href="#guarantees">Guarantees</a>
+          <a class="hover:text-brand-700" href="#status">Status</a>
           <a class="hover:text-brand-700" href="#faq">FAQ</a>
         </div>
         <button
@@ -133,7 +152,7 @@ function start(): void {
           data-testid="nav-start"
           @click="start"
         >
-          Start free
+          Build my agreement
         </button>
       </nav>
     </header>
@@ -142,6 +161,7 @@ function start(): void {
       <!-- Hero -->
       <section
         class="relative overflow-hidden border-b border-ink-200 bg-ink-50"
+        data-testid="hero"
       >
         <div
           class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent-200/40 blur-3xl"
@@ -149,25 +169,14 @@ function start(): void {
         />
         <div class="relative mx-auto max-w-6xl px-4 py-20 md:py-28">
           <div class="max-w-2xl">
-            <p
-              class="inline-flex items-center gap-2 rounded-full border border-accent-300 bg-accent-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-accent-700"
-            >
-              <span
-                class="h-1.5 w-1.5 rounded-full bg-accent-500"
-                aria-hidden="true"
-              />
-              Early access &middot; Hyderabad
-            </p>
             <h1
-              class="mt-5 text-4xl font-bold leading-tight tracking-tight text-ink-900 md:text-5xl"
+              class="text-4xl font-bold leading-tight tracking-tight text-ink-900 md:text-5xl"
             >
               Rental agreements, with nothing hidden until checkout.
             </h1>
             <p class="mt-5 text-lg leading-relaxed text-ink-600">
-              Build a proper Indian rental agreement in a few minutes. See the
-              document as it is written, see the stamp duty as it is calculated,
-              and sign remotely with Aadhaar OTP. Free to draft. No login to
-              begin.
+              Build a proper Indian rental agreement in a few minutes and read
+              the real document as it is written. No login to begin.
             </p>
             <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <button
@@ -185,32 +194,8 @@ function start(): void {
                 See how it works
               </a>
             </div>
-            <p class="mt-4 text-sm text-ink-500">
-              Free to draft and preview. You are not asked to pay to see the
-              document.
-            </p>
           </div>
         </div>
-      </section>
-
-      <!-- Trust strip -->
-      <section class="border-b border-ink-200 bg-white">
-        <ul
-          class="mx-auto grid max-w-6xl grid-cols-2 gap-px bg-ink-200 px-4 py-0 md:grid-cols-4"
-        >
-          <li
-            v-for="item in [
-              'Aadhaar OTP eSign',
-              'State-wise stamp duty',
-              'Tamper-evident audit trail',
-              'No account needed to draft',
-            ]"
-            :key="item"
-            class="bg-white px-4 py-6 text-center text-sm font-medium text-ink-600"
-          >
-            {{ item }}
-          </li>
-        </ul>
       </section>
 
       <!-- How it works -->
@@ -219,7 +204,7 @@ function start(): void {
           How it works
         </h2>
         <p class="mt-3 max-w-2xl text-ink-600">
-          Four steps, and you can see the document at every one of them.
+          Four steps, and you can read the document at every one of them.
         </p>
         <ol class="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           <li
@@ -241,71 +226,118 @@ function start(): void {
         </ol>
       </section>
 
-      <!-- Why us -->
-      <section id="why" class="scroll-mt-20 border-y border-ink-200 bg-ink-50">
-        <div class="mx-auto max-w-6xl px-4 py-20">
+      <!-- Price -->
+      <section
+        id="price"
+        class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
+      >
+        <div class="mx-auto max-w-3xl px-4 py-20">
           <h2 class="text-3xl font-bold tracking-tight text-ink-900">
-            Why bother building another one of these
+            What it costs
           </h2>
-          <p class="mt-3 max-w-2xl text-ink-600">
-            The form-to-PDF part of this market is solved and cheap. These are
-            the three things we think are still broken.
-          </p>
-          <div class="mt-10 grid gap-6 md:grid-cols-3">
-            <article
-              v-for="pillar in pillars"
-              :key="pillar.title"
-              class="rounded-xl border border-ink-200 bg-white p-7 shadow-sm"
-            >
-              <h3 class="text-lg font-semibold text-ink-900">
-                {{ pillar.title }}
-              </h3>
-              <p class="mt-3 text-sm leading-relaxed text-ink-600">
-                {{ pillar.body }}
-              </p>
-            </article>
+          <div
+            class="mt-8 rounded-xl border border-ink-200 bg-white p-7 shadow-sm"
+          >
+            <p class="text-2xl font-bold text-ink-900">
+              {{ total }} when your stamp duty is {{ includedDuty }} or less
+            </p>
+            <p class="mt-4 text-sm font-semibold text-ink-800">Included:</p>
+            <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-600">
+              <li v-for="item in inclusions" :key="item">{{ item }}</li>
+            </ul>
+            <p class="mt-4 text-sm leading-relaxed text-ink-600">
+              Where the duty is higher, you see the stamp amount and the exact
+              total before you pay. There is never a second bill.
+            </p>
+            <p class="mt-3 text-sm leading-relaxed text-ink-600">
+              Drafting, previewing and downloading a draft are free.
+            </p>
+            <p class="mt-3 text-sm leading-relaxed text-ink-500">
+              Available where we stamp and eSign. See
+              <a class="font-medium text-brand-700 underline" href="#status"
+                >Status</a
+              >.
+            </p>
           </div>
         </div>
       </section>
 
-      <!-- Honest status board -->
-      <section id="status" class="mx-auto max-w-3xl scroll-mt-20 px-4 py-20">
+      <!-- Guarantees -->
+      <section
+        id="guarantees"
+        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20"
+      >
         <h2 class="text-3xl font-bold tracking-tight text-ink-900">
-          What is live today
+          If something goes wrong
         </h2>
-        <p class="mt-3 text-ink-600">
-          We are in early access, so here is the unvarnished state of things.
-          The builder works right now. The paid rails are still being wired to
-          their providers, and we would rather say so here than after you have
-          filled in a form.
+        <p class="mt-3 max-w-2xl text-ink-600">
+          These come from our terms of service, which are still a draft.
         </p>
-        <ul
-          class="mt-8 divide-y divide-ink-200 rounded-xl border border-ink-200 bg-white"
-        >
-          <li
-            v-for="row in status"
-            :key="row.label"
-            class="flex items-center justify-between gap-4 px-5 py-4"
+        <div class="mt-10 grid gap-6 md:grid-cols-3">
+          <article
+            v-for="g in guarantees"
+            :key="g.section"
+            class="flex flex-col rounded-xl border border-ink-200 bg-white p-7 shadow-sm"
+            data-testid="guarantee"
           >
-            <span class="text-sm font-medium text-ink-800">{{
-              row.label
-            }}</span>
-            <span
-              class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
-              :class="{
-                'bg-success-50 text-success-700': row.state === 'live',
-                'bg-accent-50 text-accent-700': row.state === 'soon',
-                'bg-ink-100 text-ink-600': row.state === 'planned',
-              }"
+            <h3 class="text-lg font-semibold text-ink-900">{{ g.title }}</h3>
+            <p class="mt-3 text-sm leading-relaxed text-ink-600">
+              {{ g.body }}
+            </p>
+            <p class="mt-3 text-xs leading-relaxed text-ink-500">
+              {{ g.qualifier }}
+            </p>
+            <a
+              class="mt-4 text-sm font-medium text-brand-700 underline"
+              href="/terms"
             >
-              {{ statusCopy[row.state] }}
-            </span>
-          </li>
-        </ul>
+              Terms, section {{ g.section }}
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <!-- Status board: the only statement of what is live (src/content/releaseStatus.ts) -->
+      <section
+        id="status"
+        class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
+      >
+        <div class="mx-auto max-w-3xl px-4 py-20">
+          <h2 class="text-3xl font-bold tracking-tight text-ink-900">
+            What is live today
+          </h2>
+          <p class="mt-3 text-ink-600">
+            Each row says whether it is live now, in integration or planned. We
+            update it the day that changes.
+          </p>
+          <ul
+            class="mt-8 divide-y divide-ink-200 rounded-xl border border-ink-200 bg-white"
+          >
+            <li
+              v-for="row in RELEASE_STATUS"
+              :key="row.label"
+              class="flex items-center justify-between gap-4 px-5 py-4"
+            >
+              <span class="text-sm font-medium text-ink-800">{{
+                row.label
+              }}</span>
+              <span
+                class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                :class="{
+                  'bg-success-50 text-success-700': row.state === 'live',
+                  'bg-accent-50 text-accent-700': row.state === 'soon',
+                  'bg-ink-100 text-ink-600': row.state === 'planned',
+                }"
+              >
+                {{ RELEASE_STATE_LABEL[row.state] }}
+              </span>
+            </li>
+          </ul>
+        </div>
       </section>
 
       <!-- FAQ -->
-      <section id="faq" class="scroll-mt-20 border-t border-ink-200 bg-ink-50">
+      <section id="faq" class="scroll-mt-20">
         <div class="mx-auto max-w-3xl px-4 py-20">
           <h2 class="text-3xl font-bold tracking-tight text-ink-900">
             Questions people actually ask
@@ -331,22 +363,23 @@ function start(): void {
             </details>
           </div>
           <p class="mt-8 text-xs leading-relaxed text-ink-500">
-            The answers above are general information about how rental
-            agreements and stamping work in India. They are not legal advice,
-            and they are not a substitute for a lawyer on your specific tenancy.
+            General information, not legal advice.
           </p>
         </div>
       </section>
 
       <!-- Closing CTA -->
-      <section class="border-t border-ink-200 bg-brand-800">
+      <section
+        class="border-t border-ink-200 bg-brand-800"
+        data-testid="closing-cta"
+      >
         <div class="mx-auto max-w-3xl px-4 py-20 text-center">
           <h2 class="text-3xl font-bold tracking-tight text-white">
             Draft one and see for yourself.
           </h2>
           <p class="mx-auto mt-4 max-w-xl text-brand-100">
-            It is free, it takes a few minutes, and you will have a preview of
-            the real document before anyone asks you for a rupee.
+            It takes a few minutes, and you read the real document before you
+            decide anything.
           </p>
           <button
             type="button"
@@ -357,13 +390,12 @@ function start(): void {
             Build my agreement
           </button>
           <p class="mt-6 text-sm text-brand-200">
-            Questions, or want us in your city next?
+            Questions? Write to
             <a
               class="font-semibold text-white underline"
               :href="`mailto:${CONTACT_EMAIL}`"
-            >
-              {{ CONTACT_EMAIL }}
-            </a>
+              >{{ CONTACT_EMAIL }}</a
+            >.
           </p>
         </div>
       </section>
@@ -373,10 +405,7 @@ function start(): void {
       <div
         class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-sm text-ink-500 md:flex-row md:items-center md:justify-between"
       >
-        <p>
-          &copy; 2026 AgreementMitra. Online rental agreements for India,
-          starting in Hyderabad.
-        </p>
+        <p>&copy; 2026 AgreementMitra. Online rental agreements for India.</p>
         <div class="flex items-center gap-4">
           <a
             class="font-medium text-ink-600 hover:text-brand-700"
