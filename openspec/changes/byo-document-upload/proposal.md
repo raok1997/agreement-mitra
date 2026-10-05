@@ -150,14 +150,12 @@ flow, a review step showing the composed PDF, `LegalDisclaimer` variant copy, an
 **Docs**: `docs/TERMS-OF-SERVICE.md` via its generator (never edited directly),
 `docs/BYO-DOCUMENT-UPLOAD.md` status, `docs/ROADMAP.md` Track A.
 
-**Sequencing**: `signing-auth` and `estamp-signature-band` are the two changes
-ahead of this one. `signing-auth` matters because a public upload UI widens the
+**Sequencing**: `signing-auth` is the change ahead of this one. `signing-auth` matters because a public upload UI widens the
 `permitAll` hole on `/api/agreements/*/draft`, and the new fetch-my-draft endpoint
 inherits it. If `signing-auth` has not landed when this starts, this change
 carries ownership authZ and a rate limit on those two endpoints only, and the
-register row stays open recording the partial. `estamp-signature-band` is not a
-prerequisite for block-only BYO (no strips are placed) but remains a prerequisite
-for CR-3.
+register row stays open recording the partial. The certificate-page strip band
+(`estamp-signature-band`, CR-3's prerequisite) landed 2026-10-05 as a direct fix.
 
 **Owed to the follow-up register before this change archives**: the image-XObject
 tightening of the footer-band check (CR-3's concern, raised here), the remaining

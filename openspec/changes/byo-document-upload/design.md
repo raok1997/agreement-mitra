@@ -58,8 +58,8 @@ the assumptions the direction doc was written under:
 
 - Footer-band detection, disclosure UI and per-page strips for BYO
   (`byo-every-page-signatures`).
-- Reserving the strip band in the certificate page (`estamp-signature-band`; not
-  a prerequisite here because BYO places no strips).
+- Reserving the strip band in the certificate page (landed 2026-10-05 as a direct
+  fix to `PdfStampComposer`; not a prerequisite here because BYO places no strips).
 - Any change to the async signing/webhook flow, the signing FSM, or the payment
   gate.
 - Legacy `.doc` and `.odt` ingestion (D11), and drag-to-place signature
