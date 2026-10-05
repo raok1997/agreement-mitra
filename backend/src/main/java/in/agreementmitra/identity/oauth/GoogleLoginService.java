@@ -89,6 +89,10 @@ public class GoogleLoginService {
             .queryParam("code_challenge", codeChallenge)
             .queryParam("code_challenge_method", "S256")
             .queryParam("access_type", "online")
+            // Always show Google's account chooser. Signing out ends OUR session, not the
+            // browser's Google session, so without this the next "Sign in with Google" on a shared
+            // computer silently re-enters the previous person's account.
+            .queryParam("prompt", "select_account")
             .build()
             .encode()
             .toUriString();

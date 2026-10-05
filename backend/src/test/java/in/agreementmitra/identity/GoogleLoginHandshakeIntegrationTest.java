@@ -169,6 +169,9 @@ class GoogleLoginHandshakeIntegrationTest {
     assertThat(start.getStatusCode().value()).isEqualTo(302);
     String state = queryParam(start.getHeaders().getLocation(), "state");
     assertThat(state).isNotBlank();
+    // The account chooser is always shown, so a shared browser's Google session is never reused
+    // silently after our sign-out.
+    assertThat(queryParam(start.getHeaders().getLocation(), "prompt")).isEqualTo("select_account");
 
     // 2. callback -> 302 back to the SPA with a single-use handoff in the fragment (no
     // token/session).
