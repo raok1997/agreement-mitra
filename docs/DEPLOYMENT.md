@@ -711,6 +711,13 @@ Cloudflare R2 is the natural target (no egress fees, same account you already
 have); Backblaze B2 is equivalent. Restore drills matter more than backup jobs --
 an untested backup is a hypothesis.
 
+**Object storage must be unversioned, with no object lock.** A customer can delete an unpaid
+draft, and the app then removes `drafts/{id}.pdf`; on a versioned bucket that only adds a
+delete marker and the PDF stays. Nothing in this repo enables versioning — keep it that way.
+The backup target must likewise be unversioned or expire old versions. A deleted draft does
+survive in backups until they rotate out, which is why the product says a deleted draft is
+removed *from the service*, not that it is gone permanently.
+
 **Not yet implemented.** See the gaps below.
 
 ---

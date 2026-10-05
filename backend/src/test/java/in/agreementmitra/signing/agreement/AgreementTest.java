@@ -3,6 +3,8 @@ package in.agreementmitra.signing.agreement;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import in.agreementmitra.signing.ClosureReason;
+import in.agreementmitra.signing.PaymentConfirmation;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -353,5 +355,46 @@ class AgreementTest {
 
     assertThat(agreement.signers()).extracting(Signer::name).containsExactly("B", "A");
     assertThat(agreement.signers()).extracting(Signer::entryPosition).containsExactly(0, 1);
+  }
+
+  // --- isDeletableDraft: the one deletability rule -----------------------------------------
+
+  @Test
+  void anUnpaidOpenDraftWithNoSigningRequestAndNoOrderIsDeletable() {
+    assertThat(newAgreement().isDeletableDraft(false, false)).isTrue();
+  }
+
+  @Test
+  void aSigningRequestAloneMakesItNotDeletable() {
+    assertThat(newAgreement().isDeletableDraft(true, false)).isFalse();
+  }
+
+  @Test
+  void aPaymentOrderAloneMakesItNotDeletable() {
+    assertThat(newAgreement().isDeletableDraft(false, true)).isFalse();
+  }
+
+  @Test
+  void aPaidAgreementIsNotDeletable() {
+    Agreement agreement = newAgreement();
+    agreement.recordPayment(
+        new PaymentConfirmation(
+            agreement.getId(), new BigDecimal("499.00"), "INR", "pay_x", Instant.now()),
+        null);
+    assertThat(agreement.isDeletableDraft(false, false)).isFalse();
+  }
+
+  @Test
+  void aWaivedAgreementIsNotDeletable() {
+    Agreement agreement = newAgreement();
+    agreement.waivePayment(UUID.randomUUID(), Instant.now());
+    assertThat(agreement.isDeletableDraft(false, false)).isFalse();
+  }
+
+  @Test
+  void aClosedAgreementIsNotDeletable() {
+    Agreement agreement = newAgreement();
+    agreement.close(ClosureReason.COMPLETED, Instant.now());
+    assertThat(agreement.isDeletableDraft(false, false)).isFalse();
   }
 }

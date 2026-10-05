@@ -253,6 +253,8 @@ class SecurityConfig {
                     .authenticated()
                     .requestMatchers(HttpMethod.PUT, "/api/agreements/*")
                     .authenticated()
+                    .requestMatchers(HttpMethod.DELETE, "/api/agreements/*")
+                    .authenticated()
                     // Sandbox agreement surface - scoped to the exact create + read-by-id paths
                     // (NOT /api/agreements/**) so future sub-paths stay denied by default.
                     // Create is anonymous by design; the read is owner-scoped in the HANDLER (an

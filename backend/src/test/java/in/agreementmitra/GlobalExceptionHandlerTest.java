@@ -115,6 +115,15 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void draftNotDeletableConflictMapsTo409WithItsOwnTypeUrn() {
+    ProblemDetail problem = handler.handleConflict(ConflictException.draftNotDeletable());
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getType().toString())
+        .isEqualTo("urn:agreementmitra:problem:draft-not-deletable");
+  }
+
+  @Test
   void draftFrozenConflictMapsTo409WithItsOwnTypeUrn() {
     ProblemDetail problem = handler.handleConflict(ConflictException.draftFrozen());
 

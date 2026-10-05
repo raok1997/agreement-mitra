@@ -336,7 +336,11 @@ about what we hold, because the answer may turn on it:
 We need to know what we must disclose about this, whether the Digital Personal Data
 Protection Act, 2023 requires a separate privacy notice and a stated basis and retention
 period rather than terms of service alone, and whether our retention of the provider's audit
-trail carries obligations of its own.
+trail carries obligations of its own. The same question covers one further record: when a
+signed-in customer deletes an unpaid draft, we keep a record that it was deleted — the
+agreement's reference, the account that deleted it and the time, with no party details. We
+intend to keep it on the same three-year horizon as our other records and would like to know
+whether that is a permissible period for it.
 
 (c) **The service is deliberately available without an account.** A user can generate,
 pay for and sign an agreement without registering. We would like to know how acceptance of

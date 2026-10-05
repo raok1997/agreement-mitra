@@ -14,6 +14,8 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.signing.PaymentOrderQuery;
+import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SigningRequestQuery;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.CreateAgreementRequest;
@@ -47,6 +49,7 @@ class AgreementServiceTest {
   @Mock private AgreementRepository repository;
   @Mock private TemplateCatalogApi templateCatalog;
   @Mock private SigningRequestQuery signingRequestQuery;
+  @Mock private PaymentOrderQuery paymentOrderQuery;
 
   @InjectMocks private AgreementService service;
 
@@ -576,5 +579,44 @@ class AgreementServiceTest {
   private static Signer party(Agreement agreement, int position, String name, Role role) {
     return Signer.create(
         agreement, position, name, name, "X", "Father", "1 A St", "a@example.com", "9", role);
+  }
+
+  // --- list summary: deletable -------------------------------------------------------------
+
+  private boolean deletableInList(Agreement agreement) {
+    UUID owner = UUID.randomUUID();
+    when(repository.findByOwnerIdentityIdOrderByLastEditedAtDescCreatedAtDescIdDesc(owner))
+        .thenReturn(List.of(agreement));
+    return service.listOwnedBy(owner).get(0).deletable();
+  }
+
+  @Test
+  void anUnpaidDraftWithNoOrderIsListedDeletable() {
+    Agreement agreement = anUnownedAgreement();
+    when(signingRequestQuery.currentStatusForAgreement(agreement.getId()))
+        .thenReturn(Optional.empty());
+    when(paymentOrderQuery.existsForAgreement(agreement.getId())).thenReturn(false);
+
+    assertThat(deletableInList(agreement)).isTrue();
+  }
+
+  @Test
+  void aDraftWithAPaymentOrderIsListedNotDeletable() {
+    Agreement agreement = anUnownedAgreement();
+    when(signingRequestQuery.currentStatusForAgreement(agreement.getId()))
+        .thenReturn(Optional.empty());
+    when(paymentOrderQuery.existsForAgreement(agreement.getId())).thenReturn(true);
+
+    assertThat(deletableInList(agreement)).isFalse();
+  }
+
+  @Test
+  void anInProgressAgreementIsNotDeletableAndNeverAsksForOrders() {
+    Agreement agreement = anUnownedAgreement();
+    when(signingRequestQuery.currentStatusForAgreement(agreement.getId()))
+        .thenReturn(Optional.of(SignatureStatus.SIGN_REQUESTED));
+
+    assertThat(deletableInList(agreement)).isFalse();
+    verifyNoInteractions(paymentOrderQuery);
   }
 }

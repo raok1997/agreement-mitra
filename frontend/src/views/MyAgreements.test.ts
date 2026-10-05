@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import MyAgreements from "./MyAgreements.vue";
 import * as agreements from "../api/agreements";
@@ -6,8 +6,16 @@ import type { AgreementSummary } from "../api/agreements";
 
 // Component test (5.10): the list renders a status badge per row and offers "Edit" only when the
 // backend flags the row editable (a signed one offers "View" instead). Clicking emits the row id.
-vi.mock("../api/agreements", () => ({ listMyAgreements: vi.fn() }));
+vi.mock("../api/agreements", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/agreements")>();
+  return {
+    AgreementHttpError: actual.AgreementHttpError,
+    listMyAgreements: vi.fn(),
+    deleteAgreement: vi.fn(),
+  };
+});
 const mockedList = vi.mocked(agreements.listMyAgreements);
+const mockedDelete = vi.mocked(agreements.deleteAgreement);
 
 function row(over: Partial<AgreementSummary>): AgreementSummary {
   return {
@@ -24,6 +32,7 @@ function row(over: Partial<AgreementSummary>): AgreementSummary {
     tenantNames: ["Tara Tenant"],
     status: "DRAFT",
     editable: true,
+    deletable: false,
     ...over,
   };
 }
@@ -242,6 +251,189 @@ describe("MyAgreements", () => {
 
       expect(wrapper.find('[data-testid="list-empty"]').exists()).toBe(true);
       expect(wrapper.find('[data-testid="list-search"]').exists()).toBe(false);
+    });
+  });
+
+  describe("delete", () => {
+    let wrapper: ReturnType<typeof mount> | undefined;
+
+    beforeEach(() => {
+      mockedDelete.mockReset();
+      mockedList.mockReset();
+    });
+    afterEach(() => wrapper?.unmount());
+
+    async function mountWith(rows: AgreementSummary[]) {
+      mockedList.mockResolvedValue(rows);
+      wrapper = mount(MyAgreements, { attachTo: document.body });
+      await flushPromises();
+      return wrapper;
+    }
+
+    const deletableDraft = (over: Partial<AgreementSummary> = {}) =>
+      row({ id: "d1", status: "DRAFT", deletable: true, ...over });
+
+    async function openDialog(w: ReturnType<typeof mount>, id = "d1") {
+      await w.find(`[data-testid="delete-${id}"]`).trigger("click");
+      await flushPromises();
+    }
+
+    it("offers Delete only on deletable rows", async () => {
+      const w = await mountWith([
+        deletableDraft(),
+        row({ id: "d2", status: "DRAFT", deletable: false }),
+        row({ id: "p1", status: "IN_PROGRESS", editable: false }),
+        row({ id: "s1", status: "SIGNED", editable: false }),
+      ]);
+
+      expect(w.find('[data-testid="delete-d1"]').exists()).toBe(true);
+      for (const id of ["d2", "p1", "s1"]) {
+        expect(w.find(`[data-testid="delete-${id}"]`).exists()).toBe(false);
+      }
+    });
+
+    it("opens a dialog naming the agreement, as text, without toggling the row", async () => {
+      const w = await mountWith([
+        deletableDraft({
+          ownerNames: ["<b>Asha</b>"],
+          tenantNames: [],
+          trackingNumber: "AM-XYZ",
+        }),
+      ]);
+
+      await openDialog(w);
+
+      expect(w.find('[data-testid="detail-d1"]').exists()).toBe(false);
+      const dialog = w.find('[data-testid="confirm-dialog"]');
+      expect(dialog.find('[data-testid="confirm-agreement"]').text()).toBe(
+        "<b>Asha</b> / — · AM-XYZ",
+      );
+      expect(dialog.find("b").exists()).toBe(false);
+      expect(dialog.text()).toContain("cannot be restored");
+      expect(dialog.text()).toContain(
+        "Copies already emailed to the parties cannot be recalled",
+      );
+    });
+
+    it.each(["button", "escape"])(
+      "cancelling (%s) sends nothing, keeps the row and refocuses Delete",
+      async (how) => {
+        const w = await mountWith([deletableDraft()]);
+        await openDialog(w);
+
+        if (how === "button") {
+          await w.find('[data-testid="confirm-cancel"]').trigger("click");
+        } else {
+          await w
+            .find('[role="dialog"]')
+            .trigger("keydown", { key: "Escape" });
+        }
+        await flushPromises();
+
+        expect(mockedDelete).not.toHaveBeenCalled();
+        expect(w.find('[data-testid="confirm-dialog"]').exists()).toBe(false);
+        expect(w.find('[data-testid="row-d1"]').exists()).toBe(true);
+        expect(document.activeElement).toBe(
+          w.find('[data-testid="delete-d1"]').element,
+        );
+      },
+    );
+
+    it("confirming deletes once, disables confirm while pending, then removes the row", async () => {
+      let resolve!: () => void;
+      mockedDelete.mockReturnValue(
+        new Promise<void>((r) => {
+          resolve = r;
+        }),
+      );
+      const w = await mountWith([deletableDraft(), row({ id: "other" })]);
+      await openDialog(w);
+
+      await w.find('[data-testid="confirm-ok"]').trigger("click");
+      expect(
+        w.find('[data-testid="confirm-ok"]').attributes("disabled"),
+      ).toBeDefined();
+      await w.find('[data-testid="confirm-ok"]').trigger("click");
+      resolve();
+      await flushPromises();
+
+      expect(mockedDelete).toHaveBeenCalledTimes(1);
+      expect(mockedDelete).toHaveBeenCalledWith("d1");
+      expect(w.find('[data-testid="row-d1"]').exists()).toBe(false);
+      expect(w.find('[data-testid="row-other"]').exists()).toBe(true);
+      expect(document.activeElement).toBe(
+        w.find('[data-testid="list-search"]').element,
+      );
+    });
+
+    it("deleting the last agreement shows the empty state", async () => {
+      mockedDelete.mockResolvedValue();
+      const w = await mountWith([deletableDraft()]);
+      await openDialog(w);
+
+      await w.find('[data-testid="confirm-ok"]').trigger("click");
+      await flushPromises();
+
+      expect(w.find('[data-testid="list-empty"]').exists()).toBe(true);
+    });
+
+    it("a 409 says it is no longer a draft and reloads, and the notice survives the reload", async () => {
+      mockedDelete.mockRejectedValue(
+        new agreements.AgreementHttpError(
+          409,
+          "urn:agreementmitra:problem:draft-not-deletable",
+        ),
+      );
+      const w = await mountWith([deletableDraft()]);
+      mockedList.mockResolvedValue([
+        deletableDraft({ status: "IN_PROGRESS", deletable: false }),
+      ]);
+      await openDialog(w);
+
+      await w.find('[data-testid="confirm-ok"]').trigger("click");
+      await flushPromises();
+
+      expect(mockedList).toHaveBeenCalledTimes(2);
+      expect(w.find('[data-testid="list-notice"]').text()).toContain(
+        "no longer a draft",
+      );
+      expect(w.find('[data-testid="delete-d1"]').exists()).toBe(false);
+      expect(document.activeElement).toBe(
+        w.find('[data-testid="list-notice"]').element,
+      );
+    });
+
+    it("a 404 says it no longer exists and removes the row", async () => {
+      mockedDelete.mockRejectedValue(
+        new agreements.AgreementHttpError(
+          404,
+          "urn:agreementmitra:problem:resource-not-found",
+        ),
+      );
+      const w = await mountWith([deletableDraft(), row({ id: "other" })]);
+      await openDialog(w);
+
+      await w.find('[data-testid="confirm-ok"]').trigger("click");
+      await flushPromises();
+
+      expect(w.find('[data-testid="list-notice"]').text()).toContain(
+        "no longer exists",
+      );
+      expect(w.find('[data-testid="row-d1"]').exists()).toBe(false);
+    });
+
+    it("an unexpected failure says so and keeps the row", async () => {
+      mockedDelete.mockRejectedValue(new agreements.AgreementHttpError(500));
+      const w = await mountWith([deletableDraft()]);
+      await openDialog(w);
+
+      await w.find('[data-testid="confirm-ok"]').trigger("click");
+      await flushPromises();
+
+      expect(w.find('[data-testid="list-notice"]').text()).toContain(
+        "Could not delete",
+      );
+      expect(w.find('[data-testid="row-d1"]').exists()).toBe(true);
     });
   });
 });

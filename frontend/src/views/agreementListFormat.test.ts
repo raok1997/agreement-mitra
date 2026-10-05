@@ -66,6 +66,7 @@ function summary(over: Partial<AgreementSummary>): AgreementSummary {
     tenantNames: ["Rohan Deshpande", "Mohammed Faizan"],
     status: "DRAFT",
     editable: true,
+    deletable: false,
     ...over,
   };
 }

@@ -8,6 +8,7 @@ import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.signing.BlobStore;
+import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.signing.SigningRequestQuery;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,13 +30,20 @@ class AgreementIdExceptionMessageTest {
   @Mock private AgreementRepository repository;
   @Mock private TemplateCatalogApi templateCatalog;
   @Mock private SigningRequestQuery signingRequestQuery;
+  @Mock private PaymentOrderQuery paymentOrderQuery;
 
   @InjectMocks private AgreementService agreementService;
 
   @Test
   void draftUploadForAnUnknownAgreement() {
     when(repository.findByIdForUpdate(ID)).thenReturn(Optional.empty());
-    DraftService drafts = new DraftService(repository, mock(BlobStore.class), signingRequestQuery);
+    DraftService drafts =
+        new DraftService(
+            repository,
+            mock(BlobStore.class),
+            signingRequestQuery,
+            paymentOrderQuery,
+            mock(AgreementDeletionRepository.class));
 
     assertThatThrownBy(() -> drafts.attachDraft(ID, null, "%PDF-1.4\n".getBytes()))
         .isInstanceOf(ResourceNotFoundException.class)

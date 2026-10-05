@@ -454,6 +454,19 @@ class Agreement implements Persistable<UUID> {
   }
 
   /**
+   * The one deletability rule: an unpaid draft that never reached a signing request or an order.
+   * Drives both the owner's delete and the list's {@code deletable} flag, so the two cannot
+   * disagree. {@code OPEN} is defence in depth - nothing closes an agreement without a signing
+   * request today, but the rule must not depend on that staying true.
+   */
+  boolean isDeletableDraft(boolean hasSigningRequest, boolean hasPaymentOrder) {
+    return !hasSigningRequest
+        && !hasPaymentOrder
+        && paymentState == PaymentState.UNPAID
+        && closureState == ClosureState.OPEN;
+  }
+
+  /**
    * Replace the capture state <b>wholesale</b> (set on create, replaced on edit -- like the party
    * list). A null/empty {@code data} with null/empty {@code activeSections} collapses to a null
    * capture state, so an API client that sends only the fixed fields persists no capture state and

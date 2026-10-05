@@ -7,6 +7,7 @@ import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import org.slf4j.Logger;
@@ -53,6 +54,15 @@ class MinioBlobStore implements BlobStore {
       return in.readAllBytes();
     } catch (Exception e) {
       throw new IllegalStateException("Failed to read object " + AgreementIds.redactIn(key), e);
+    }
+  }
+
+  @Override
+  public void delete(String key) {
+    try {
+      client.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(key).build());
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to delete object " + AgreementIds.redactIn(key), e);
     }
   }
 

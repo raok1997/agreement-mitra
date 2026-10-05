@@ -67,6 +67,7 @@ class AbuseLimitsIntegrationTest {
       Set.of(
           "GET /api/agreements",
           "PUT /api/agreements/{id}",
+          "DELETE /api/agreements/{id}",
           "POST /api/agreements/{id}/claim",
           "GET /api/auth/me",
           "POST /api/signing/{agreementId}/request");

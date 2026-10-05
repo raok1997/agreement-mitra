@@ -158,4 +158,16 @@ class FlywayMigrationIntegrationTest {
 
     assertThat(historyTables).isEqualTo(1);
   }
+
+  @Test
+  void v23LetsAnIntakeAuditRowOutliveItsDeletedDraft() {
+    String deleteRule =
+        jdbcTemplate.queryForObject(
+            "SELECT delete_rule FROM information_schema.referential_constraints"
+                + " WHERE constraint_schema = current_schema()"
+                + " AND constraint_name = 'stamp_intake_audit_agreement_id_fkey'",
+            String.class);
+
+    assertThat(deleteRule).isEqualTo("SET NULL");
+  }
 }

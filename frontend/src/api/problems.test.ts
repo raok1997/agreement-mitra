@@ -71,6 +71,7 @@ describe("PROBLEM", () => {
       jurisdictionUnsupported:
         "urn:agreementmitra:problem:jurisdiction-unsupported",
       draftFrozen: "urn:agreementmitra:problem:draft-frozen",
+      draftNotDeletable: "urn:agreementmitra:problem:draft-not-deletable",
       contactsFrozen: "urn:agreementmitra:problem:contacts-frozen",
       paymentRequired: "urn:agreementmitra:problem:payment-required",
       csrf: "urn:agreementmitra:problem:csrf",

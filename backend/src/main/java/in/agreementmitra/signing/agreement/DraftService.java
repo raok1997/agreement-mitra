@@ -5,13 +5,17 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.InvalidUploadException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
+import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.signing.SigningRequestQuery;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Ingests the user's uploaded rental-agreement draft PDF and attaches it to the agreement. Java-
@@ -37,14 +41,33 @@ public class DraftService {
   private final AgreementRepository repository;
   private final BlobStore blobStore;
   private final SigningRequestQuery signingRequestQuery;
+  private final PaymentOrderQuery paymentOrderQuery;
+  private final AgreementDeletionRepository deletions;
 
   DraftService(
       AgreementRepository repository,
       BlobStore blobStore,
-      SigningRequestQuery signingRequestQuery) {
+      SigningRequestQuery signingRequestQuery,
+      PaymentOrderQuery paymentOrderQuery,
+      AgreementDeletionRepository deletions) {
     this.repository = repository;
     this.blobStore = blobStore;
     this.signingRequestQuery = signingRequestQuery;
+    this.paymentOrderQuery = paymentOrderQuery;
+    this.deletions = deletions;
+  }
+
+  /**
+   * Every object key a draft-stage agreement can own - the single list, so delete cannot miss one.
+   * The first is the draft PDF key {@link #attachDraft} writes. A change that adds a draft-stage
+   * key adds it here.
+   */
+  static List<String> draftStageKeys(UUID agreementId) {
+    return List.of(draftKey(agreementId));
+  }
+
+  private static String draftKey(UUID agreementId) {
+    return "drafts/" + agreementId + ".pdf";
   }
 
   /**
@@ -80,12 +103,90 @@ public class DraftService {
       throw ConflictException.draftFrozen();
     }
 
-    String key = "drafts/" + agreementId + ".pdf";
+    String key = draftKey(agreementId);
     blobStore.put(key, bytes, CONTENT_TYPE_PDF);
     agreement.attachDraft(key); // managed entity — flushed on tx commit
     agreement.markEdited(Instant.now());
 
     log.debug("Draft stored for agreement {}", AgreementIds.redact(agreementId));
+  }
+
+  /**
+   * Delete an unpaid draft the caller owns: the agreement and its parties in this transaction, a
+   * PII-free {@link AgreementDeletion} record in the same one, and the draft-stage objects after it
+   * commits.
+   *
+   * <p>Strict owner rule (as for an edit, not {@link Agreement#admits}): an unowned agreement is
+   * never deletable here. Unknown, unowned and another identity's agreement are one 404, decided
+   * before the deletability check, so the endpoint is no ownership oracle. The row is loaded under
+   * a full {@code FOR UPDATE} lock ({@link AgreementRepository#findByIdForDelete}); a signing
+   * request or payment order insert takes {@code FOR KEY SHARE} on it, so one committed first is
+   * seen by the existence checks below, and one that waits fails its FK.
+   *
+   * <p>Objects are removed by their derived keys, never the nullable draft column (an edit clears
+   * it without removing the object), after commit so a rolled-back delete keeps its PDF. A failed
+   * removal is logged and swallowed: it leaves an unreferenced private object, never a dangling
+   * database reference.
+   *
+   * @throws ResourceNotFoundException unknown, unowned, or another identity's agreement (404)
+   * @throws ConflictException {@code DRAFT_NOT_DELETABLE} when it is no longer an unpaid draft
+   *     (409)
+   */
+  @Transactional
+  public void deleteDraft(UUID agreementId, UUID callerIdentityId) {
+    Agreement agreement =
+        repository
+            .findByIdForDelete(agreementId)
+            .filter(a -> callerIdentityId != null && callerIdentityId.equals(a.ownerIdentityId()))
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
+
+    if (!agreement.isDeletableDraft(
+        signingRequestQuery.existsForAgreement(agreementId),
+        paymentOrderQuery.existsForAgreement(agreementId))) {
+      throw ConflictException.draftNotDeletable();
+    }
+
+    repository.delete(agreement); // parties cascade
+    deletions.save(AgreementDeletion.of(agreement, Instant.now()));
+
+    List<String> keys = draftStageKeys(agreementId);
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(
+          new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+              removeObjects(agreementId, keys);
+            }
+          });
+    } else {
+      log.warn(
+          "No transaction synchronization; removing draft objects inline for agreement {}",
+          AgreementIds.redact(agreementId));
+      removeObjects(agreementId, keys);
+    }
+
+    log.debug("Draft deleted for agreement {}", AgreementIds.redact(agreementId));
+  }
+
+  /**
+   * Best effort. Logs the cause's class name only - never the throwable, whose storage-client cause
+   * can carry the raw object name.
+   */
+  private void removeObjects(UUID agreementId, List<String> keys) {
+    for (String key : keys) {
+      try {
+        blobStore.delete(key);
+      } catch (RuntimeException e) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        log.warn(
+            "Draft object removal failed for agreement {} ({})",
+            AgreementIds.redact(agreementId),
+            cause.getClass().getSimpleName());
+      }
+    }
   }
 
   /**

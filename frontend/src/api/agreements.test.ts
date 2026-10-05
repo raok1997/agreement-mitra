@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AgreementHttpError,
   claimAgreement,
+  deleteAgreement,
   finaliseAgreement,
   getAgreement,
   listMyAgreements,
@@ -79,6 +80,40 @@ describe("agreements api", () => {
       "X-XSRF-TOKEN": "csrf-token",
     });
     expect(JSON.parse(init.body).propertyAddress).toBe("1 Road");
+  });
+
+  it("deletes with a DELETE and the CSRF header, resolving on an empty 204", async () => {
+    const json = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204, json });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteAgreement("a1")).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/agreements/a1");
+    expect(init.method).toBe("DELETE");
+    expect(init.headers).toMatchObject({ "X-XSRF-TOKEN": "csrf-token" });
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it("carries the problem type when a delete is refused as no longer a draft", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: () =>
+          Promise.resolve({
+            type: "urn:agreementmitra:problem:draft-not-deletable",
+          }),
+      }),
+    );
+
+    const failure = await deleteAgreement("a1").catch((e) => e);
+
+    expect(failure).toBeInstanceOf(AgreementHttpError);
+    expect(failure.status).toBe(409);
+    expect(hasProblemType(failure, PROBLEM.draftNotDeletable)).toBe(true);
   });
 
   it("reads one for edit with a GET over the session cookie", async () => {

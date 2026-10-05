@@ -8,7 +8,9 @@ import in.agreementmitra.documents.api.TemplateDetail;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentConfirmation;
+import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.signing.PaymentState;
+import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SigningRequestQuery;
 import in.agreementmitra.signing.api.AgreementDisplayStatus;
 import in.agreementmitra.signing.api.AgreementResponse;
@@ -46,14 +48,17 @@ public class AgreementService {
   private final AgreementRepository repository;
   private final TemplateCatalogApi templateCatalog;
   private final SigningRequestQuery signingRequestQuery;
+  private final PaymentOrderQuery paymentOrderQuery;
 
   AgreementService(
       AgreementRepository repository,
       TemplateCatalogApi templateCatalog,
-      SigningRequestQuery signingRequestQuery) {
+      SigningRequestQuery signingRequestQuery,
+      PaymentOrderQuery paymentOrderQuery) {
     this.repository = repository;
     this.templateCatalog = templateCatalog;
     this.signingRequestQuery = signingRequestQuery;
+    this.paymentOrderQuery = paymentOrderQuery;
   }
 
   @Transactional
@@ -415,9 +420,15 @@ public class AgreementService {
   }
 
   private AgreementSummaryResponse toSummary(Agreement agreement) {
-    AgreementDisplayStatus status =
-        AgreementDisplayStatus.from(
-            signingRequestQuery.currentStatusForAgreement(agreement.getId()));
+    Optional<SignatureStatus> signing =
+        signingRequestQuery.currentStatusForAgreement(agreement.getId());
+    AgreementDisplayStatus status = AgreementDisplayStatus.from(signing);
+    // Same rule as the delete. The order lookup runs only for a row the rule could still accept.
+    boolean hasSigningRequest = signing.isPresent();
+    boolean deletable =
+        agreement.isDeletableDraft(hasSigningRequest, false)
+            && agreement.isDeletableDraft(
+                hasSigningRequest, paymentOrderQuery.existsForAgreement(agreement.getId()));
     return new AgreementSummaryResponse(
         agreement.getId(),
         agreement.trackingReference(),
@@ -431,7 +442,8 @@ public class AgreementService {
         namesOf(agreement.signers(), Role.OWNER),
         namesOf(agreement.signers(), Role.TENANT),
         status,
-        status.editable());
+        status.editable(),
+        deletable);
   }
 
   /**

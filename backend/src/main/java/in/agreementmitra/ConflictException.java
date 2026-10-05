@@ -68,7 +68,9 @@ public class ConflictException extends RuntimeException {
      * An e-stamp certificate's duty amount is below the stamp value the agreement was paid for (or,
      * without a frozen quote, below its legal duty). Refused at intake before anything is stored.
      */
-    STAMP_VALUE_BELOW_PAID
+    STAMP_VALUE_BELOW_PAID,
+    /** The owner asked to delete an agreement that is no longer an unpaid draft. */
+    DRAFT_NOT_DELETABLE
   }
 
   private final Kind kind;
@@ -281,6 +283,15 @@ public class ConflictException extends RuntimeException {
   public static ConflictException stampValueBelowPaid() {
     return new ConflictException(
         Kind.STAMP_VALUE_BELOW_PAID, "certificate duty amount is below the paid-for stamp value");
+  }
+
+  /**
+   * The owner asked to delete an agreement that is no longer an unpaid draft: signing was
+   * requested, a payment order exists, payment is settled, or it is closed. One kind for every
+   * reason - the customer's remedy is the same, and finer kinds would only re-expose state.
+   */
+  public static ConflictException draftNotDeletable() {
+    return new ConflictException(Kind.DRAFT_NOT_DELETABLE, "agreement is not an unpaid draft");
   }
 
   public Kind kind() {

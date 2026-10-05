@@ -30,6 +30,8 @@ export interface AgreementSummary {
   tenantNames: string[];
   status: AgreementStatus;
   editable: boolean;
+  /** True exactly when the owner's delete would be accepted (an unpaid draft). */
+  deletable: boolean;
 }
 
 /**
@@ -76,6 +78,15 @@ export async function getAgreement(id: string): Promise<AgreementView> {
   const res = await apiFetch(`${BASE}/agreements/${id}`);
   if (!res.ok) throw await AgreementHttpError.from(res);
   return res.json();
+}
+
+/**
+ * Delete an owned unpaid draft. Resolves on 204 without reading a body; any refusal throws an
+ * AgreementHttpError carrying the problem type (409 draft-not-deletable, 404 gone or not yours).
+ */
+export async function deleteAgreement(id: string): Promise<void> {
+  const res = await apiFetch(`${BASE}/agreements/${id}`, { method: "DELETE" });
+  if (!res.ok) throw await AgreementHttpError.from(res);
 }
 
 /** What finalising returns: the one reference the customer keeps, plus the resulting order status. */

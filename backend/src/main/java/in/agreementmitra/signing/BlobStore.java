@@ -13,4 +13,7 @@ public interface BlobStore {
 
   /** Read the bytes stored under {@code key}. */
   byte[] get(String key);
+
+  /** Remove the object stored under {@code key}. Idempotent: a missing key is not an error. */
+  void delete(String key);
 }

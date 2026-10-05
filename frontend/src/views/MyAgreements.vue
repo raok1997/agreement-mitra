@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
+  AgreementHttpError,
+  deleteAgreement,
   listMyAgreements,
   type AgreementStatus,
   type AgreementSummary,
 } from "../api/agreements";
+import { hasProblemType, PROBLEM } from "../api/problems";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import { formatIso } from "./dateEntry";
 import {
   editedAgo,
@@ -33,6 +37,14 @@ const error = ref<string | null>(null);
 const query = ref("");
 const openId = ref<string | null>(null);
 const now = ref(new Date());
+// Delete outcomes. Separate from `error`, which replaces the whole list and which load() clears:
+// a 409 reloads the list, and its explanation has to survive that reload.
+const notice = ref<string | null>(null);
+const noticeEl = ref<HTMLElement | null>(null);
+const searchEl = ref<HTMLInputElement | null>(null);
+const pendingDelete = ref<AgreementSummary | null>(null);
+const deleting = ref(false);
+let deleteTrigger: HTMLElement | null = null;
 
 const visible = computed(() =>
   agreements.value.filter((a) => matchesQuery(a, query.value)),
@@ -87,6 +99,64 @@ async function load(): Promise<void> {
   }
 }
 
+function askDelete(a: AgreementSummary, event: Event): void {
+  deleteTrigger = event.currentTarget as HTMLElement;
+  notice.value = null;
+  pendingDelete.value = a;
+}
+
+function cancelDelete(): void {
+  if (deleting.value) return;
+  pendingDelete.value = null;
+  const trigger = deleteTrigger;
+  deleteTrigger = null;
+  void nextTick(() => trigger?.focus());
+}
+
+function removeRow(id: string): void {
+  agreements.value = agreements.value.filter((a) => a.id !== id);
+}
+
+async function focusAfterDelete(): Promise<void> {
+  await nextTick();
+  if (notice.value) {
+    noticeEl.value?.focus();
+  } else if (searchEl.value) {
+    searchEl.value.focus();
+  } else {
+    document
+      .querySelector<HTMLElement>('[data-testid="new-agreement"]')
+      ?.focus();
+  }
+}
+
+async function confirmDelete(): Promise<void> {
+  const target = pendingDelete.value;
+  if (!target || deleting.value) return;
+  deleting.value = true;
+  try {
+    await deleteAgreement(target.id);
+    removeRow(target.id);
+  } catch (e) {
+    if (e instanceof AgreementHttpError && e.status === 404) {
+      notice.value =
+        "That agreement no longer exists, so it has been removed from your list.";
+      removeRow(target.id);
+    } else if (hasProblemType(e, PROBLEM.draftNotDeletable)) {
+      notice.value =
+        "That agreement is no longer a draft, so it can no longer be deleted.";
+      await load();
+    } else {
+      notice.value = "Could not delete that draft. Please try again.";
+    }
+  } finally {
+    deleting.value = false;
+    pendingDelete.value = null;
+    deleteTrigger = null;
+  }
+  await focusAfterDelete();
+}
+
 // Keeps "Edited …" current on a tab left open.
 let clock: ReturnType<typeof setInterval> | undefined;
 
@@ -114,6 +184,17 @@ onUnmounted(() => clearInterval(clock));
     </div>
 
     <p
+      v-if="notice"
+      ref="noticeEl"
+      role="status"
+      tabindex="-1"
+      class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+      data-testid="list-notice"
+    >
+      {{ notice }}
+    </p>
+
+    <p
       v-if="loading"
       class="py-6 text-sm text-slate-500"
       data-testid="list-loading"
@@ -139,6 +220,7 @@ onUnmounted(() => clearInterval(clock));
       <label class="block">
         <span class="sr-only">Search agreements</span>
         <input
+          ref="searchEl"
           v-model="query"
           type="search"
           placeholder="Search by owner, tenant, address or reference"
@@ -259,6 +341,15 @@ onUnmounted(() => clearInterval(clock));
             >
               View
             </button>
+            <button
+              v-if="a.deletable"
+              type="button"
+              class="flex-none rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700"
+              :data-testid="`delete-${a.id}`"
+              @click.stop="askDelete(a, $event)"
+            >
+              Delete
+            </button>
           </div>
 
           <div
@@ -311,5 +402,24 @@ onUnmounted(() => clearInterval(clock));
         </li>
       </ul>
     </template>
+
+    <ConfirmDialog
+      v-if="pendingDelete"
+      title="Delete this draft?"
+      confirm-label="Delete"
+      :busy="deleting"
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
+    >
+      <p data-testid="confirm-agreement">
+        {{ pendingDelete.ownerNames[0] ?? "—" }} /
+        {{ pendingDelete.tenantNames[0] ?? "—" }} ·
+        {{ pendingDelete.trackingNumber || "—" }}
+      </p>
+      <p class="mt-2">
+        It will be removed from AgreementMitra and cannot be restored. Copies
+        already emailed to the parties cannot be recalled.
+      </p>
+    </ConfirmDialog>
   </section>
 </template>

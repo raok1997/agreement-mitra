@@ -35,7 +35,7 @@ export const TERMS_STATUS_BANNER =
   "you can read beats terms that do not exist -- not because it is finished.";
 
 /** The date the draft last changed. Bumped by hand when a clause changes. */
-export const TERMS_LAST_UPDATED = "18 September 2026";
+export const TERMS_LAST_UPDATED = "5 October 2026";
 
 export const TERMS_CLAUSES: Clause[] = [
   {
@@ -130,6 +130,7 @@ export const TERMS_CLAUSES: Clause[] = [
     status: "drafted",
     body: [
       "An unpaid draft is yours to abandon. You can leave at any point before payment and owe us nothing.",
+      "If you are signed in, you can delete an unpaid draft yourself from My agreements, as long as you have not yet gone to payment. A deleted draft is removed from the service and cannot be restored. Copies in our backups are overwritten as those backups rotate. Copies of the draft we have already emailed to the parties cannot be recalled.",
       "While you are filling in the form, a copy of the draft is held in your own browser so that a reload does not lose your work. Once you save an agreement, it is held on our systems and you are given a reference and, if you gave us an email address, a link back to it.",
       "That link is a key: anyone holding it can open the agreement. It stops working once the agreement is saved to an account, after which you open the agreement by signing in.",
       "We may delete unpaid drafts that have been untouched for a long time. See the retention clause below.",
@@ -152,7 +153,7 @@ export const TERMS_CLAUSES: Clause[] = [
     body: [
       "We keep a signed agreement, its signed PDF and its signing audit trail for three years.",
       "Once everyone has signed, every party can download the signed agreement. Keep your own copy: it is your document, and it is the copy that does not depend on us.",
-      "Deletion can be asked for by the person who created and paid for the agreement, signed in to the account it is saved to. We do not have a deletion control in the product yet -- until we do, write to us and we will do it by hand.",
+      "You can delete an unpaid draft yourself from My agreements (see the drafts clause above). For anything else, deletion can be asked for by the person who created and paid for the agreement, signed in to the account it is saved to: write to us and we will do it by hand.",
     ],
   },
   {
@@ -183,6 +184,7 @@ export const TERMS_CLAUSES: Clause[] = [
     body: [
       "We collect the details you enter about the parties (name, parentage and address), the email address and any telephone number you give for each party, and the content of the agreement itself. We store the signed PDF and the signing audit trail.",
       "We do not hold Aadhaar numbers, virtual IDs or one-time passwords. See the electronic-signature clause above for what the eSign provider handles rather than us.",
+      "When you delete a draft, we keep a record that it was deleted -- its reference, the account that deleted it and the time -- and none of the parties' details.",
     ],
   },
   {

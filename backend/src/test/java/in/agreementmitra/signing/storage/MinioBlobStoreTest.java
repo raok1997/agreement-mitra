@@ -1,8 +1,11 @@
 package in.agreementmitra.signing.storage;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import in.agreementmitra.AgreementIds;
@@ -10,10 +13,12 @@ import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import java.io.IOException;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 /**
  * A failed read or write names the object key with its agreement id redacted
@@ -50,5 +55,24 @@ class MinioBlobStoreTest {
     assertThatThrownBy(() -> store.get(KEY))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("Failed to read object " + REDACTED_KEY);
+  }
+
+  @Test
+  void deleteRemovesTheObjectFromTheBucket() throws Exception {
+    store.delete(KEY);
+
+    ArgumentCaptor<RemoveObjectArgs> args = ArgumentCaptor.forClass(RemoveObjectArgs.class);
+    verify(client).removeObject(args.capture());
+    assertThat(args.getValue().bucket()).isEqualTo("bucket");
+    assertThat(args.getValue().object()).isEqualTo(KEY);
+  }
+
+  @Test
+  void aFailedDeleteRedactsTheKey() throws Exception {
+    doThrow(new IOException("boom")).when(client).removeObject(any(RemoveObjectArgs.class));
+
+    assertThatThrownBy(() -> store.delete(KEY))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Failed to delete object " + REDACTED_KEY);
   }
 }

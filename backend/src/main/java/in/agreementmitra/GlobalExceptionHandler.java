@@ -66,6 +66,8 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String TYPE_CONTACTS_FROZEN = "urn:agreementmitra:problem:contacts-frozen";
   private static final String TYPE_STAMP_VALUE_BELOW_PAID =
       "urn:agreementmitra:problem:stamp-value-below-paid";
+  private static final String TYPE_DRAFT_NOT_DELETABLE =
+      "urn:agreementmitra:problem:draft-not-deletable";
   private static final String TYPE_INVALID_UPLOAD = "urn:agreementmitra:problem:invalid-upload";
   private static final String TYPE_STAMP_CHOICE_INVALID =
       "urn:agreementmitra:problem:stamp-choice-invalid";
@@ -257,6 +259,12 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
               TYPE_STAMP_VALUE_BELOW_PAID,
               "Stamp value below paid",
               "The certificate's stamp duty is below the stamp value this agreement was paid for.");
+      case DRAFT_NOT_DELETABLE ->
+          problem(
+              HttpStatus.CONFLICT,
+              TYPE_DRAFT_NOT_DELETABLE,
+              "Draft not deletable",
+              "This agreement is no longer an unpaid draft and cannot be deleted.");
     };
   }
 

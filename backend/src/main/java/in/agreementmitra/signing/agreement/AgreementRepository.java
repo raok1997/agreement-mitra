@@ -38,4 +38,14 @@ interface AgreementRepository extends JpaRepository<Agreement, UUID> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select a from Agreement a where a.id = :id")
   Optional<Agreement> findByIdForUpdate(@Param("id") UUID id);
+
+  /**
+   * Load an agreement under a full {@code FOR UPDATE} lock, for the owner's delete. Not {@link
+   * #findByIdForUpdate}: Hibernate renders {@code PESSIMISTIC_WRITE} on PostgreSQL as {@code FOR NO
+   * KEY UPDATE}, which does not conflict with the {@code FOR KEY SHARE} a child-row insert takes on
+   * its parent. Only {@code FOR UPDATE} makes a concurrent signing-request or payment-order insert
+   * and the delete serialise, so the delete either sees the committed child or blocks it.
+   */
+  @Query(value = "SELECT * FROM agreement WHERE id = :id FOR UPDATE", nativeQuery = true)
+  Optional<Agreement> findByIdForDelete(@Param("id") UUID id);
 }

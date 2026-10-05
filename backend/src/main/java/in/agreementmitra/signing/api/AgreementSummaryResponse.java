@@ -16,6 +16,9 @@ import java.util.UUID;
  * <p>{@code ownerNames} and {@code tenantNames} hold every party of that role in entry order.
  * {@code lastEditedAt} is when the content was last changed through the drafting surface.
  *
+ * <p>{@code deletable} is true exactly when the owner's {@code DELETE /api/agreements/{id}} would
+ * accept the agreement (an unpaid draft) - the same rule, so the button and the server agree.
+ *
  * <p>{@code trackingNumber} carries the agreement's single tracking reference (same as {@link
  * AgreementResponse}); the raw {@code id} stays the canonical identifier used by the
  * claim/edit/read routes.
@@ -33,4 +36,5 @@ public record AgreementSummaryResponse(
     List<String> ownerNames,
     List<String> tenantNames,
     AgreementDisplayStatus status,
-    boolean editable) {}
+    boolean editable,
+    boolean deletable) {}

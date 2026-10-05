@@ -21,6 +21,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -174,6 +175,17 @@ public class AgreementController {
       @AuthenticationPrincipal UUID identityId,
       @Valid @RequestBody CreateAgreementRequest request) {
     return agreementService.update(id, identityId, request);
+  }
+
+  /**
+   * Delete an unpaid draft the caller owns. Reads no body. Unknown, unowned or another identity's
+   * agreement is the same 404; one that is no longer an unpaid draft is a 409.
+   */
+  @DeleteMapping("/{id}")
+  public ResponseEntity<Void> delete(
+      @PathVariable UUID id, @AuthenticationPrincipal UUID identityId) {
+    draftService.deleteDraft(id, identityId);
+    return ResponseEntity.noContent().build();
   }
 
   /**

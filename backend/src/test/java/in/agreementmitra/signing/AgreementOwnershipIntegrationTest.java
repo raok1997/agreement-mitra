@@ -369,7 +369,8 @@ class AgreementOwnershipIntegrationTest {
             "ownerNames",
             "tenantNames",
             "status",
-            "editable");
+            "editable",
+            "deletable");
     assertThat(row.get("ownerNames"))
         .isEqualTo(List.of("Ramesh Kumar Reddy", "Lakshmi Devi Reddy"));
     assertThat(row.get("tenantNames")).isEqualTo(List.of("Priya Sharma"));
