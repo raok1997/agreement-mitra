@@ -167,7 +167,7 @@ function start(): void {
           class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent-200/40 blur-3xl"
           aria-hidden="true"
         />
-        <div class="relative mx-auto max-w-6xl px-4 py-20 md:py-28">
+        <div class="relative mx-auto max-w-6xl px-4 py-14 md:py-20">
           <div class="max-w-2xl">
             <h1
               class="text-4xl font-bold leading-tight tracking-tight text-ink-900 md:text-5xl"
@@ -199,14 +199,17 @@ function start(): void {
       </section>
 
       <!-- How it works -->
-      <section id="how" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
-        <h2 class="text-3xl font-bold tracking-tight text-ink-900">
+      <section
+        id="how"
+        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-12 md:py-16"
+      >
+        <h2 class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl">
           How it works
         </h2>
         <p class="mt-3 max-w-2xl text-ink-600">
           Four steps, and you can read the document at every one of them.
         </p>
-        <ol class="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <ol class="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <li
             v-for="step in steps"
             :key="step.n"
@@ -231,33 +234,37 @@ function start(): void {
         id="price"
         class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
       >
-        <div class="mx-auto max-w-3xl px-4 py-20">
-          <h2 class="text-3xl font-bold tracking-tight text-ink-900">
+        <div class="mx-auto max-w-6xl px-4 py-12 md:py-16">
+          <h2
+            class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl"
+          >
             What it costs
           </h2>
           <div
-            class="mt-8 rounded-xl border border-ink-200 bg-white p-7 shadow-sm"
+            class="mt-6 grid gap-6 rounded-xl border border-ink-200 bg-white p-6 shadow-sm md:grid-cols-2 md:gap-10"
           >
-            <p class="text-2xl font-bold text-ink-900">
-              {{ total }} when your stamp duty is {{ includedDuty }} or less
-            </p>
-            <p class="mt-4 text-sm font-semibold text-ink-800">Included:</p>
-            <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-600">
-              <li v-for="item in inclusions" :key="item">{{ item }}</li>
-            </ul>
-            <p class="mt-4 text-sm leading-relaxed text-ink-600">
-              Where the duty is higher, you see the stamp amount and the exact
-              total before you pay. There is never a second bill.
-            </p>
-            <p class="mt-3 text-sm leading-relaxed text-ink-600">
-              Drafting, previewing and downloading a draft are free.
-            </p>
-            <p class="mt-3 text-sm leading-relaxed text-ink-500">
-              Available where we stamp and eSign. See
-              <a class="font-medium text-brand-700 underline" href="#status"
-                >Status</a
-              >.
-            </p>
+            <div>
+              <p class="text-2xl font-bold text-ink-900">
+                {{ total }} when your stamp duty is {{ includedDuty }} or less
+              </p>
+              <p class="mt-4 text-sm font-semibold text-ink-800">Included:</p>
+              <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-600">
+                <li v-for="item in inclusions" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+            <div class="space-y-3 text-sm leading-relaxed text-ink-600">
+              <p>
+                Where the duty is higher, you see the stamp amount and the exact
+                total before you pay. There is never a second bill.
+              </p>
+              <p>Drafting, previewing and downloading a draft are free.</p>
+              <p class="text-ink-500">
+                Available where we stamp and eSign. See
+                <a class="font-medium text-brand-700 underline" href="#status"
+                  >Status</a
+                >.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -265,19 +272,19 @@ function start(): void {
       <!-- Guarantees -->
       <section
         id="guarantees"
-        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20"
+        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-12 md:py-16"
       >
-        <h2 class="text-3xl font-bold tracking-tight text-ink-900">
+        <h2 class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl">
           If something goes wrong
         </h2>
         <p class="mt-3 max-w-2xl text-ink-600">
           These come from our terms of service, which are still a draft.
         </p>
-        <div class="mt-10 grid gap-6 md:grid-cols-3">
+        <div class="mt-8 grid gap-4 md:grid-cols-3">
           <article
             v-for="g in guarantees"
             :key="g.section"
-            class="flex flex-col rounded-xl border border-ink-200 bg-white p-7 shadow-sm"
+            class="flex flex-col rounded-xl border border-ink-200 bg-white p-6 shadow-sm"
             data-testid="guarantee"
           >
             <h3 class="text-lg font-semibold text-ink-900">{{ g.title }}</h3>
@@ -302,21 +309,20 @@ function start(): void {
         id="status"
         class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
       >
-        <div class="mx-auto max-w-3xl px-4 py-20">
-          <h2 class="text-3xl font-bold tracking-tight text-ink-900">
+        <div class="mx-auto max-w-6xl px-4 py-12 md:py-16">
+          <h2
+            class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl"
+          >
             What is live today
           </h2>
-          <p class="mt-3 text-ink-600">
-            Each row says whether it is live now, in integration or planned. We
-            update it the day that changes.
+          <p class="mt-2 text-sm text-ink-600">
+            We update this board the day anything changes.
           </p>
-          <ul
-            class="mt-8 divide-y divide-ink-200 rounded-xl border border-ink-200 bg-white"
-          >
+          <ul class="mt-6 grid gap-2 md:grid-cols-2">
             <li
               v-for="row in RELEASE_STATUS"
               :key="row.label"
-              class="flex items-center justify-between gap-4 px-5 py-4"
+              class="flex items-center justify-between gap-3 rounded-lg border border-ink-200 bg-white px-4 py-2.5"
             >
               <span class="text-sm font-medium text-ink-800">{{
                 row.label
@@ -338,15 +344,17 @@ function start(): void {
 
       <!-- FAQ -->
       <section id="faq" class="scroll-mt-20">
-        <div class="mx-auto max-w-3xl px-4 py-20">
-          <h2 class="text-3xl font-bold tracking-tight text-ink-900">
+        <div class="mx-auto max-w-6xl px-4 py-12 md:py-16">
+          <h2
+            class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl"
+          >
             Questions people actually ask
           </h2>
-          <div class="mt-10 space-y-4">
+          <div class="mt-6 grid items-start gap-3 lg:grid-cols-2">
             <details
               v-for="faq in faqs"
               :key="faq.q"
-              class="group rounded-xl border border-ink-200 bg-white px-6 py-5 [&[open]]:shadow-sm"
+              class="group rounded-xl border border-ink-200 bg-white px-5 py-4 [&[open]]:shadow-sm"
             >
               <summary
                 class="cursor-pointer list-none font-semibold text-ink-900 marker:content-none"
@@ -362,7 +370,7 @@ function start(): void {
               </p>
             </details>
           </div>
-          <p class="mt-8 text-xs leading-relaxed text-ink-500">
+          <p class="mt-6 text-xs leading-relaxed text-ink-500">
             General information, not legal advice.
           </p>
         </div>
@@ -373,37 +381,33 @@ function start(): void {
         class="border-t border-ink-200 bg-brand-800"
         data-testid="closing-cta"
       >
-        <div class="mx-auto max-w-3xl px-4 py-20 text-center">
-          <h2 class="text-3xl font-bold tracking-tight text-white">
-            Draft one and see for yourself.
-          </h2>
-          <p class="mx-auto mt-4 max-w-xl text-brand-100">
-            It takes a few minutes, and you read the real document before you
-            decide anything.
-          </p>
+        <div
+          class="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-10 md:flex-row md:items-center md:justify-between"
+        >
+          <div>
+            <h2 class="text-2xl font-bold tracking-tight text-white">
+              Draft one and see for yourself.
+            </h2>
+            <p class="mt-1 text-brand-100">
+              It takes a few minutes, and you read the real document before you
+              decide anything.
+            </p>
+          </div>
           <button
             type="button"
-            class="mt-8 rounded-lg bg-accent-500 px-7 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
+            class="shrink-0 rounded-lg bg-accent-500 px-7 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
             data-testid="cta-start"
             @click="start"
           >
             Build my agreement
           </button>
-          <p class="mt-6 text-sm text-brand-200">
-            Questions? Write to
-            <a
-              class="font-semibold text-white underline"
-              :href="`mailto:${CONTACT_EMAIL}`"
-              >{{ CONTACT_EMAIL }}</a
-            >.
-          </p>
         </div>
       </section>
     </main>
 
     <footer class="border-t border-ink-200 bg-white">
       <div
-        class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-sm text-ink-500 md:flex-row md:items-center md:justify-between"
+        class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 text-sm text-ink-500 md:flex-row md:items-center md:justify-between"
       >
         <p>&copy; 2026 AgreementMitra. Online rental agreements for India.</p>
         <div class="flex items-center gap-4">
