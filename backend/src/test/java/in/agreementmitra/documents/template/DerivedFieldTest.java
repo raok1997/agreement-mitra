@@ -21,10 +21,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /**
- * Derived fields ({@code source: derived}), change {@code
- * derived-tenancy-term}: the declaration binds, the field stays in the
- * capture form but read-only, a submitted value is discarded, and the term the document states is
- * always computed from the dates -- on the preview path as well as the generate path.
+ * Derived fields ({@code source: derived}), change {@code derived-tenancy-term}: the declaration
+ * binds, the field stays in the capture form but read-only, a submitted value is discarded, and the
+ * term the document states is always computed from the dates -- on the preview path as well as the
+ * generate path.
  *
  * <p>The parity case is the reason this change exists: the live preview used to compile the TYPED
  * {@code durationMonths} while the generated draft compiled the date-derived one, so an agreement
