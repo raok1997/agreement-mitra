@@ -13,7 +13,14 @@
 //     which is pinned to the terms and the backend fee config by test;
 //   - no "legally valid" or "reviewed by counsel" claim, and no raw-HTML binding.
 // The FAQ is mirrored as FAQPage JSON-LD in index.html; LandingPage.test.ts holds them equal.
+//
+// Layout (openspec landing-page-progressive-disclosure): main holds four sections -- hero, the
+// #price band, #how, and the "Before you decide" panel, whose tabs are the #guarantees, #status
+// and #faq panels. Every panel stays in the DOM (`hidden`, never v-if), and a panel element carries
+// no display utility class, because one would beat Tailwind's [hidden] rule and show all three.
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import wordmark from "../assets/logo-wordmark.svg";
+import { PANEL_IDS, panelForHash, type PanelId } from "./landingPanels";
 import {
   CONTACT_EMAIL,
   GUARANTEES,
@@ -32,26 +39,31 @@ const retryCharge = formatRupees(GUARANTEES.signerRetryChargeRupees);
 const perDay = formatRupees(GUARANTEES.delayCreditPerDayRupees);
 const cap = formatRupees(GUARANTEES.delayCreditCapRupees);
 
+// Icons are Heroicons-outline-style 24px stroke paths, inlined so four glyphs add no dependency.
 const steps = [
   {
     n: "1",
     title: "Answer a short form",
     body: "Parties, property, rent, deposit and dates.",
+    icon: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
   },
   {
     n: "2",
     title: "Watch the agreement build itself",
     body: "The actual document updates as you type, so you know exactly what you are getting.",
+    icon: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   },
   {
     n: "3",
     title: "Pay, and we stamp it",
     body: "We buy the stamp certificate and attach it to your agreement.",
+    icon: "M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z",
   },
   {
     n: "4",
     title: "Sign with Aadhaar OTP",
     body: "Both parties sign from their phones. The signed PDF and its audit trail come to your inbox.",
+    icon: "M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3M9.75 11.25l1.5 1.5 3-3",
   },
 ];
 
@@ -115,13 +127,121 @@ const faqs = [
   },
 ];
 
+// One heading style for every visible section, a clear step below the h1 (design D2 type scale).
+const SECTION_HEADING =
+  "text-xl font-bold tracking-tight text-ink-900 md:text-2xl";
+
+const TAB_LABELS: Record<PanelId, string> = {
+  guarantees: "If something goes wrong",
+  status: "What's live",
+  faq: "Questions",
+};
+
+const active = ref<PanelId>("guarantees");
+const decideEl = ref<HTMLElement | null>(null);
+const tabEls: Partial<Record<PanelId, HTMLElement>> = {};
+
+function setTabEl(id: PanelId, el: unknown): void {
+  if (el instanceof HTMLElement) tabEls[id] = el;
+  else delete tabEls[id];
+}
+
 function start(): void {
   emit("start");
 }
+
+// replaceState, never a push: App.vue routes on popstate, and a tab switch is not a page.
+function setHash(id: PanelId): void {
+  history.replaceState(history.state, "", `#${id}`);
+}
+
+function selectTab(id: PanelId): void {
+  active.value = id;
+  setHash(id);
+}
+
+function onTabKeydown(event: KeyboardEvent): void {
+  // Alt+Arrow is browser Back/Forward on Windows and Linux; a modified key is not ours.
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const last = PANEL_IDS.length - 1;
+  const current = PANEL_IDS.indexOf(active.value);
+  let next: number;
+  switch (event.key) {
+    case "ArrowRight":
+      next = current === last ? 0 : current + 1;
+      break;
+    case "ArrowLeft":
+      next = current === 0 ? last : current - 1;
+      break;
+    case "Home":
+      next = 0;
+      break;
+    case "End":
+      next = last;
+      break;
+    default:
+      return;
+  }
+  event.preventDefault();
+  const id = PANEL_IDS[next];
+  selectTab(id);
+  tabEls[id]?.focus();
+}
+
+async function openPanel(id: PanelId): Promise<void> {
+  active.value = id;
+  await nextTick();
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  // Optional-called: jsdom has no scrollIntoView. It returns void, so there is nothing to catch.
+  decideEl.value?.scrollIntoView?.({
+    block: "start",
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
+}
+
+// The browser would scroll to a still-hidden panel before Vue un-hides it, so a plain primary click
+// on a panel link is taken over. Anything a visitor means for a new tab is left alone.
+function onPageClick(event: MouseEvent): void {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  )
+    return;
+  const anchor =
+    event.target instanceof Element ? event.target.closest("a") : null;
+  if (!anchor || anchor.hasAttribute("download")) return;
+  const target = anchor.getAttribute("target");
+  if (target && target !== "_self") return;
+  const id = panelForHash(anchor.getAttribute("href") ?? "");
+  if (!id) return;
+  event.preventDefault();
+  setHash(id);
+  void openPanel(id);
+}
+
+function onHashChange(): void {
+  const id = panelForHash(location.hash);
+  if (id) void openPanel(id);
+}
+
+onMounted(() => {
+  onHashChange();
+  window.addEventListener("hashchange", onHashChange);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("hashchange", onHashChange);
+});
 </script>
 
 <template>
-  <div class="min-h-screen bg-white text-ink-800">
+  <div class="min-h-screen bg-white text-ink-800" @click="onPageClick">
     <!-- Nav -->
     <header
       class="sticky top-0 z-20 border-b border-ink-200 bg-white/90 backdrop-blur"
@@ -159,74 +279,34 @@ function start(): void {
 
     <main>
       <!-- Hero -->
-      <section
-        class="relative overflow-hidden border-b border-ink-200 bg-ink-50"
-        data-testid="hero"
-      >
+      <section class="relative overflow-hidden bg-white" data-testid="hero">
         <div
           class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent-200/40 blur-3xl"
           aria-hidden="true"
         />
-        <div class="relative mx-auto max-w-6xl px-4 py-14 md:py-20">
-          <div class="max-w-2xl">
+        <div class="relative mx-auto max-w-6xl px-4 py-10 md:py-12">
+          <div class="max-w-3xl">
             <h1
-              class="text-4xl font-bold leading-tight tracking-tight text-ink-900 md:text-5xl"
+              class="text-3xl font-bold leading-[1.15] tracking-tight text-ink-900 md:text-[2.75rem]"
             >
               Rental agreements, with nothing hidden until checkout.
             </h1>
-            <p class="mt-5 text-lg leading-relaxed text-ink-600">
+            <p
+              class="mt-4 max-w-2xl text-base leading-relaxed text-ink-600 md:text-lg"
+            >
               Build a proper Indian rental agreement in a few minutes and read
               the real document as it is written. No login to begin.
             </p>
-            <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <button
-                type="button"
-                class="rounded-lg bg-accent-500 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
-                data-testid="hero-start"
-                @click="start"
-              >
-                Build my agreement
-              </button>
-              <a
-                class="rounded-lg border border-ink-300 bg-white px-6 py-3 text-center text-base font-semibold text-ink-700 transition hover:bg-ink-50"
-                href="#how"
-              >
-                See how it works
-              </a>
-            </div>
+            <button
+              type="button"
+              class="mt-6 rounded-lg bg-accent-500 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
+              data-testid="hero-start"
+              @click="start"
+            >
+              Build my agreement
+            </button>
           </div>
         </div>
-      </section>
-
-      <!-- How it works -->
-      <section
-        id="how"
-        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-12 md:py-16"
-      >
-        <h2 class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl">
-          How it works
-        </h2>
-        <p class="mt-3 max-w-2xl text-ink-600">
-          Four steps, and you can read the document at every one of them.
-        </p>
-        <ol class="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <li
-            v-for="step in steps"
-            :key="step.n"
-            class="rounded-xl border border-ink-200 bg-white p-6 shadow-sm"
-          >
-            <span
-              class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-sm font-bold text-brand-700"
-              aria-hidden="true"
-            >
-              {{ step.n }}
-            </span>
-            <h3 class="mt-4 font-semibold text-ink-900">{{ step.title }}</h3>
-            <p class="mt-2 text-sm leading-relaxed text-ink-600">
-              {{ step.body }}
-            </p>
-          </li>
-        </ol>
       </section>
 
       <!-- Price -->
@@ -234,173 +314,265 @@ function start(): void {
         id="price"
         class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
       >
-        <div class="mx-auto max-w-6xl px-4 py-12 md:py-16">
-          <h2
-            class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl"
-          >
-            What it costs
-          </h2>
-          <div
-            class="mt-6 grid gap-6 rounded-xl border border-ink-200 bg-white p-6 shadow-sm md:grid-cols-2 md:gap-10"
-          >
-            <div>
-              <p class="text-2xl font-bold text-ink-900">
-                {{ total }} when your stamp duty is {{ includedDuty }} or less
-              </p>
-              <p class="mt-4 text-sm font-semibold text-ink-800">Included:</p>
-              <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-600">
-                <li v-for="item in inclusions" :key="item">{{ item }}</li>
-              </ul>
-            </div>
-            <div class="space-y-3 text-sm leading-relaxed text-ink-600">
-              <p>
-                Where the duty is higher, you see the stamp amount and the exact
-                total before you pay. There is never a second bill.
-              </p>
-              <p>Drafting, previewing and downloading a draft are free.</p>
-              <p class="text-ink-500">
-                Available where we stamp and eSign. See
-                <a class="font-medium text-brand-700 underline" href="#status"
-                  >Status</a
-                >.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Guarantees -->
-      <section
-        id="guarantees"
-        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-12 md:py-16"
-      >
-        <h2 class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl">
-          If something goes wrong
-        </h2>
-        <p class="mt-3 max-w-2xl text-ink-600">
-          These come from our terms of service, which are still a draft.
-        </p>
-        <div class="mt-8 grid gap-4 md:grid-cols-3">
-          <article
-            v-for="g in guarantees"
-            :key="g.section"
-            class="flex flex-col rounded-xl border border-ink-200 bg-white p-6 shadow-sm"
-            data-testid="guarantee"
-          >
-            <h3 class="text-lg font-semibold text-ink-900">{{ g.title }}</h3>
-            <p class="mt-3 text-sm leading-relaxed text-ink-600">
-              {{ g.body }}
-            </p>
-            <p class="mt-3 text-xs leading-relaxed text-ink-500">
-              {{ g.qualifier }}
-            </p>
-            <a
-              class="mt-4 text-sm font-medium text-brand-700 underline"
-              href="/terms"
-            >
-              Terms, section {{ g.section }}
-            </a>
-          </article>
-        </div>
-      </section>
-
-      <!-- Status board: the only statement of what is live (src/content/releaseStatus.ts) -->
-      <section
-        id="status"
-        class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
-      >
-        <div class="mx-auto max-w-6xl px-4 py-12 md:py-16">
-          <h2
-            class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl"
-          >
-            What is live today
-          </h2>
-          <p class="mt-2 text-sm text-ink-600">
-            We update this board the day anything changes.
-          </p>
-          <ul class="mt-6 grid gap-2 md:grid-cols-2">
-            <li
-              v-for="row in RELEASE_STATUS"
-              :key="row.label"
-              class="flex items-center justify-between gap-3 rounded-lg border border-ink-200 bg-white px-4 py-2.5"
-            >
-              <span class="text-sm font-medium text-ink-800">{{
-                row.label
-              }}</span>
-              <span
-                class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
-                :class="{
-                  'bg-success-50 text-success-700': row.state === 'live',
-                  'bg-accent-50 text-accent-700': row.state === 'soon',
-                  'bg-ink-100 text-ink-600': row.state === 'planned',
-                }"
-              >
-                {{ RELEASE_STATE_LABEL[row.state] }}
-              </span>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- FAQ -->
-      <section id="faq" class="scroll-mt-20">
-        <div class="mx-auto max-w-6xl px-4 py-12 md:py-16">
-          <h2
-            class="text-2xl font-bold tracking-tight text-ink-900 md:text-3xl"
-          >
-            Questions people actually ask
-          </h2>
-          <div class="mt-6 grid items-start gap-3 lg:grid-cols-2">
-            <details
-              v-for="faq in faqs"
-              :key="faq.q"
-              class="group rounded-xl border border-ink-200 bg-white px-5 py-4 [&[open]]:shadow-sm"
-            >
-              <summary
-                class="cursor-pointer list-none font-semibold text-ink-900 marker:content-none"
-                data-testid="faq-q"
-              >
-                {{ faq.q }}
-              </summary>
-              <p
-                class="mt-3 text-sm leading-relaxed text-ink-600"
-                data-testid="faq-a"
-              >
-                {{ faq.a }}
-              </p>
-            </details>
-          </div>
-          <p class="mt-6 text-xs leading-relaxed text-ink-500">
-            General information, not legal advice.
-          </p>
-        </div>
-      </section>
-
-      <!-- Closing CTA -->
-      <section
-        class="border-t border-ink-200 bg-brand-800"
-        data-testid="closing-cta"
-      >
+        <h2 class="sr-only">What it costs</h2>
         <div
-          class="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-10 md:flex-row md:items-center md:justify-between"
+          class="mx-auto grid max-w-6xl gap-3 px-4 py-5 md:grid-cols-2 md:items-center md:gap-10"
         >
           <div>
-            <h2 class="text-2xl font-bold tracking-tight text-white">
-              Draft one and see for yourself.
-            </h2>
-            <p class="mt-1 text-brand-100">
-              It takes a few minutes, and you read the real document before you
-              decide anything.
+            <p class="text-lg font-bold text-ink-900 md:text-xl">
+              {{ total }} when your stamp duty is {{ includedDuty }} or less
+            </p>
+            <div class="mt-1.5 text-sm text-ink-600">
+              <span class="mr-1.5 font-semibold text-ink-800">Included:</span>
+              <ul class="inline">
+                <li
+                  v-for="item in inclusions"
+                  :key="item"
+                  class="inline before:mx-1.5 before:text-ink-400 before:content-['·'] first:before:content-none"
+                >
+                  {{ item }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="space-y-1 text-sm leading-relaxed text-ink-600">
+            <p>
+              Where the duty is higher, you see the stamp amount and the exact
+              total before you pay. There is never a second bill.
+            </p>
+            <p>Drafting, previewing and downloading a draft are free.</p>
+            <p class="text-ink-500">
+              Available where we stamp and eSign. See
+              <a class="font-medium text-brand-700 underline" href="#status"
+                >Status</a
+              >.
             </p>
           </div>
-          <button
-            type="button"
-            class="shrink-0 rounded-lg bg-accent-500 px-7 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
-            data-testid="cta-start"
-            @click="start"
+        </div>
+      </section>
+
+      <!-- How it works -->
+      <section
+        id="how"
+        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-8 md:py-10"
+      >
+        <h2 :class="SECTION_HEADING">How it works</h2>
+        <p class="mt-1 text-sm text-ink-600 md:text-base">
+          Four steps, and you can read the document at every one of them.
+        </p>
+        <ol class="mt-6 grid gap-6 sm:grid-cols-2 md:grid-cols-4">
+          <li v-for="step in steps" :key="step.n">
+            <!-- Fixed row height, so a title that wraps does not push its body out of line. -->
+            <div class="flex items-center gap-3 md:min-h-12">
+              <div
+                class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700"
+              >
+                <svg
+                  aria-hidden="true"
+                  class="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    :d="step.icon"
+                  />
+                </svg>
+                <span
+                  class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white"
+                  aria-hidden="true"
+                >
+                  {{ step.n }}
+                </span>
+              </div>
+              <h3
+                class="text-sm font-semibold leading-snug text-ink-900 md:text-base"
+              >
+                {{ step.title }}
+              </h3>
+            </div>
+            <p class="mt-2 text-sm leading-relaxed text-ink-600">
+              {{ step.body }}
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <!-- Before you decide: guarantees, the status board and the FAQ as tabs -->
+      <section
+        id="decide"
+        ref="decideEl"
+        class="scroll-mt-20 border-t border-ink-200 bg-ink-50"
+        data-testid="decide"
+      >
+        <div class="mx-auto max-w-6xl px-4 py-8 md:py-10">
+          <h2 id="decide-heading" :class="SECTION_HEADING">
+            Before you decide
+          </h2>
+          <div
+            role="tablist"
+            aria-labelledby="decide-heading"
+            class="mt-4 flex gap-1 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_rgb(var(--am-ink-200))]"
+            @keydown="onTabKeydown"
           >
-            Build my agreement
-          </button>
+            <button
+              v-for="id in PANEL_IDS"
+              :id="`tab-${id}`"
+              :key="id"
+              :ref="(el) => setTabEl(id, el)"
+              type="button"
+              role="tab"
+              :aria-controls="id"
+              :aria-selected="active === id"
+              :tabindex="active === id ? 0 : -1"
+              class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold transition md:px-4"
+              :class="
+                active === id
+                  ? 'border-brand-600 text-brand-700'
+                  : 'border-transparent text-ink-600 hover:text-ink-900'
+              "
+              @click="selectTab(id)"
+            >
+              {{ TAB_LABELS[id] }}
+            </button>
+          </div>
+
+          <!-- Panel elements carry no display utility: see the header comment. -->
+          <div
+            id="guarantees"
+            role="tabpanel"
+            aria-labelledby="tab-guarantees"
+            :hidden="active !== 'guarantees'"
+            class="scroll-mt-36 pt-4"
+          >
+            <p class="max-w-2xl text-sm text-ink-600">
+              These come from our terms of service, which are still a draft.
+            </p>
+            <div class="mt-3 space-y-2">
+              <details
+                v-for="g in guarantees"
+                :key="g.section"
+                class="group rounded-xl border border-ink-200 bg-white px-4 py-3 [&[open]]:shadow-sm"
+                data-testid="guarantee"
+              >
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-ink-900 marker:content-none [&::-webkit-details-marker]:hidden"
+                >
+                  {{ g.title }}
+                  <svg
+                    aria-hidden="true"
+                    class="h-5 w-5 shrink-0 text-ink-400 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                    />
+                  </svg>
+                </summary>
+                <p class="mt-3 text-sm leading-relaxed text-ink-600">
+                  {{ g.body }}
+                </p>
+                <p class="mt-2 text-xs leading-relaxed text-ink-500">
+                  {{ g.qualifier }}
+                </p>
+                <a
+                  class="mt-3 inline-block text-sm font-medium text-brand-700 underline"
+                  href="/terms"
+                >
+                  Terms, section {{ g.section }}
+                </a>
+              </details>
+            </div>
+          </div>
+
+          <!-- Status board: the only statement of what is live (src/content/releaseStatus.ts) -->
+          <div
+            id="status"
+            role="tabpanel"
+            aria-labelledby="tab-status"
+            :hidden="active !== 'status'"
+            tabindex="0"
+            class="scroll-mt-36 pt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            <p class="text-sm text-ink-600">
+              We update this board the day anything changes.
+            </p>
+            <ul class="mt-3 grid gap-2 md:grid-cols-2">
+              <li
+                v-for="row in RELEASE_STATUS"
+                :key="row.label"
+                class="flex items-center justify-between gap-3 rounded-lg border border-ink-200 bg-white px-4 py-2"
+              >
+                <span class="text-sm font-medium text-ink-800">{{
+                  row.label
+                }}</span>
+                <span
+                  class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                  :class="{
+                    'bg-success-50 text-success-700': row.state === 'live',
+                    'bg-accent-50 text-accent-700': row.state === 'soon',
+                    'bg-ink-100 text-ink-600': row.state === 'planned',
+                  }"
+                >
+                  {{ RELEASE_STATE_LABEL[row.state] }}
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div
+            id="faq"
+            role="tabpanel"
+            aria-labelledby="tab-faq"
+            :hidden="active !== 'faq'"
+            class="scroll-mt-36 pt-4"
+          >
+            <div class="grid items-start gap-2 lg:grid-cols-2">
+              <details
+                v-for="faq in faqs"
+                :key="faq.q"
+                class="group rounded-xl border border-ink-200 bg-white px-4 py-3 [&[open]]:shadow-sm"
+              >
+                <summary
+                  class="flex cursor-pointer list-none items-start justify-between gap-3 font-semibold text-ink-900 marker:content-none [&::-webkit-details-marker]:hidden"
+                  data-testid="faq-q"
+                >
+                  {{ faq.q }}
+                  <svg
+                    aria-hidden="true"
+                    class="mt-0.5 h-5 w-5 shrink-0 text-ink-400 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                    />
+                  </svg>
+                </summary>
+                <p
+                  class="mt-3 text-sm leading-relaxed text-ink-600"
+                  data-testid="faq-a"
+                >
+                  {{ faq.a }}
+                </p>
+              </details>
+            </div>
+            <p class="mt-4 text-xs leading-relaxed text-ink-500">
+              General information, not legal advice.
+            </p>
+          </div>
         </div>
       </section>
     </main>

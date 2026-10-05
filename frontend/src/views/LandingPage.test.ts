@@ -1,10 +1,84 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import { mount, type VueWrapper } from "@vue/test-utils";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  enableAutoUnmount,
+  flushPromises,
+  mount,
+  type VueWrapper,
+} from "@vue/test-utils";
+import { nextTick } from "vue";
 import LandingPage from "./LandingPage.vue";
+import { PANEL_IDS } from "./landingPanels";
 import { CONTACT_EMAIL } from "../content/promises";
 import { RELEASE_STATE_LABEL, RELEASE_STATUS } from "../content/releaseStatus";
+
+// File-global: every mount is unmounted after its test, so no hashchange listener outlives it.
+enableAutoUnmount(afterEach);
+
+afterEach(() => {
+  history.replaceState({}, "", "/");
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  vi.unstubAllGlobals();
+});
+
+// jsdom has no scrollIntoView; the stub records which element was scrolled and how.
+function mountLanding({ hash = "", attach = false } = {}): {
+  wrapper: VueWrapper;
+  scrollIntoView: ReturnType<typeof vi.fn>;
+} {
+  history.replaceState({}, "", `/${hash}`);
+  const scrollIntoView = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  const wrapper = mount(LandingPage, attach ? { attachTo: document.body } : {});
+  return { wrapper, scrollIntoView };
+}
+
+// trigger() cannot hand back the event, so dispatch by hand and read defaultPrevented after.
+function clickLink(el: Element, init: MouseEventInit = {}): MouseEvent {
+  const event = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    ...init,
+  });
+  el.dispatchEvent(event);
+  return event;
+}
+
+// jsdom navigates on an unprevented anchor click (on a timer, whatever the modifiers), which would
+// push an entry and fire hashchange into a later test. This records whether the component prevented
+// the click -- it runs after the page's own handler -- and then stops the navigation itself.
+function recordPrevented(): { prevented: boolean[]; stop: () => void } {
+  const prevented: boolean[] = [];
+  const listener = (e: Event): void => {
+    prevented.push(e.defaultPrevented);
+    e.preventDefault();
+  };
+  window.addEventListener("click", listener);
+  return {
+    prevented,
+    stop: () => window.removeEventListener("click", listener),
+  };
+}
+
+function pressKey(
+  el: Element,
+  key: string,
+  init: KeyboardEventInit = {},
+): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    ...init,
+    key,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
+  return event;
+}
+
+const selectedTab = (wrapper: VueWrapper): string | undefined =>
+  wrapper.find('[role="tab"][aria-selected="true"]').attributes("id");
 
 // The FAQ block is duplicated on purpose: the visible copy lives in LandingPage.vue, and a
 // static copy lives in index.html as schema.org FAQPage markup so crawlers can read it
@@ -102,11 +176,11 @@ describe("LandingPage", () => {
       "Rental agreements, with nothing hidden until checkout.",
     );
 
-    // All three entry points (nav, hero, closing) must reach the builder, not just the hero.
-    for (const id of ["nav-start", "hero-start", "cta-start"]) {
+    // Both entry points (the sticky nav and the hero) must reach the builder, not just the hero.
+    for (const id of ["nav-start", "hero-start"]) {
       await wrapper.find(`[data-testid="${id}"]`).trigger("click");
     }
-    expect(wrapper.emitted("start")).toHaveLength(3);
+    expect(wrapper.emitted("start")).toHaveLength(2);
   });
 
   it("keeps the visible FAQ identical to the FAQPage JSON-LD in index.html", () => {
@@ -127,7 +201,7 @@ describe("LandingPage", () => {
     // ToS §2 points readers at "the status board on our home page", so the anchor is load-bearing.
     const wrapper = mount(LandingPage);
     expect(wrapper.find('nav a[href="#status"]').exists()).toBe(true);
-    expect(wrapper.find("section#status").exists()).toBe(true);
+    expect(wrapper.find('#status[role="tabpanel"]').exists()).toBe(true);
 
     expect(board(wrapper)).toEqual(
       RELEASE_STATUS.map((row) => [row.label, RELEASE_STATE_LABEL[row.state]]),
@@ -144,6 +218,7 @@ describe("LandingPage", () => {
       .map((el) => el.attributes("href"));
     expect(mailtos.length).toBeGreaterThan(0);
     expect(new Set(mailtos)).toEqual(new Set([`mailto:${CONTACT_EMAIL}`]));
+    expect(wrapper.find('footer a[href^="mailto:"]').exists()).toBe(true);
 
     const wrong = faqs(wrapper).find(
       (f) => f.q === "What happens if something goes wrong?",
@@ -151,25 +226,24 @@ describe("LandingPage", () => {
     expect(wrong?.a).toContain(CONTACT_EMAIL);
   });
 
-  it("holds exactly seven sections in the decided order", () => {
+  it("holds exactly four sections in the decided order", () => {
     const wrapper = mount(LandingPage);
     const main = wrapper.get("main").element;
     const sections = Array.from(main.children).filter(
       (el) => el.tagName === "SECTION",
     );
-    expect(sections).toHaveLength(7);
+    expect(sections).toHaveLength(4);
     const selectors = [
       '[data-testid="hero"]',
-      "#how",
       "#price",
-      "#guarantees",
-      "#status",
-      "#faq",
-      '[data-testid="closing-cta"]',
+      "#how",
+      '[data-testid="decide"]',
     ];
     selectors.forEach((sel, i) =>
       expect(sections[i].matches(sel), sel).toBe(true),
     );
+    expect(wrapper.find('[data-testid="closing-cta"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="cta-start"]').exists()).toBe(false);
   });
 
   describe("each recurring message has one owner", () => {
@@ -219,12 +293,16 @@ describe("LandingPage", () => {
     expect(wrapper.find('#price a[href="#status"]').exists()).toBe(true);
   });
 
-  it("shows three guarantees, each linked to the terms and carrying its qualifiers", () => {
+  it("shows three guarantees, each expandable, linked to the terms and carrying its qualifiers", () => {
     const wrapper = mount(LandingPage);
-    const cards = wrapper.findAll('#guarantees [data-testid="guarantee"]');
+    const cards = wrapper.findAll(
+      '#guarantees details[data-testid="guarantee"]',
+    );
     expect(cards).toHaveLength(3);
     for (const card of cards) {
+      expect(squash(card.get("summary").text())).not.toBe("");
       expect(card.find('a[href="/terms"]').exists()).toBe(true);
+      expect(card.attributes("open"), "collapsed by default").toBeUndefined();
     }
     const [certificate, signing, delay] = cards.map((c) => squash(c.text()));
 
@@ -305,5 +383,256 @@ describe("LandingPage", () => {
       "utf8",
     );
     expect(source).not.toContain("v-html");
+  });
+
+  describe("first screen", () => {
+    it("holds the headline, the sub-line and one control, with no image", () => {
+      const hero = mount(LandingPage).get('[data-testid="hero"]');
+
+      const h1s = hero.findAll("h1");
+      expect(h1s).toHaveLength(1);
+      expect(squash(h1s[0].text())).toBe(
+        "Rental agreements, with nothing hidden until checkout.",
+      );
+      expect(hero.text()).toContain("No login to begin");
+
+      const controls = hero.findAll("button, a");
+      expect(controls).toHaveLength(1);
+      expect(controls[0].attributes("data-testid")).toBe("hero-start");
+      expect(hero.find("img, picture, video").exists()).toBe(false);
+    });
+
+    it("has no animation in the source", () => {
+      const text = readFileSync(
+        resolve(process.cwd(), "src/views/LandingPage.vue"),
+        "utf8",
+      );
+      for (const token of ["animate-", "<video", "@keyframes", "<Transition"])
+        expect(text, token).not.toContain(token);
+    });
+
+    it("puts the price band and then the steps directly after the hero", () => {
+      const main = mount(LandingPage).get("main").element;
+      const sections = Array.from(main.children).filter(
+        (el) => el.tagName === "SECTION",
+      );
+      expect(sections[0].matches('[data-testid="hero"]')).toBe(true);
+      expect(sections[1].id).toBe("price");
+      expect(sections[2].id).toBe("how");
+    });
+
+    it("gives every visible section heading one style, a step below the h1", () => {
+      const wrapper = mount(LandingPage);
+      const headings = wrapper
+        .findAll("h2")
+        .filter((h) => !h.classes().includes("sr-only"));
+      expect(headings.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(headings.map((h) => h.attributes("class"))).size).toBe(1);
+
+      const h1Sizes = wrapper
+        .get("h1")
+        .classes()
+        .filter((c) => /(^|:)text-(\[|xs|sm|base|lg|\d?xl)/.test(c));
+      expect(h1Sizes.length).toBeGreaterThan(0);
+      for (const size of h1Sizes)
+        expect(headings[0].classes(), size).not.toContain(size);
+    });
+  });
+
+  it("shows How it works as four steps with icons and unchanged copy", () => {
+    const steps = mount(LandingPage).findAll("#how ol > li");
+    expect(steps.map((li) => squash(li.get("h3").text()))).toEqual([
+      "Answer a short form",
+      "Watch the agreement build itself",
+      "Pay, and we stamp it",
+      "Sign with Aadhaar OTP",
+    ]);
+    for (const li of steps)
+      expect(li.find('svg[aria-hidden="true"]').exists()).toBe(true);
+  });
+
+  describe("Before you decide panel", () => {
+    // Tailwind's preflight hides [hidden] with one attribute selector, which a display utility on
+    // the same element beats -- so a tab panel must carry none, under any variant.
+    const DISPLAY =
+      /^(block|flex|grid|contents|flow-root|list-item|hidden|inline(-\S+)?|table(-\S+)?|\[display:.*\])$/;
+    const utility = (token: string): string =>
+      token.replace(/^(?:[a-z0-9-]+(?:\[[^\]]*\])?:)*/, "").replace(/^!/, "");
+
+    it("strips variants before checking a class for a display utility", () => {
+      for (const token of ["md:grid", "!flex", "lg:!hidden", "[display:block]"])
+        expect(DISPLAY.test(utility(token)), token).toBe(true);
+      for (const token of ["scroll-mt-36", "pt-6", "focus-visible:ring-2"])
+        expect(DISPLAY.test(utility(token)), token).toBe(false);
+    });
+
+    it("opens the guarantees tab by default and keeps the others rendered but hidden", () => {
+      const wrapper = mount(LandingPage);
+      expect(
+        wrapper
+          .findAll('[role="tab"]')
+          .map((t) => [squash(t.text()), t.attributes("aria-selected")]),
+      ).toEqual([
+        ["If something goes wrong", "true"],
+        ["What's live", "false"],
+        ["Questions", "false"],
+      ]);
+      expect(wrapper.get("#guarantees").attributes("hidden")).toBeUndefined();
+      expect(wrapper.get("#status").attributes("hidden")).toBeDefined();
+      expect(wrapper.get("#faq").attributes("hidden")).toBeDefined();
+      expect(wrapper.findAll("#status li")).toHaveLength(RELEASE_STATUS.length);
+      expect(
+        wrapper.findAll('#faq [data-testid="faq-q"]').length,
+      ).toBeGreaterThan(0);
+    });
+
+    it("puts no display utility on a tab panel element", () => {
+      const panels = mount(LandingPage).findAll('[role="tabpanel"]');
+      expect(panels).toHaveLength(3);
+      for (const panel of panels) {
+        const tokens = (panel.attributes("class") ?? "")
+          .split(/\s+/)
+          .filter(Boolean);
+        for (const token of tokens)
+          expect(
+            DISPLAY.test(utility(token)),
+            `${panel.attributes("id")}: ${token}`,
+          ).toBe(false);
+      }
+    });
+
+    it("wires every tab to the panel it controls", () => {
+      const wrapper = mount(LandingPage);
+      const tablist = wrapper.get('[role="tablist"]');
+      expect(tablist.attributes("aria-labelledby")).toBe("decide-heading");
+      expect(squash(wrapper.get("#decide-heading").text())).toBe(
+        "Before you decide",
+      );
+      const tabs = tablist.findAll('[role="tab"]');
+      expect(tabs.map((t) => t.attributes("aria-controls"))).toEqual([
+        ...PANEL_IDS,
+      ]);
+      for (const tab of tabs) {
+        const panel = wrapper.get(`#${tab.attributes("aria-controls")}`);
+        expect(panel.attributes("role")).toBe("tabpanel");
+        expect(panel.attributes("aria-labelledby")).toBe(tab.attributes("id"));
+      }
+      expect(wrapper.get("#status").attributes("tabindex")).toBe("0");
+      expect(wrapper.get("#guarantees").attributes("tabindex")).toBeUndefined();
+      expect(wrapper.get("#faq").attributes("tabindex")).toBeUndefined();
+    });
+
+    it.each(PANEL_IDS)("opens the %s tab from the hash on load", async (id) => {
+      const { wrapper, scrollIntoView } = mountLanding({ hash: `#${id}` });
+      await flushPromises();
+      expect(selectedTab(wrapper)).toBe(`tab-${id}`);
+      expect(wrapper.get(`#${id}`).attributes("hidden")).toBeUndefined();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(
+        wrapper.get('[data-testid="decide"]').element,
+      );
+    });
+
+    it("scrolls instantly under reduced motion and smoothly otherwise", async () => {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({ matches: true })),
+      );
+      const reduced = mountLanding({ hash: "#status" });
+      await flushPromises();
+      expect(reduced.scrollIntoView.mock.calls[0][0]).toMatchObject({
+        behavior: "auto",
+      });
+      reduced.wrapper.unmount();
+      vi.unstubAllGlobals();
+
+      const smooth = mountLanding({ hash: "#status" });
+      await flushPromises();
+      expect(smooth.scrollIntoView.mock.calls[0][0]).toMatchObject({
+        behavior: "smooth",
+      });
+    });
+
+    it("opens a tab from an in-page link without adding a history entry", async () => {
+      const { wrapper, scrollIntoView } = mountLanding({ attach: true });
+      const decide = wrapper.get('[data-testid="decide"]').element;
+      const recorder = recordPrevented();
+      const length = history.length;
+      try {
+        const toStatus = clickLink(
+          wrapper.get('#price a[href="#status"]').element,
+        );
+        await flushPromises();
+        expect(toStatus.defaultPrevented).toBe(true);
+        expect(selectedTab(wrapper)).toBe("tab-status");
+        expect(location.hash).toBe("#status");
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(decide);
+
+        const toFaq = clickLink(wrapper.get('nav a[href="#faq"]').element);
+        await flushPromises();
+        expect(toFaq.defaultPrevented).toBe(true);
+        expect(selectedTab(wrapper)).toBe("tab-faq");
+        expect(location.hash).toBe("#faq");
+        expect(scrollIntoView).toHaveBeenCalledTimes(2);
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(decide);
+
+        expect(history.length).toBe(length);
+      } finally {
+        recorder.stop();
+      }
+    });
+
+    it("leaves a modified click to the browser", async () => {
+      const { wrapper } = mountLanding({ attach: true });
+      const recorder = recordPrevented();
+      try {
+        clickLink(wrapper.get('nav a[href="#faq"]').element, { metaKey: true });
+        await flushPromises();
+        expect(recorder.prevented).toEqual([false]);
+        expect(selectedTab(wrapper)).toBe("tab-guarantees");
+      } finally {
+        recorder.stop();
+      }
+    });
+
+    it("moves between tabs from the keyboard", async () => {
+      const { wrapper } = mountLanding({ attach: true });
+      const length = history.length;
+      (wrapper.get("#tab-guarantees").element as HTMLElement).focus();
+
+      const expected: [string, string][] = [
+        ["ArrowRight", "status"],
+        ["ArrowRight", "faq"],
+        ["ArrowRight", "guarantees"],
+        ["End", "faq"],
+        ["Home", "guarantees"],
+        ["ArrowLeft", "faq"],
+      ];
+      for (const [key, id] of expected) {
+        const event = pressKey(document.activeElement as Element, key);
+        await nextTick();
+        expect(event.defaultPrevented, key).toBe(true);
+        expect(selectedTab(wrapper), key).toBe(`tab-${id}`);
+        expect(document.activeElement?.id, key).toBe(`tab-${id}`);
+        expect(
+          wrapper.findAll('[role="tab"]').map((t) => t.attributes("tabindex")),
+          key,
+        ).toEqual(PANEL_IDS.map((p) => (p === id ? "0" : "-1")));
+        expect(location.hash, key).toBe(`#${id}`);
+      }
+      expect(history.length).toBe(length);
+    });
+
+    it("leaves a modified arrow key to the browser", async () => {
+      const { wrapper } = mountLanding({ attach: true });
+      const tab = wrapper.get("#tab-guarantees").element as HTMLElement;
+      tab.focus();
+      for (const mod of ["altKey", "ctrlKey", "metaKey"] as const) {
+        const event = pressKey(tab, "ArrowLeft", { [mod]: true });
+        await nextTick();
+        expect(event.defaultPrevented, mod).toBe(false);
+        expect(selectedTab(wrapper), mod).toBe("tab-guarantees");
+      }
+    });
   });
 });

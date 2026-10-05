@@ -1,8 +1,5 @@
-# landing-page Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change landing-page-release-copy. Update Purpose after archive.
-## Requirements
 ### Requirement: Each recurring message has one owning section
 The home page SHALL state each recurring selling point in exactly one section outside the FAQ:
 - no login to begin, in the hero;
@@ -139,62 +136,6 @@ A stamping row SHALL NOT be `live` while any stamp-duty rule file for its state 
 - **WHEN** the home page is rendered
 - **THEN** the board is the tab panel with `id="status"`, and the nav links to `#status`
 
-### Requirement: The FAQ is consistent with the rules engine and with its structured data
-The home page FAQ SHALL NOT state a registration threshold as applying in every state. It SHALL NOT use "the twelve-month rule" as a universal statement, and SHALL NOT answer the e-signature question with an unconditional "Yes". It SHALL include a question on what the service costs and a question on what happens if something goes wrong. The visible FAQ SHALL equal the FAQPage JSON-LD in `index.html`, question for question and answer for answer, in the same order.
-
-#### Scenario: The 11-month answer is state-relative
-- **GIVEN** the FAQ question "Why are most rental agreements in India for 11 months?"
-- **WHEN** its answer is read
-- **THEN** it contains "term longer than a year", "may require registration for shorter leases" and "Before you pay, we show whether your agreement may need registering"
-- **AND** none of "does not need to be registered", "simply does not need", "twelve-month rule" and "below that threshold" appears anywhere in the FAQ
-
-#### Scenario: Cost and something-goes-wrong questions exist
-- **GIVEN** the FAQ
-- **WHEN** its questions are listed
-- **THEN** "What does it cost?" and "What happens if something goes wrong?" are present, and "What does stamp duty cost?" is not
-
-#### Scenario: The e-signature answer is not an unconditional yes
-- **GIVEN** the FAQ question "Is an Aadhaar OTP signature legally valid?"
-- **WHEN** its answer is read
-- **THEN** it does not begin with "Yes"
-
-#### Scenario: Visible FAQ equals the JSON-LD
-- **GIVEN** the FAQ rendered under `[data-testid="faq-q"]` and `[data-testid="faq-a"]`
-- **WHEN** both are compared with the `FAQPage` node in `index.html`, whitespace collapsed
-- **THEN** the questions and answers are equal in content and order
-
-### Requirement: The home page makes no unearned legal claims
-The home page and the legal disclaimer SHALL NOT claim the agreement is "100% legally valid", legally guaranteed, or court- or government-approved. They SHALL NOT claim the template or agreement was reviewed by a lawyer or counsel until `template-counsel-signoff-gate` records that review. Neither SHALL render copy through `v-html`.
-
-#### Scenario: Forbidden phrases are absent
-- **GIVEN** the home page and `LegalDisclaimer` are rendered
-- **WHEN** their text is searched, ignoring case, for any of the following:
-  - "100%", "legally guaranteed", "guaranteed valid", "legally valid agreement";
-  - "court-approved", "government-approved";
-  - "reviewed by counsel", "reviewed by a lawyer", "lawyer-reviewed".
-- **THEN** none is found
-- **AND** neither component's source contains `v-html`
-
-### Requirement: The legal disclaimer leads with what the service stands behind
-`LegalDisclaimer` SHALL state, in this order:
-1. that the agreement's wording is AgreementMitra's;
-2. that the facts entered and the choices made are the customer's to check before signing;
-3. a short line that AgreementMitra is not a law firm, that no lawyer reviews the agreement for the customer's circumstances, and that this is not legal advice, linking to `/terms`.
-
-The on-preview screen notice (the `documents.footer.screen-notice` default) SHALL carry the same wording as plain text, with the link rendered as "terms of service at agreementmitra.com/terms".
-
-#### Scenario: Disclaimer order and content
-- **GIVEN** `LegalDisclaimer` is mounted in either variant
-- **WHEN** its text is read
-- **THEN** the sentences appear in this order: the wording-is-ours sentence, the facts-and-choices sentence, then "not a law firm", "no lawyer reviews" and "not legal advice"
-- **AND** the source of `LegalDisclaimer.vue` contains no `v-html`
-- **AND** the `legal-disclaimer-terms-link` points to `/terms`, and the root stays `print:hidden`
-
-#### Scenario: The preview notice matches
-- **GIVEN** the `documents.footer.screen-notice` default in `application.yml`, with its surrounding quotes removed
-- **WHEN** it is compared with the disclaimer's text after two changes: the link text is replaced by "terms of service at agreementmitra.com/terms", and whitespace is collapsed on both sides
-- **THEN** the two strings are equal
-
 ### Requirement: Landing entry points and test hooks are preserved
 The home page SHALL keep:
 - the `nav-start` and `hero-start` buttons, each emitting `start`;
@@ -217,6 +158,8 @@ Every `mailto:` link, and the support address in FAQ copy, SHALL use the single 
 - **GIVEN** the app is mounted at `/`
 - **WHEN** `hero-start` is clicked
 - **THEN** the route becomes `/start` and the template picker renders, with no backend list call made from the landing page
+
+## ADDED Requirements
 
 ### Requirement: The first screen is a complete first impression
 The hero SHALL be a single column holding, in order, the headline "Rental agreements, with nothing hidden until checkout.", the sub-line, and the `hero-start` button as its only control, with no image. The `#price` band SHALL be the section directly after the hero and `#how` the section after it. At a 1280×800 viewport, the price headline and all four step titles of `#how` SHALL be visible without scrolling. The visible section headings (`h2`) SHALL share one style, smaller than the `h1`.
@@ -310,4 +253,3 @@ The home page SHALL replace the separate guarantees, status and FAQ sections wit
 - **GIVEN** the home page is rendered
 - **WHEN** each tab's `aria-controls` and each panel's `aria-labelledby` are read
 - **THEN** every tab controls an existing panel id, and that panel is labelled by that tab's id
-

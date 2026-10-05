@@ -310,6 +310,30 @@ describe("App route switch", () => {
     wrapper.unmount();
   });
 
+  it("opens the landing page's Questions tab from a shared /#faq link", async () => {
+    // App routes on pathname only, so the hash survives to the landing page, which opens its tab.
+    window.history.replaceState({}, "", "/#faq");
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const wrapper = mount(App, { attachTo: document.body });
+    try {
+      await flushPromises();
+
+      expect(wrapper.get("#tab-faq").attributes("aria-selected")).toBe("true");
+      expect(wrapper.get("#faq").attributes("hidden")).toBeUndefined();
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(mockedList).not.toHaveBeenCalled();
+
+      await wrapper.find('[data-testid="hero-start"]').trigger("click");
+      await flushPromises();
+      expect(window.location.pathname).toBe("/start");
+      expect(wrapper.find('[data-testid="picker-list"]').exists()).toBe(true);
+    } finally {
+      wrapper.unmount();
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
   it("mounts the OAuth callback on /auth/callback rather than the marketing page", async () => {
     window.history.replaceState({}, "", "/auth/callback");
     const wrapper = mount(App);
