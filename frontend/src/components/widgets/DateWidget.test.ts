@@ -236,6 +236,25 @@ describe("DateWidget calendar picker", () => {
     }
   });
 
+  it("selects today from its Today button and marks today in the grid", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 4));
+    try {
+      const w = mountWidget("2026-01-08");
+      await w.get('[data-testid="date-picker-toggle-startDate"]').trigger("click");
+      await w.get('[data-testid="date-picker-next"]').trigger("click");
+      expect(w.find('[aria-current="date"]').exists()).toBe(false);
+      await w.get('[data-testid="date-picker-today"]').trigger("click");
+      expect(lastEmit(w)).toBe("2026-10-04");
+      expect(input(w).value).toBe("04/10/2026");
+      await w.setProps({ modelValue: "2026-10-04" });
+      await w.get('[data-testid="date-picker-toggle-startDate"]').trigger("click");
+      expect(w.get('[aria-current="date"]').attributes("data-iso")).toBe("2026-10-04");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stays within the accepted year range", async () => {
     const w = mountWidget("1900-01-15");
     await w.get('[data-testid="date-picker-toggle-startDate"]').trigger("click");

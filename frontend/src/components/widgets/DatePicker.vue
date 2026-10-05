@@ -43,6 +43,8 @@ function daysIn(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+const todayIso = iso(today());
+
 const selected = computed(() => {
   const p = parseIso(props.value);
   return p && p.year >= MIN_YEAR && p.year <= MAX_YEAR ? iso(p) : "";
@@ -126,7 +128,7 @@ onMounted(focusActive);
 
 <template>
   <div
-    class="mt-1 w-72 rounded border border-slate-300 bg-white p-2 shadow-lg"
+    class="mt-1 w-full max-w-72 rounded border border-slate-300 bg-white p-2 shadow-lg"
     :data-testid="`date-picker-${fieldKey}`"
     @keydown="onKeydown"
   >
@@ -178,12 +180,14 @@ onMounted(focusActive);
           <button
             v-if="day !== null"
             type="button"
-            class="h-8 w-8 rounded"
-            :class="
+            class="h-8 w-full rounded"
+            :class="[
               dayIso(day) === selected
                 ? 'bg-slate-800 text-white'
-                : 'hover:bg-slate-100'
-            "
+                : 'hover:bg-slate-100',
+              dayIso(day) === todayIso && 'font-semibold underline',
+            ]"
+            :aria-current="dayIso(day) === todayIso ? 'date' : undefined"
             :tabindex="day === active.day ? 0 : -1"
             :aria-label="dayLabel(day)"
             :data-iso="dayIso(day)"
@@ -193,6 +197,16 @@ onMounted(focusActive);
           </button>
         </div>
       </div>
+    </div>
+    <div class="mt-2 flex justify-end border-t border-slate-200 pt-2">
+      <button
+        type="button"
+        class="rounded px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        data-testid="date-picker-today"
+        @click="emit('select', todayIso)"
+      >
+        Today
+      </button>
     </div>
   </div>
 </template>
