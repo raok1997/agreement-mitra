@@ -86,7 +86,12 @@ lands, CI becomes the authoritative invoker and the task itself does not change.
 gate does not cover — it guards template content hashes, and the terms are a separate text with
 its own source. Whatever the gate grows into should cover both.
 
-_Status: not started._
+_Status: deferred past v1 (2026-10-05)._ The first release relies on the manual "Template
+sign-off checklist" in `docs/ROADMAP.md` instead: counsel reviews the rendered PDFs at a recorded
+git commit, and the release checks no template edit landed since. The placement above turned out
+not to work as written — agreements pin a hash of the assembled template model, not of the YAML
+files, so a raw-file hash would never match. The register row `template-counsel-signoff-gate`
+holds the revised design for when it is built.
 
 ### 1a. Implementing the pricing rule (and the National-template hazard under it)
 
@@ -309,7 +314,7 @@ Full scheduling is in `docs/ROADMAP.md`. Legal-posture work specifically:
 1. ~~Disclaimer + ToS draft (item 2)~~ — done 2026-09-07, brief Q6 updated with it
 2. **Send the brief.** The one remaining AWAITING PRODUCT INPUT clause is blocked on its
    answer, not on us
-3. Approval gate (item 1) — own CR, placement already decided above
+3. Approval gate (item 1) — manual checklist for v1 (`docs/ROADMAP.md`); automated gate after v1
 4. Revisit CI (CR-7) once items 1 and 2 land — two more gates whose whole value is being
    unmissable, and its own revisit trigger is approaching
 
