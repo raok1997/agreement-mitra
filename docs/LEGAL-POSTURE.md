@@ -185,11 +185,14 @@ Steps 0-2 have landed for Telangana through `state-stamp-duty-quoting` (with the
   no longer asked for it, a submitted value is discarded, and the stamped instrument states the
   attached certificate's duty amount instead.
 
-Step 3 is **partly** done: intake refuses a certificate below the paid-for stamp value (or, without a
-frozen quote, below the recomputed duty). The refund/absorb half -- when the certificate costs less
-or more than what was charged -- is still open and must land before the first external customer.
+Step 3 is **effectively** done: intake refuses a certificate below the paid-for stamp value (or,
+without a frozen quote, below the recomputed duty), and the price is the frozen chosen stamp value
+rather than an estimate -- so a difference in the customer's favour cannot reach intake and there is
+nothing to refund. A certificate costing **more** is absorbed (no second bill is ever raised); only
+recording that overspend is open, as a low-priority register row
+(`stamp-certificate-price-reconciliation`) that does not block the first external customer.
 
-_Status: steps 0-2 implemented for TG (pending counsel review of the figures); step 3 partial._
+_Status: steps 0-2 implemented for TG (pending counsel review of the figures); step 3 effectively done (overspend recording deferred)._
 
 ### 2. Put the disclaimer where the product is, and write terms of service
 
