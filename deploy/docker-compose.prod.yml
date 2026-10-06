@@ -1,5 +1,12 @@
-# Production stack for the Contabo VPS. Run from `deploy/`:
-#   docker compose -f docker-compose.prod.yml up -d --build
+# Production stack for the Contabo VPS.
+#
+# DEPLOYS GO THROUGH `deploy/deploy.sh <commit>` (docs/DEPLOYMENT.md section 4). It builds
+# `backend`, `caddy` and `gotenberg` as agreementmitra-<service>:<12-char commit hash>, so a build
+# never overwrites the image that is running and the previous tag stays a rollback target.
+# `deploy/.env` holds the running tag (DEPLOY_TAG=<tag>, written by the script, never by hand), so
+# a manual `docker compose -f docker-compose.prod.yml ps|logs|up -d <svc>` from `deploy/` uses
+# what is deployed. NEVER run a manual `--build`: it would build the checkout under the running
+# tag. Without deploy/.env (before the first scripted deploy) compose refuses to render.
 #
 # EXPOSURE MODEL: only caddy publishes ports. Postgres, MinIO, Gotenberg and the
 # API are reachable on the internal compose network and nowhere else -- there is
@@ -65,6 +72,7 @@ services:
     logging: *logging
 
   gotenberg:
+    image: agreementmitra-gotenberg:${DEPLOY_TAG:?set by deploy/deploy.sh in deploy/.env}
     build:
       context: ../docker/gotenberg
     restart: unless-stopped
@@ -89,6 +97,7 @@ services:
     logging: *logging
 
   backend:
+    image: agreementmitra-backend:${DEPLOY_TAG:?set by deploy/deploy.sh in deploy/.env}
     build:
       context: ../backend
     restart: unless-stopped
@@ -115,6 +124,7 @@ services:
     logging: *logging
 
   caddy:
+    image: agreementmitra-caddy:${DEPLOY_TAG:?set by deploy/deploy.sh in deploy/.env}
     build:
       # Repository root: the image needs frontend/ and deploy/Caddyfile.
       context: ..

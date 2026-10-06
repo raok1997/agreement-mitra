@@ -37,6 +37,10 @@ context: |
   - eSign is asynchronous; never block a request thread on a signature.
     Webhook drives completion; scheduled reconciliation is the fallback.
   - Keep `ModularityTests` green on every change.
+  - A change that adds or changes a production env var tags it in its
+    `deploy/env/*.env.example` template (`#@` line; grammar in
+    backend.env.example's header). `fixed` vs `setting` decides whether the
+    deploy refuses a server edit of it; an untagged key blocks every deploy.
 
   Hard constraints (non-negotiable):
   - Sandbox + dummy data only in this repo.
@@ -65,3 +69,5 @@ rules:
     - Exemption - a pure config/docs/harness change that adds no runnable behavior
       need not add unit/integration tests; record the exemption as a one-line note
       at the top of tasks.md stating why it applies.
+    - A change that adds or changes a production env var lists a task to tag it
+      in its `deploy/env/*.env.example` template (`#@` line).
