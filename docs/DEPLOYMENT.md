@@ -226,11 +226,29 @@ cd /opt/agreementmitra/deploy
 ./provision.sh secrets
 ```
 
-That seeds all three files, generates every random value, keeps the three
+That seeds all four files, generates every random value, keeps the three
 cross-file credential pairs in agreement (`POSTGRES_PASSWORD`/`DB_PASSWORD`,
-`MINIO_ROOT_USER`/`S3_ACCESS_KEY`, `MINIO_ROOT_PASSWORD`/`S3_SECRET_KEY`),
-`chmod 600`s them, and then prints the vendor credentials still blank with what
-each blank actually costs. Paste those in with `nano env/backend.env`.
+`MINIO_ROOT_USER`/`S3_ACCESS_KEY`, `MINIO_ROOT_PASSWORD`/`S3_SECRET_KEY`) and
+`chmod 600`s them. It then checks every key against its template tag (below) and,
+**on a terminal, asks for each one that fails**: a secret is read without echo,
+an optional key is left blank with Enter, a malformed value is asked again, and a
+`fixed` value that differs from the template is shown (server -> template) and
+replaced only on `y`. Files are rewritten atomically, `0600`; a typed value holding
+`$`, `#`, a quote or a backslash is stored single-quoted so compose reads it
+literally, and one holding a single quote is refused. It ends with a
+summary -- set, optional-blank, still failing -- and exits non-zero while
+anything still fails. Off a terminal it asks nothing and only reports.
+
+**This is the one interactive env step.** `deploy/deploy.sh` checks the same
+contract and refuses on a failure, but never asks: its `--dry-run` is the review.
+To check `backend.env` against a commit you are about to deploy rather than the
+checkout's template, the deploy prints the exact command, of the form:
+
+```sh
+d=/root/templates.<tag> && mkdir -p $d
+for f in backend postgres minio web-build; do git -C /opt/agreementmitra show <commit>:deploy/env/$f.env.example > $d/$f.env.example; done
+./provision.sh secrets --templates $d
+```
 
 Secrets are generated **on the server** and never anywhere else -- not on a
 workstation, not in a chat window, never committed.
@@ -242,15 +260,15 @@ variable the template carries but that file is missing, using the template's
 value -- then reports what it added. Existing values are never touched.
 
 This matters because a `backend.env` written against an older version of this
-runbook is missing whole features' worth of `[FIXED]` values (`PUBLIC_BASE_URL`,
+runbook is missing whole features' worth of fixed values (`PUBLIC_BASE_URL`,
 `PAYMENT_MODE`, `MAIL_*`, `ZOOP_*`, `RULES_STAMP_DUTY_ALLOW_UNREVIEWED`), and
 every one of them fails **silently** on the application default rather than at
 boot. Generating the secrets while leaving those absent would report success and
 fix nothing.
 
-Two of the backfilled values are business decisions rather than stack facts --
-`PAYMENT_MODE` and `RULES_STAMP_DUTY_ALLOW_UNREVIEWED` -- so the command warns
-about them explicitly. Review both before restarting.
+Some backfilled values are business decisions rather than stack facts -- they are
+the `setting` keys (`PAYMENT_MODE`, `RULES_STAMP_DUTY_ALLOW_UNREVIEWED`, ...).
+Review them before restarting.
 
 ### Re-running `secrets` never rotates anything
 
@@ -276,15 +294,26 @@ It is deliberately not duplicated here: the table that used to live in this
 section documented 27 of the 83 variables the app reads, and the gap is what
 let the traps below go unnoticed.
 
-Each entry in the template is tagged with its class:
+Every assigned key in the four templates carries a tag on the line directly above
+it -- the grammar and a "choosing a tag" guide are in `backend.env.example`'s
+header, and `deploy/test/templates.test.sh` (and the deploy itself) refuse an
+untagged key:
 
-| Class | Meaning |
-|---|---|
-| `[FIXED]` | Correct as written for this compose stack. Do not change. |
-| `[GENERATED]` | Created on the server by `provision.sh secrets`. Never copied from a laptop. |
-| `[VENDOR]` | Issued by a third party. The only class legitimately copied in from elsewhere. |
+```
+#@ <secret|config> <fixed|setting|generated|vendor> <required|optional|required-if=KEY=VALUE> [pattern=<ERE>] [match=<file>:<KEY>]
+```
 
-The `[VENDOR]` distinction is the one that matters when porting config from a
+| Class | Meaning | Deploy-time check |
+|---|---|---|
+| `fixed` | Correct as written for this compose stack. | The server value must **equal** the template's; a difference fails the deploy (`drift`). A change comes from the template, via `provision.sh secrets`. |
+| `setting` | An operator choice; the template holds the default. | Checked against its `pattern` only. **Changed on the server, never fails the deploy** -- payments (`PAYMENT_MODE`), the eSign provider and host, unreviewed rules, draft retention, mail provider, log level. |
+| `generated` | Created on the server by `provision.sh secrets`. Never copied from a laptop. | Not blank, not a placeholder, 32+ alphanumerics, and equal to the key it `match`es in another file. |
+| `vendor` | Issued by a third party. The only class legitimately copied in from elsewhere. | Not blank when `required` (or when its `required-if` mode holds); never a placeholder; its `pattern` if any. |
+
+A `secret` value is never printed by any script; the deploy prints key names and
+verdicts only.
+
+The `vendor` distinction is the one that matters when porting config from a
 development machine. Vendor credentials (ZOOP, Razorpay, Zoho, Google) cannot be
 regenerated and must be copied; infrastructure credentials must **not** be --
 local `S3_ACCESS_KEY`/`S3_SECRET_KEY` are `minioadmin`/`minioadmin`, hardcoded in
@@ -377,23 +406,13 @@ reviewed templates loaded through a deliberate mechanism, not a dev seeder.
 
 ### What blank credentials actually do
 
-Every vendor integration tolerates absent credentials at startup, which is what
-makes a production bring-up possible before any vendor account exists:
-
-- **Google login:** `OauthConfig` logs a one-line WARN and disables the
-  handshake. The app boots and everything else works. (The comment in
-  `application.yml` claiming it "fails fast" is stale -- the code does not.)
-- **ZOOP** (the default `ESIGN_PROVIDER`): the adapter reads its config only at
-  request time, so startup is unaffected. Signing requests fail until a sandbox
-  account exists. `ZOOP_BASE_URL` defaults to the free self-serve **test** host
-  and should stay there -- the production host is never a default, so a
-  misconfigured deployment talks to the sandbox rather than burning real
-  signature credit.
-- **Leegality** is the rollback adapter, wired but unused while
-  `ESIGN_PROVIDER=zoop`. Its four variables can stay blank.
-- **Razorpay:** blank keys do not block startup either, but `PAYMENT_MODE`
-  defaults to `REQUIRED`, so checkout fails at request time. Set
-  `PAYMENT_MODE=DISABLED` to bring the box up before the gateway account exists.
+Every vendor integration tolerates absent credentials at **startup** -- they fail at
+request time instead -- so the deploy refuses them rather than the JVM. Which blanks
+are allowed is the template's `required`/`required-if`/`optional` tag on each key,
+with the cost of a blank in the comment above it: Google login is `optional`; ZOOP
+is required while `ESIGN_PROVIDER=zoop`, Leegality while `ESIGN_PROVIDER=leegality`,
+Razorpay while `PAYMENT_MODE=REQUIRED` (set `DISABLED` to bring the box up before
+the gateway account exists), the Zoho password while `MAIL_PROVIDER=smtp`.
 
 Repo policy remains sandbox and dummy data only.
 
@@ -405,6 +424,10 @@ the other defaults that are wrong for production.
 ---
 
 ## 4. Bring the stack up
+
+**First bring-up on a fresh box stays the manual procedure below.** Every later
+deploy goes through `deploy/deploy.sh` -- see "Deploying a change" at the end of
+this section.
 
 Before the Cloudflare zone is Active you have no Origin certificate, so generate
 a self-signed placeholder. Caddy needs *a* certificate at the configured paths;
@@ -418,6 +441,10 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
   -keyout certs/origin.key -out certs/origin.pem \
   -subj "/CN=agreementmitra.com"
 chmod 600 certs/origin.key
+
+# The compose file names each built image by the running tag and refuses to render
+# without it. The first bring-up writes it by hand; deploy/deploy.sh owns it afterwards.
+printf 'DEPLOY_TAG=%s\n' "$(git rev-parse --short=12 HEAD)" > .env && chmod 600 .env
 
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps
@@ -470,7 +497,7 @@ docker compose -f docker-compose.prod.yml exec postgres \
 The template query must return rows. An empty catalog means the `sandbox` profile
 is not active -- see the note in section 3.
 
-### MinIO image -- a manual gate on every deploy
+### MinIO image -- recorded and checked by every deploy
 
 `docker-compose.prod.yml` runs `minio/minio:latest`, which is **unpinned**
 (register row `prod-minio-image-pin`). Two facts make that dangerous:
@@ -485,24 +512,126 @@ is not active -- see the note in section 3.
   `Unknown xl header version 3`. So never "fix" the first problem by pinning
   lower than what is running.
 
-Until the pin lands, on every deploy:
-
-1. **Before** -- record the running release:
-
-   ```sh
-   docker compose -f docker-compose.prod.yml exec minio minio --version
-   ```
-
-2. **Do not pull MinIO.** `up -d --build` reuses the cached image; a
-   `docker compose pull`, or a fresh box, fetches whatever `latest` is today.
-3. **After** -- run the same command; the release must be unchanged. Then make
-   one real storage write: in the browser, start an agreement at `/start`, fill
-   it in and press **Generate**. A 500 there with MinIO up is this failure, not an
-   application bug.
+`deploy/deploy.sh` records the running release before the restart, never pulls
+(`up --pull never`), and fails the deploy (`postcheck:minio`) if the release
+differs afterwards; the release is on every deploy-log line. What stays manual,
+until the storage-health-indicator CR lands, is **one real storage write after
+every deploy**: in the browser, start an agreement at `/start`, fill it in and
+press **Generate**. A 500 there with MinIO up is this failure, not an application
+bug. Never run `docker compose pull` on this box -- it fetches whatever `latest`
+is today.
 
 If the recorded release is `RELEASE.2025-09-07` or later, storage is likely
 already broken -- check with step 3 before deploying anything else, and resolve
 `prod-minio-image-pin` first.
+
+### Deploying a change: `deploy/deploy.sh`
+
+One command deploys a commit from `main`, and refuses before touching anything
+when the box is not in a deployable state. Run it as root **inside `tmux`**: a
+dropped SSH session otherwise kills the deploy mid-way (the script warns, and the
+deploy log records the interruption).
+
+```sh
+tmux new -s deploy                      # or: tmux attach -t deploy
+cd /opt/agreementmitra
+git fetch origin && git show origin/main:deploy/deploy.sh | bash -s -- --dry-run <hash>
+git fetch origin && git show origin/main:deploy/deploy.sh | bash -s -- <hash>
+```
+
+That bootstrap line is the form to use; `deploy/deploy.sh <hash>` from the
+checkout behaves the same, because whatever copy is invoked re-executes
+**origin/main's** `deploy/deploy.sh` before trusting anything.
+
+**Trust boundary:** the deploy runs `main`'s head deploy code as root, and builds
+whatever commit on `main` you name. **Merge rights on `main` are root on
+production** -- branch protection on `main` is a production control, and closing
+SSH password auth (section 9, item 2) matters more once deploys are routine.
+
+What it does, each step only if the previous one passed:
+
+1. **Preflight** (`--dry-run` stops here and writes nothing):
+   - the checkout has no uncommitted tracked changes, and the build contexts
+     (`backend`, `frontend`, `docker`) hold no untracked or ignored files -- a
+     stray `V27__x.sql` would otherwise ship and run;
+   - the commit is on `origin/main` and does not track `deploy/env/*.env`,
+     `deploy/.env` or `deploy/certs/`;
+   - the **env contract** (section 3) holds for all four env files against the
+     **target commit's** templates. On a failure it prints key names and verdicts
+     and the `provision.sh secrets --templates` commands to fix them; it never asks;
+   - the compose subnet collides with no other Docker network, and the network is
+     unchanged (a change needs `--allow-downtime`: `down`, then `up`);
+   - `postgres` is running (so first bring-up stays manual);
+   - the database's applied migrations do not exceed the commit's;
+   - the commit is not older than what runs (`--allow-downgrade`; normally use
+     `rollback`) and is not what already runs (`--refresh-base`);
+   - no other deploy, rollback or accept holds the lock.
+2. **Dump** Postgres to `/root/backups/pre-deploy-<UTC>-<tag>.sql.gz` (verified
+   before it is kept; see section 8) and rotate old ones.
+3. **Check out** the commit -- the checkout is left **detached** at it -- and
+   **build** `backend`, `caddy` and `gotenberg` as `agreementmitra-<svc>:<12-char hash>`.
+   Earlier tags stay, so the previous build is a rollback target.
+4. **Start**: write `deploy/.env`, then `up -d --no-build --pull never --wait`.
+5. **Post-checks**: every service healthy; the database at the commit's highest
+   migration; Caddy at `10.203.17.10`; the MinIO release unchanged; no backend
+   line at level ERROR since start (only the count and logger names print).
+6. **Record** one line in `/var/lib/agreementmitra/deploys.log` (state, not a
+   rotatable log -- losing it means the next deploy re-seeds) and remove image tags
+   no longer needed for rollback.
+
+Then make the storage write above and run `deploy/smoke-prod.sh` from your
+workstation (section 5.6).
+
+**Flags.** `--dry-run`; `--allow-downtime` (network change); `--allow-downgrade`
+(deploy an older `main` commit); `--refresh-base` (pull fresh base images and
+rebuild under a distinct `<hash>-r<stamp>` tag -- do this **monthly**, since the
+Dockerfiles build from floating base tags).
+
+**`deploy/.env`** holds one line, `DEPLOY_TAG=<tag>`, written by the script before
+every `up`. Manual commands from `deploy/` (`ps`, `logs`, `exec`, `up -d <svc>`)
+therefore use what is deployed. Compose also reads any `COMPOSE_*` key in that
+file, and an exported `DEPLOY_TAG` in your shell overrides it. **Never run a
+manual `--build`**: it would build the checkout under the running tag.
+
+**Rollback:** `deploy/deploy.sh rollback` walks back through successful deploys:
+each run targets the previous good version (after a failed deploy, the last good
+one). It checks out the target, restarts without building or pulling, and runs
+the post-checks; if the target declares a different network (a later deploy changed
+it with `--allow-downtime`), run it as `deploy/deploy.sh --allow-downtime rollback`.
+After a deploy that failed part-way through `up` (services on different tags), it
+restarts the last good version. It **refuses** when the database holds a migration the target
+does not -- code-only rollback would then run old code on a newer schema -- and
+prints the dump taken before that migration. Restoring it is manual, and the dump
+is a same-disk rollback point that excludes object storage. It also refuses when
+a target image is missing or not the one recorded.
+
+**Accept:** when a deploy's (or a rollback's) only failure was the ERROR-line scan and the lines are
+benign, `deploy/deploy.sh accept` re-runs the other post-checks and records the
+deploy as good. A failed migration, MinIO or Caddy check can never be accepted --
+a wrong Caddy address breaks forwarded-header trust.
+
+**Moving an existing box onto the script (once):**
+
+1. Merge the firewall fix (f9855e7) and this tooling to `main`.
+2. On the server, discard the local `deploy/provision.sh` modification (it is
+   identical to `main` once f9855e7 lands; a copy is in
+   `/root/backups/provision-firewall-fix.patch`), and **confirm HEAD is the commit
+   the running images were built from** (`593086f`) -- the first deploy tags the
+   running images with HEAD's hash as the first rollback target.
+3. Run `./provision.sh secrets` on a terminal until its summary shows nothing
+   failing. Expect it to surface any `fixed` drift on the box (for example a
+   `DB_URL` without `logServerErrorDetail=false`) and the vendor keys still blank.
+4. Bootstrap a `--dry-run`; every check should pass, and no state is written.
+5. Deploy for real. It seeds the history from the running images, writes
+   `deploy/.env`, and moves the services to hash tags.
+6. Run `deploy/smoke-prod.sh`, then delete the hand-made
+   `pre-deploy-20261006-1423.sql.gz` once the scripted dump is verified.
+7. After three scripted deploys (the seed then leaves the keep-set), remove the
+   old `agreementmitra-*:latest` images by hand.
+
+To abandon the script: revert its commit, delete `deploy/.env` and
+`/var/lib/agreementmitra`, `git checkout main && git pull`, and use the manual
+procedure.
 
 ### Build gates are NOT run by the image builds
 
@@ -574,6 +703,10 @@ Application domain: `agreementmitra.com` (and add `www.agreementmitra.com`).
 
 Policy: **Allow**, with an `Emails` rule listing the addresses that may reach the
 site. Google or one-time-PIN are both fine as identity providers.
+
+**Not enforced on the apex today** (verified 2026-10-06: `https://agreementmitra.com/`
+answers `200` unauthenticated). `deploy/smoke-prod.sh` expects that and fails, naming
+Access, if a request is redirected to `*.cloudflareaccess.com`.
 
 ### 5.5 Webhook bypass -- do not skip this
 
@@ -661,20 +794,26 @@ certificate Caddy verifies) would close that gap and is not done yet.
    *Verify:* `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
    agreementmitra-caddy-1` prints `10.203.17.10`.
 
-**Outside-in check that a forged header does not become the source** (run from
-a machine outside Cloudflare's and the box's networks, once per deploy of items
-4 or 6). Use a cheap route and log no agreement id doing so:
+**Outside-in checks** -- run `deploy/smoke-prod.sh` from your workstation after
+every deploy. It checks the apex (200) and `www` (301), the 413 body ceiling, the
+`__Host-` / `Secure` / `SameSite=Lax` CSRF cookie, `cf-cache-status: DYNAMIC` on
+the API, that both webhook paths reach the application (401) rather than a
+challenge, and that no response carries `cf-mitigated`.
+
+**That a forged header does not become the source** (once per deploy of items 4
+or 6) is its opt-in last check:
 
 ```sh
-# Forge both headers with an address in a DIFFERENT /24 from your own.
-for i in $(seq 1 130); do
-  curl -s -o /dev/null https://agreementmitra.com/api/auth/me \
-    -H 'X-Forwarded-For: 198.51.100.23' -H 'Forwarded: for=198.51.100.23'
-done
-# On the server: the default-class lockout event must name YOUR /24 -- not
-# 198.51.100.0/24, not a Cloudflare range, not the Docker gateway.
-docker compose -f docker-compose.prod.yml logs backend | grep 'event=rate_limit_lockout' | tail -1
+deploy/smoke-prod.sh --forged-header
 ```
+
+It **locks your /24 out of default-class routes for about 5 minutes** (anyone
+sharing it too, carrier-NAT neighbours included) and asks before it starts
+(`--yes` skips the question). It sends 150 requests in parallel with
+`X-Forwarded-For` and `Forwarded` forged to `198.51.100.23`, then reads the
+lockout events since the burst over `ssh ${SMOKE_SSH:-agreementmitra-vps}`. It
+passes only when the lockout names **your** /24; one naming `198.51.100.0/24`
+fails (the application trusted a client header), and none at all is inconclusive.
 
 The event carries `route=default`, the redacted `source=` prefix and a count --
 never a URI or an agreement id.
@@ -687,7 +826,7 @@ From your workstation:
 
 ```sh
 dig +short agreementmitra.com          # Cloudflare IPs, NOT 217.217.250.135
-curl -sI https://agreementmitra.com/   # Access redirect or 200 once authenticated
+curl -sI https://agreementmitra.com/   # 200 (Access is not enforced on the apex today, see 5.4)
 curl -sI https://www.agreementmitra.com/   # 301 to the apex
 ```
 
@@ -779,6 +918,13 @@ survive in backups until they rotate out, which is why the product says a delete
 removed *from the service*, not that it is gone permanently.
 
 **Not yet implemented.** See the gaps below.
+
+**Pre-deploy dumps are not backups.** Every `deploy/deploy.sh` run writes
+`/root/backups/pre-deploy-<UTC>-<tag>.sql.gz` (`0600`, directory `0700`) and keeps
+the ten newest, deleting any older than 30 days unless a rollback target still
+needs it. They are **rollback points**: unencrypted, on the same disk as the
+database, without object storage, and the 30-day cap is applied only when a
+deploy runs. Other files in `/root/backups` are never touched by rotation.
 
 ---
 

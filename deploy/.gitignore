@@ -2,3 +2,5 @@
 # templates beside them are the tracked documentation of what is required.
 env/*.env
 certs/
+# The running image tag, written by deploy.sh (DEPLOY_TAG=<tag>). Server state, not config.
+/.env

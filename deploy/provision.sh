@@ -6,7 +6,10 @@
 #   ./provision.sh harden      OS updates, swap, fail2ban, auto-updates
 #   ./provision.sh docker      Docker CE + compose plugin, deploy user
 #   ./provision.sh firewall    ufw: deny inbound except SSH and Cloudflare-only 80/443
-#   ./provision.sh secrets     generate deploy/env/*.env (idempotent, never rotates)
+#   ./provision.sh secrets     generate deploy/env/*.env (idempotent, never rotates), then ask
+#                              for every key that breaks its template tag (the one interactive
+#                              env step; `--templates <dir>` checks against another commit's
+#                              four *.env.example, as the deploy's refusal prints)
 #   ./provision.sh ssh-keyonly DEFERRED: disable SSH password auth (see below)
 #   ./provision.sh all         harden + docker + firewall (NOT ssh-keyonly)
 #
@@ -354,6 +357,10 @@ UNIT
 # ---------------------------------------------------------------------------
 
 readonly ENV_DIR="env"
+# The shared env-key parser and the env contract (deploy/lib/checks.sh), the same code the deploy's
+# preflight runs, so the fill step and the deploy can never disagree about a key.
+# shellcheck source=lib/checks.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/checks.sh"
 
 gen_secret() {
   # 32 chars, alphanumeric only. Punctuation is deliberately stripped: these
@@ -363,79 +370,70 @@ gen_secret() {
 }
 
 # set_if_blank <file> <key> <value>
-# Fills KEY= only when it is present-and-empty or absent. Leaves a set value be.
+# Fills KEY= only when it is absent, blank or a placeholder -- the env contract's own rule
+# (env_blank / env_placeholder), so a template copy's __GENERATED_ON_SERVER__ gets generated.
+# Leaves a real value be. Writes through env_set: atomic, 0600, never a sed expression.
 set_if_blank() {
-  local file="$1" key="$2" value="$3"
-  if grep -qE "^${key}=.+" "$file" 2>/dev/null; then
+  local file="$1" key="$2" value="$3" current
+  if current="$(env_value "$file" "$key")" && ! env_blank "$current" && ! env_placeholder "$current"; then
     return 1
   fi
-  if grep -qE "^${key}=" "$file" 2>/dev/null; then
-    # Present but blank. Use a non-/ delimiter: generated values contain none,
-    # but file paths and URLs in other callers would.
-    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
-  else
-    printf '%s=%s\n' "$key" "$value" >>"$file"
-  fi
-  return 0
+  # env_value strips quotes, so a reused value is re-quoted for compose before it is written.
+  value="$(env_quote "$value")" || die "$key holds a single quote; set it by hand"
+  ENV_SET_VALUE="$value" env_set "$file" "$key"
 }
 
-# merge_template_defaults
+# merge_template_defaults <template> <target>
 #
-# Adds any assignment present in backend.env.example but ABSENT from backend.env,
+# Adds any assignment present in the template but ABSENT from the target,
 # carrying the template's value across. Existing values are never touched.
 #
 # This is what makes `secrets` an upgrade path and not just a first-run tool. A
 # backend.env written against an older runbook is missing whole features' worth
-# of [FIXED] values -- PUBLIC_BASE_URL, PAYMENT_MODE, MAIL_*, ZOOP_*,
+# of fixed values -- PUBLIC_BASE_URL, PAYMENT_MODE, MAIL_*, ZOOP_*,
 # RULES_STAMP_DUTY_ALLOW_UNREVIEWED -- and every one of them fails SILENTLY on
 # the application default rather than at boot. Generating the secrets while
 # leaving those absent would report success and fix nothing.
 merge_template_defaults() {
-  local template="${ENV_DIR}/backend.env.example"
-  local target="${ENV_DIR}/backend.env"
-  local key line added=0
-  local -a added_keys=()
-
+  local template="$1" target="$2" lines
   [ -f "$template" ] || return 0
+  lines="$(env_merge_lines "$template" "$target")"
 
-  while IFS= read -r line; do
-    case "$line" in
-      '#'*|'') continue ;;
-      *'='*) ;;
-      *) continue ;;
-    esac
-    key="${line%%=*}"
-    if ! grep -qE "^${key}=" "$target" 2>/dev/null; then
-      if [ "$added" -eq 0 ]; then
-        printf '\n# --- Added by `provision.sh secrets` from backend.env.example ---\n' \
-          >>"$target"
-      fi
-      printf '%s\n' "$line" >>"$target"
-      added_keys+=("$key")
-      added=$((added + 1))
-    fi
-  done <"$template"
-
-  if [ "$added" -eq 0 ]; then
-    log "backend.env already carries every variable in the template"
+  if [ -z "$lines" ]; then
+    log "$(basename "$target") already carries every variable in the template"
     return 0
   fi
 
-  log "Added ${added} missing variable(s) to backend.env from the template:"
-  printf '  %s\n' "${added_keys[@]}"
-  warn "Review these before restarting -- the template's values are correct for"
-  warn "this compose stack, but PAYMENT_MODE and"
-  warn "RULES_STAMP_DUTY_ALLOW_UNREVIEWED are deliberate business decisions."
+  printf '\n# --- Added by `provision.sh secrets` from %s ---\n%s\n' \
+    "$(basename "$template")" "$lines" >>"$target"
+  log "Added $(printf '%s\n' "$lines" | wc -l | tr -d ' ') missing variable(s) to $(basename "$target") from the template:"
+  printf '%s\n' "$lines" | sed 's/=.*//; s/^/  /'
 }
 
 secrets() {
+  local tdir="$ENV_DIR" name
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --templates)
+        [ $# -ge 2 ] || die "--templates needs a directory"
+        tdir="$2"
+        shift 2
+        ;;
+      *) die "secrets: unknown argument (usage: secrets [--templates <dir of the four *.env.example>])" ;;
+    esac
+  done
+
   [ -d "$ENV_DIR" ] || die "run this from the deploy/ directory (no ./${ENV_DIR})"
+  for name in backend postgres minio web-build; do
+    [ -f "$tdir/$name.env.example" ] || die "template $tdir/$name.env.example not found"
+  done
+  local backend_template="$tdir/backend.env.example"
   command -v openssl >/dev/null 2>&1 || die "openssl not found -- run './provision.sh harden' first"
 
   log "Generating service env files in ${ENV_DIR}/"
 
   local pg_password minio_user minio_password
-  local filled=0 skipped=0 key
+  local filled=0 skipped=0 key template failed=0
 
   # --- postgres.env -------------------------------------------------------
   touch "${ENV_DIR}/postgres.env"
@@ -446,7 +444,7 @@ secrets() {
     filled=$((filled + 1))
   else
     skipped=$((skipped + 1))
-    pg_password="$(grep -E '^POSTGRES_PASSWORD=' "${ENV_DIR}/postgres.env" | cut -d= -f2-)"
+    pg_password="$(env_value "${ENV_DIR}/postgres.env" POSTGRES_PASSWORD)"
     log "POSTGRES_PASSWORD already set -- reusing it for backend.env"
   fi
 
@@ -457,32 +455,31 @@ secrets() {
     filled=$((filled + 1))
   else
     skipped=$((skipped + 1))
-    minio_user="$(grep -E '^MINIO_ROOT_USER=' "${ENV_DIR}/minio.env" | cut -d= -f2-)"
+    minio_user="$(env_value "${ENV_DIR}/minio.env" MINIO_ROOT_USER)"
   fi
   minio_password="$(gen_secret)"
   if set_if_blank "${ENV_DIR}/minio.env" MINIO_ROOT_PASSWORD "$minio_password"; then
     filled=$((filled + 1))
   else
     skipped=$((skipped + 1))
-    minio_password="$(grep -E '^MINIO_ROOT_PASSWORD=' "${ENV_DIR}/minio.env" | cut -d= -f2-)"
+    minio_password="$(env_value "${ENV_DIR}/minio.env" MINIO_ROOT_PASSWORD)"
   fi
 
   # --- backend.env --------------------------------------------------------
-  # Seeded from the tracked template so every FIXED value and every explanatory
-  # comment comes across, and the VENDOR keys are left blank to be pasted in.
+  # Seeded from the tracked template so every fixed value and every explanatory
+  # comment comes across, and the vendor keys are left blank to be asked for below.
   if [ ! -f "${ENV_DIR}/backend.env" ]; then
-    [ -f "${ENV_DIR}/backend.env.example" ] \
-      || die "${ENV_DIR}/backend.env.example missing -- is this an old checkout?"
-    cp "${ENV_DIR}/backend.env.example" "${ENV_DIR}/backend.env"
+    (umask 077 && cp "$backend_template" "${ENV_DIR}/backend.env")
     log "Created ${ENV_DIR}/backend.env from the template"
   fi
 
-  merge_template_defaults
+  merge_template_defaults "$backend_template" "${ENV_DIR}/backend.env"
 
   # Credentials that must MATCH the two files above.
   set_if_blank "${ENV_DIR}/backend.env" DB_PASSWORD   "$pg_password"     >/dev/null || true
   set_if_blank "${ENV_DIR}/backend.env" S3_ACCESS_KEY "$minio_user"      >/dev/null || true
   set_if_blank "${ENV_DIR}/backend.env" S3_SECRET_KEY "$minio_password"  >/dev/null || true
+  pg_password="" minio_user="" minio_password=""
 
   # Peppers: application-side only, nothing else needs to agree with them.
   for key in AUTH_HASH_PEPPER ESIGN_WEBHOOK_KEY_PEPPER; do
@@ -498,44 +495,24 @@ secrets() {
   # is valid: the site then says "being issued". See web-build.env.example.
   touch "${ENV_DIR}/web-build.env"
 
+  # The other three templates' keys too, so no file is short a key the deploy checks for.
+  for name in postgres minio web-build; do
+    merge_template_defaults "$tdir/${name}.env.example" "${ENV_DIR}/${name}.env"
+  done
+
   chmod 600 "${ENV_DIR}"/*.env
   log "secrets: ${filled} value(s) generated, ${skipped} left as already set"
 
-  report_missing_vendor_keys
-}
-
-# The generated files are complete except for third-party credentials, which
-# cannot be generated. Name them explicitly rather than letting the operator
-# discover them from a request-time failure three features later.
-report_missing_vendor_keys() {
-  local key missing=()
-  for key in ZOOP_APP_ID ZOOP_API_KEY RAZORPAY_KEY_ID RZP_KEY_SECRET \
-             RZP_WEBHOOK_SECRET MAIL_SMTP_PASSWORD \
-             GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_SECRET; do
-    grep -qE "^${key}=.+" "${ENV_DIR}/backend.env" 2>/dev/null || missing+=("$key")
+  # --- the fill step: the env contract, asked for on a TTY, reported off one ---
+  # The same verdicts the deploy refuses on. Anything still failing exits non-zero.
+  [ -t 0 ] || log "stdin is not a terminal: reporting only, nothing will be asked"
+  for name in backend postgres minio web-build; do
+    template="$tdir/${name}.env.example"
+    env_fill "$template" "${ENV_DIR}/${name}.env" "$ENV_DIR" || failed=1
   done
 
-  if [ ${#missing[@]} -eq 0 ]; then
-    log "All vendor credentials are set."
-    return
-  fi
-
-  warn "Vendor credentials still blank in ${ENV_DIR}/backend.env:"
-  printf '  %s\n' "${missing[@]}" >&2
-  cat >&2 <<'NOTE'
-
-  These are issued by third parties and cannot be generated. Paste them in with
-  `nano env/backend.env`. What each blank actually costs:
-
-    ZOOP_APP_ID / ZOOP_API_KEY    eSign fails at request time (not at boot)
-    RAZORPAY_* / RZP_*            checkout fails while PAYMENT_MODE=REQUIRED;
-                                  set PAYMENT_MODE=DISABLED to bring the box up
-                                  without a gateway account
-    MAIL_SMTP_PASSWORD            no mail is sent; delivery reports success
-    GOOGLE_OAUTH_*                Sign in with Google disabled (WARN at boot);
-                                  anonymous use is unaffected
-
-NOTE
+  [ "$failed" -eq 0 ] || die "env files still break the contract above; re-run './provision.sh secrets' on a terminal"
+  log "secrets: every env file meets its template's contract"
 }
 
 main() {
@@ -544,11 +521,11 @@ main() {
     harden)      harden ;;
     docker)      docker_install ;;
     firewall)    firewall ;;
-    secrets)     secrets ;;
+    secrets)     shift; secrets "$@" ;;
     ssh-keyonly) harden_ssh ;;
     # Deliberately excludes ssh-keyonly; see the header comment.
     all)         harden; docker_install; firewall ;;
-    *)           die "usage: $0 {harden|docker|firewall|secrets|ssh-keyonly|all}" ;;
+    *)           die "usage: $0 {harden|docker|firewall|secrets [--templates <dir>]|ssh-keyonly|all}" ;;
   esac
 }
 

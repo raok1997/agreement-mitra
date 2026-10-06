@@ -1,0 +1,15 @@
+{
+  "networks": {
+    "default": {
+      "name": "agreementmitra_default",
+      "ipam": {
+        "config": [
+          {
+            "subnet": "10.203.17.0/24",
+            "ip_range": "10.203.17.128/25"
+          }
+        ]
+      }
+    }
+  }
+}

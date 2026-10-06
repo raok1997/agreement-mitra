@@ -1,0 +1,7 @@
+2026-10-06T13:16:10.120Z  INFO 1 --- [agreementmitra] [           main] i.a.AgreementMitraApplication            : Starting AgreementMitraApplication v0.0.1 using Java 21
+2026-10-06T13:16:18.891Z  INFO 1 --- [agreementmitra] [nio-8090-exec-1] i.a.signing.api.WebhookController        : rejected payload with ERROR status : ERROR in body
+2026-10-06T13:16:19.004Z ERROR 1 --- [agreementmitra] [nio-8090-exec-2] i.a.documents.GotenbergClient            : render failed for agreement 0b9c secret-message-text
+java.lang.IllegalStateException: boom ERROR
+	at in.agreementmitra.documents.GotenbergClient.render(GotenbergClient.java:42)
+2026-10-06T13:16:20.000Z ERROR 1 --- [agreementmitra] [nio-8090-exec-3] i.a.x.Bad;Name                           : hostile logger name
+2026-10-06T13:16:21.000Z  WARN 1 --- [agreementmitra] [nio-8090-exec-4] i.a.SecurityEvents                       : event=rate_limit_lockout route=default class=default source=203.0.113.0/24 count=121

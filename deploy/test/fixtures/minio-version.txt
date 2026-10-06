@@ -1,0 +1,4 @@
+minio version RELEASE.2023-09-04T19-57-37Z (commit-id=1c99fb106c3e1448ed92f8465d5695d055d432e7)
+Runtime: go1.19.12 linux/arm64
+License: GNU AGPLv3 <https://www.gnu.org/licenses/agpl-3.0.html>
+Copyright: 2015-2023 MinIO, Inc.

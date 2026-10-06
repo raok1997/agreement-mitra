@@ -128,6 +128,11 @@ authoritative stamp-quote notice; it was split out.
   that changes state is a CSRF hole.
 - Frontend: composition API + `<script setup>`; Tailwind utilities for layout
   (responsive is a CSS concern, not a JS one); keep API calls in `src/api/`.
+- **A new or changed production env var is tagged in its template.** Every assigned key in
+  `deploy/env/*.env.example` carries a `#@` line (grammar + "choosing a tag" in
+  `backend.env.example`'s header). `fixed` means the deploy refuses a server value that differs
+  from the template; `setting` means an operator may change it on the server. An untagged key fails
+  `deploy/test/templates.test.sh` and blocks every deploy.
 
 ## Security & data handling (non-negotiable)
 
