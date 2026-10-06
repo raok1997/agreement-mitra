@@ -345,13 +345,28 @@ public class PaymentOrderService {
         quote.amountPaise(),
         pricing.currency(),
         quote.breakdown().stream()
-            .map(l -> new StampQuoteResponse.Line(l.kind().name(), l.label(), lineOf(l).amount()))
+            .map(
+                l ->
+                    new StampQuoteResponse.Line(
+                        l.kind().name(), l.label(), lineOf(l).amount(), l.kind().isDelta()))
             .toList(),
         quote.registrationRequired(),
         new StampQuoteResponse.Rule(
             quote.rule().id(), quote.rule().legalReference(), quote.rule().reviewed()),
         StampOptions.UNDER_STAMP_WARNING_VERSION,
         options);
+  }
+
+  /**
+   * A frozen line's kind is a stored string; one no longer in {@link DutyLine.Kind} still shows,
+   * signed as a delta -- how every kind past BASE rendered before the server sent the flag.
+   */
+  private static boolean isDelta(String storedKind) {
+    try {
+      return DutyLine.Kind.valueOf(storedKind).isDelta();
+    } catch (IllegalArgumentException retired) {
+      return true;
+    }
   }
 
   private static StampQuoteResponse frozenQuote(
@@ -364,7 +379,9 @@ public class PaymentOrderService {
         frozen.dutyMinorUnits(),
         order.currency(),
         frozen.breakdown().stream()
-            .map(l -> new StampQuoteResponse.Line(l.kind(), l.label(), l.amount()))
+            .map(
+                l ->
+                    new StampQuoteResponse.Line(l.kind(), l.label(), l.amount(), isDelta(l.kind())))
             .toList(),
         frozen.registrationRequired(),
         new StampQuoteResponse.Rule(frozen.ruleId(), null, frozen.ruleReviewed()),

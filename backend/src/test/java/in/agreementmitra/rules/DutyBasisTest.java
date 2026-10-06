@@ -26,6 +26,22 @@ class DutyBasisTest {
   }
 
   @Test
+  void withoutEscalationDropsOnlyTheEscalation() {
+    DutyBasis.Builder common =
+        valid()
+            .rentFreeMonths(2)
+            .refundableDeposit(new BigDecimal("1"))
+            .nonRefundableDeposit(new BigDecimal("2"))
+            .advanceRent(new BigDecimal("3"))
+            .premium(new BigDecimal("4"))
+            .counterparts(3);
+    DutyBasis flat = common.build();
+
+    assertThat(common.escalation(new BigDecimal("5"), 12).build().withoutEscalation())
+        .isEqualTo(flat);
+  }
+
+  @Test
   void normalizesStateAndDefaultsOptionalAmountsToZero() {
     DutyBasis basis =
         DutyBasis.builder(

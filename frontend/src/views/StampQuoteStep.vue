@@ -91,9 +91,9 @@ function money(minorUnits: number | null | undefined): string {
 }
 
 // The breakdown is display-only formatting of the server's lines -- no amount is derived here except
-// the closing total, which is the server's dutyMinorUnits. QUANTITY and BASE lines are absolute;
-// every later kind is a signed delta on the running duty (DutyLine replay semantics), so deltas
-// carry an explicit sign and are never mistaken for a total.
+// the closing total, which is the server's dutyMinorUnits. The server marks each line's `delta`
+// (DutyLine replay semantics): deltas carry an explicit sign and are never mistaken for a total;
+// every other line (QUANTITY, BASE, and the informational ESCALATION) is an unsigned amount.
 const QUANTITY_LABELS: Record<string, string> = {
   TOTAL_RENT: "Total rent for the term",
   AVERAGE_ANNUAL_RENT: "Average annual rent",
@@ -114,12 +114,19 @@ const rupees = new Intl.NumberFormat("en-IN", {
 const grouped = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
 function isDelta(line: StampQuoteLine): boolean {
-  return line.kind !== "QUANTITY" && line.kind !== "BASE";
+  return line.delta;
+}
+
+function isEscalation(line: StampQuoteLine): boolean {
+  return line.kind === "ESCALATION";
 }
 
 function lineLabel(line: StampQuoteLine): string {
   if (line.kind === "QUANTITY") {
     return QUANTITY_LABELS[line.label] ?? sentenceCase(line.label);
+  }
+  if (isEscalation(line)) {
+    return `Includes ${line.label}`;
   }
   const label = line.label
     .replace(/\d{4,}(\.\d+)?/g, (n) => grouped.format(Number(n)))
@@ -207,6 +214,8 @@ function confirm(): void {
             v-for="(line, i) in quote.breakdown"
             :key="i"
             class="flex flex-wrap justify-between gap-2"
+            :class="{ 'pl-3 text-slate-500': isEscalation(line) }"
+            :data-testid="isEscalation(line) ? 'breakdown-escalation' : undefined"
           >
             <span>{{ lineLabel(line) }}</span>
             <span class="tabular-nums" data-testid="breakdown-amount">{{

@@ -13,6 +13,8 @@ export interface StampQuoteLine {
   label: string;
   /** A plain rupee decimal string from the server, e.g. "1300" or "0.4". */
   amount: string;
+  /** Whether the amount changes the running duty; set by the server, never inferred from kind. */
+  delta: boolean;
 }
 
 export interface StampQuoteOption {

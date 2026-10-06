@@ -24,8 +24,8 @@ function quote(over: Partial<StampQuote> = {}): StampQuote {
     dutyMinorUnits: 130000,
     currency: "INR",
     breakdown: [
-      { kind: "QUANTITY", label: "TOTAL_RENT", amount: "275000" },
-      { kind: "BASE", label: "0.4% of 325000", amount: "1300" },
+      { kind: "QUANTITY", label: "TOTAL_RENT", amount: "275000", delta: false },
+      { kind: "BASE", label: "0.4% of 325000", amount: "1300", delta: false },
     ],
     registrationRequired: true,
     rule: {
@@ -199,22 +199,25 @@ describe("StampQuoteStep", () => {
       quote({
         dutyMinorUnits: 50000,
         breakdown: [
-          { kind: "QUANTITY", label: "AVERAGE_ANNUAL_RENT", amount: "558000" },
-          { kind: "QUANTITY", label: "REFUNDABLE_DEPOSIT", amount: "150000" },
+          { kind: "QUANTITY", label: "AVERAGE_ANNUAL_RENT", amount: "558000", delta: false },
+          { kind: "QUANTITY", label: "REFUNDABLE_DEPOSIT", amount: "150000", delta: false },
           {
             kind: "BASE",
             label: "0.5% of 708000 (term 1-12 months)",
             amount: "3540",
+            delta: false,
           },
           {
             kind: "SLAB_MAXIMUM",
             label: "maximum 500 for term 1-12 months",
             amount: "-3040",
+            delta: true,
           },
           {
             kind: "ROUNDING",
             label: "rounded UP to 1 rupee(s)",
             amount: "0",
+            delta: true,
           },
         ],
       }),
@@ -229,5 +232,49 @@ describe("StampQuoteStep", () => {
       "Rounded up to 1 rupee(s)+₹0.00",
       "Stamp duty₹500.00",
     ]);
+  });
+
+  it("names the escalation as an unsigned amount beneath the quantity it moved", async () => {
+    const wrapper = await mountStep(
+      quote({
+        dutyMinorUnits: 100,
+        breakdown: [
+          { kind: "QUANTITY", label: "AVERAGE_ANNUAL_RENT", amount: "123", delta: false },
+          {
+            kind: "ESCALATION",
+            label: "5% rent escalation every 12 months",
+            amount: "3.00",
+            delta: false,
+          },
+          { kind: "BASE", label: "0.5% of 123 (term 12-60 months)", amount: "0.615", delta: false },
+          { kind: "ROUNDING", label: "rounded UP to 1 rupee(s)", amount: "0.385", delta: true },
+        ],
+      }),
+    );
+
+    const rows = wrapper.findAll("details li").map((li) => li.text());
+    expect(rows[1]).toBe("Includes 5% rent escalation every 12 months₹3.00");
+    expect(wrapper.get('[data-testid="breakdown-escalation"]').text()).not.toMatch(/[+−]/);
+  });
+
+  it("shows no escalation line when the breakdown has none", async () => {
+    const wrapper = await mountStep();
+
+    expect(wrapper.find('[data-testid="breakdown-escalation"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("escalation");
+  });
+
+  it("signs a line by the server's delta flag, not by its kind", async () => {
+    const wrapper = await mountStep(
+      quote({
+        breakdown: [
+          { kind: "FUTURE_INFO", label: "an informational fact", amount: "10", delta: false },
+          { kind: "FUTURE_ADJUST", label: "an adjustment", amount: "10", delta: true },
+        ],
+      }),
+    );
+
+    const amounts = wrapper.findAll('[data-testid="breakdown-amount"]').map((a) => a.text());
+    expect(amounts).toEqual(["₹10.00", "+₹10.00"]);
   });
 });

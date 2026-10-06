@@ -324,6 +324,100 @@ class DutyEngineTest {
     assertThat(planned.catalog().state()).isEqualTo("ZZ");
   }
 
+  private static final String AVERAGE_ANNUAL_SLAB =
+      "- { minMonths: 1, maxMonths: 3600, consideration: [AVERAGE_ANNUAL_RENT], ratePercent: \"1\" }";
+
+  @Test
+  void escalationThatRaisedTheConsiderationIsItemisedBetweenQuantityAndBase() {
+    DutyOutcome.Quoted q =
+        quoted(
+            engine(rule(AVERAGE_ANNUAL_SLAB, ""))
+                .quote(basis(24, "10").escalation(new BigDecimal("5"), 12).build()));
+
+    assertThat(q.breakdown())
+        .extracting(DutyLine::kind)
+        .containsExactly(
+            DutyLine.Kind.QUANTITY,
+            DutyLine.Kind.ESCALATION,
+            DutyLine.Kind.BASE,
+            DutyLine.Kind.ROUNDING);
+    assertThat(q.breakdown().get(0).amount()).isEqualByComparingTo("123");
+    DutyLine escalation = q.breakdown().get(1);
+    assertThat(escalation.label()).isEqualTo("5% rent escalation every 12 months");
+    assertThat(escalation.amount()).isEqualTo(new BigDecimal("3.00"));
+    assertThat(escalation.kind().isDelta()).isFalse();
+  }
+
+  @Test
+  void escalationUpliftCountsOnlyTheRentQuantity() {
+    String slab =
+        "- { minMonths: 1, maxMonths: 60, consideration: [AVERAGE_ANNUAL_RENT, REFUNDABLE_DEPOSIT],"
+            + " ratePercent: \"1\" }";
+
+    DutyOutcome.Quoted q =
+        quoted(
+            engine(rule(slab, ""))
+                .quote(
+                    basis(24, "10")
+                        .escalation(new BigDecimal("5"), 12)
+                        .refundableDeposit(new BigDecimal("1000"))
+                        .build()));
+
+    assertThat(q.breakdown())
+        .filteredOn(l -> l.kind() == DutyLine.Kind.ESCALATION)
+        .singleElement()
+        .satisfies(l -> assertThat(l.amount()).isEqualByComparingTo("3.00"));
+  }
+
+  @Test
+  void escalationWithRentFreeMonthsIsItemisedAgainstTheSameSchedule() {
+    DutyEngine engine = engine(rule(AVERAGE_ANNUAL_SLAB, ""));
+    DutyBasis escalated =
+        basis(24, "10").escalation(new BigDecimal("5"), 12).rentFreeMonths(2).build();
+
+    DutyOutcome.Quoted with = quoted(engine.quote(escalated));
+    DutyOutcome.Quoted without = quoted(engine.quote(escalated.withoutEscalation()));
+
+    BigDecimal uplift =
+        with.breakdown().get(0).amount().subtract(without.breakdown().get(0).amount());
+    assertThat(with.breakdown())
+        .filteredOn(l -> l.kind() == DutyLine.Kind.ESCALATION)
+        .singleElement()
+        .satisfies(l -> assertThat(l.amount()).isEqualByComparingTo(uplift));
+    assertThat(uplift).isPositive();
+  }
+
+  @Test
+  void escalationThatChangedNothingIsNotItemised() {
+    DutyEngine rate = engine(rule(AVERAGE_ANNUAL_SLAB, ""));
+    DutyEngine fixed = engine(rule("- { minMonths: 1, maxMonths: 60, fixedAmount: \"100\" }", ""));
+
+    assertThat(
+            quoted(rate.quote(basis(11, "10").escalation(new BigDecimal("5"), 12).build()))
+                .breakdown())
+        .extracting(DutyLine::kind)
+        .doesNotContain(DutyLine.Kind.ESCALATION);
+    assertThat(quoted(rate.quote(basis(24, "10").build())).breakdown())
+        .extracting(DutyLine::kind)
+        .doesNotContain(DutyLine.Kind.ESCALATION);
+    assertThat(
+            quoted(fixed.quote(basis(24, "10").escalation(new BigDecimal("5"), 12).build()))
+                .breakdown())
+        .extracting(DutyLine::kind)
+        .doesNotContain(DutyLine.Kind.ESCALATION);
+  }
+
+  @Test
+  void aDutyTooLargeToRepresentIsUnsupportedNotAnError() {
+    DutyEngine engine = engine(rule(AVERAGE_ANNUAL_SLAB, ""));
+
+    assertThat(
+            engine.quote(basis(3599, "99999999999").escalation(new BigDecimal("100"), 12).build()))
+        .isInstanceOfSatisfying(
+            DutyOutcome.Unsupported.class,
+            u -> assertThat(u.reason()).contains("too large to represent"));
+  }
+
   private static DutyBasis withState(DutyBasis b, String state) {
     return new DutyBasis(
         state,

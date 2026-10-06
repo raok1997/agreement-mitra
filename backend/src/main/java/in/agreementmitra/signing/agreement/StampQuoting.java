@@ -1,7 +1,10 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.documents.api.FormField;
+import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.documents.api.TemplateFormApi;
 import in.agreementmitra.rules.DutyBasis;
 import in.agreementmitra.rules.DutyOutcome;
 import in.agreementmitra.rules.StampDutyCalculator;
@@ -58,16 +61,19 @@ public class StampQuoting {
 
   private final AgreementRepository agreements;
   private final TemplateCatalogApi templateCatalog;
+  private final TemplateFormApi templateForms;
   private final StampDutyCalculator calculator;
   private final Clock clock;
 
   StampQuoting(
       AgreementRepository agreements,
       TemplateCatalogApi templateCatalog,
+      TemplateFormApi templateForms,
       StampDutyCalculator calculator,
       ObjectProvider<Clock> clock) {
     this.agreements = agreements;
     this.templateCatalog = templateCatalog;
+    this.templateForms = templateForms;
     this.calculator = calculator;
     this.clock = clock.getIfAvailable(() -> Clock.system(DutyBasisMapper.INDIA));
   }
@@ -88,7 +94,9 @@ public class StampQuoting {
     if (state == null) {
       return new Evaluation(Status.NO_JURISDICTION, null, Optional.empty(), Optional.empty(), null);
     }
-    Optional<DutyBasis> basis = DutyBasisMapper.from(agreement, dimensions.get(), clock);
+    TemplateDetail.Dimensions pinned = dimensions.get();
+    Optional<DutyBasis> basis =
+        DutyBasisMapper.from(agreement, pinned, () -> escalationDefault(pinned), clock);
     if (basis.isEmpty()) {
       return new Evaluation(
           Status.NO_JURISDICTION, state, Optional.empty(), Optional.empty(), null);
@@ -108,6 +116,31 @@ public class StampQuoting {
   /** Duty states a customer can currently be charged in; public by construction, never PII. */
   public Set<String> chargeableStates() {
     return calculator.chargeableStates();
+  }
+
+  /**
+   * The deed's fallback for a blank escalation: the field's default in the template the pinned
+   * dimensions resolve to, looked up with those dimensions exactly as carried (the catalog lookup
+   * is case-sensitive).
+   */
+  private DutyBasisMapper.DefaultLookup escalationDefault(TemplateDetail.Dimensions pinned) {
+    Optional<FormSchema> form = templateForms.findForm(pinned.state(), pinned.type());
+    if (form.isEmpty()) {
+      return DutyBasisMapper.DefaultLookup.NOT_FOUND;
+    }
+    return form.get().sections().stream()
+        .flatMap(section -> section.fields().stream())
+        .filter(field -> DutyBasisMapper.ESCALATION_PERCENT.equals(field.key()))
+        .findFirst()
+        .map(FormField::defaultValue)
+        .filter(StampQuoting::isIntegral)
+        .map(value -> DutyBasisMapper.DefaultLookup.of(((Number) value).longValue()))
+        .orElse(DutyBasisMapper.DefaultLookup.NONE);
+  }
+
+  /** INT defaults arrive as {@code Long}; any other type is not a whole-number default. */
+  private static boolean isIntegral(Object value) {
+    return value instanceof Long || value instanceof Integer;
   }
 
   /**

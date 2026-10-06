@@ -51,7 +51,7 @@ class RegistryLayerSource implements LayerSource {
                 TemplateStatus.PUBLISHED, state, type)
             .orElseThrow(
                 () ->
-                    new ResolutionException(
+                    new ResolutionException.NoPublishedTemplate(
                         "no published catalog template for the requested dimensions"));
 
     String root = normalizeRoot(entry.layerSetRef());

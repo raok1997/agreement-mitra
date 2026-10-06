@@ -146,6 +146,7 @@ final class DutyEngine implements StampDutyCalculator {
         lines.add(new DutyLine(DutyLine.Kind.QUANTITY, name, value));
         consideration = consideration.add(value);
       }
+      escalationLine(basis, rule, extension, slab, consideration).ifPresent(lines::add);
       duty = consideration.multiply(slab.ratePercent()).divide(HUNDRED, MathContext.DECIMAL128);
       lines.add(
           new DutyLine(
@@ -240,8 +241,14 @@ final class DutyEngine implements StampDutyCalculator {
                 + " rupee(s)",
             duty,
             rounded));
-    long amountPaise =
-        rounded.movePointRight(2).setScale(0, RoundingMode.UNNECESSARY).longValueExact();
+    long amountPaise;
+    try {
+      amountPaise =
+          rounded.movePointRight(2).setScale(0, RoundingMode.UNNECESSARY).longValueExact();
+    } catch (ArithmeticException e) {
+      return new DutyOutcome.Unsupported(
+          "rule " + rule.id() + " yields a duty too large to represent in paise");
+    }
 
     Optional<StampPaperCatalog> catalog = catalogFor(basis.dutyState(), basis.executionDate());
     if (catalog.isEmpty()) {
@@ -258,6 +265,43 @@ final class DutyEngine implements StampDutyCalculator {
         rule.registration().requiredFor(basis.termMonths()),
         plans,
         catalog.get().ref());
+  }
+
+  /**
+   * The rupees escalation added to the slab's consideration, as an informational line, or empty
+   * when it added nothing. Recomputed over the same quantity path without escalation; the precheck
+   * is not re-run because the basis already passed it.
+   */
+  private static Optional<DutyLine> escalationLine(
+      DutyBasis basis,
+      RuleSet rule,
+      DutyExtension extension,
+      RuleSet.Slab slab,
+      BigDecimal consideration) {
+    if (basis.escalationPercent().signum() == 0 || basis.escalationEveryMonths() == 0) {
+      return Optional.empty();
+    }
+    DutyBasis flat = basis.withoutEscalation();
+    Quantities quantities = Quantities.standard(flat, rule.params());
+    if (extension != null) {
+      quantities = extraQuantities(extension, quantities, flat, rule);
+    }
+    BigDecimal withoutEscalation = BigDecimal.ZERO;
+    for (String name : slab.consideration()) {
+      withoutEscalation = withoutEscalation.add(quantities.get(name));
+    }
+    BigDecimal uplift = consideration.subtract(withoutEscalation).setScale(2, RoundingMode.HALF_UP);
+    if (uplift.signum() <= 0) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new DutyLine(
+            DutyLine.Kind.ESCALATION,
+            plain(basis.escalationPercent())
+                + "% rent escalation every "
+                + basis.escalationEveryMonths()
+                + " months",
+            uplift));
   }
 
   private static Quantities extraQuantities(

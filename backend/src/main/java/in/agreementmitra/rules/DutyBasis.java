@@ -85,6 +85,25 @@ public record DutyBasis(
     return new Builder(dutyState, instrumentKind, usage, executionDate, termMonths, monthlyRent);
   }
 
+  /** This basis with no escalation; every other component unchanged. */
+  public DutyBasis withoutEscalation() {
+    return new DutyBasis(
+        dutyState,
+        instrumentKind,
+        usage,
+        executionDate,
+        termMonths,
+        monthlyRent,
+        BigDecimal.ZERO,
+        0,
+        rentFreeMonths,
+        refundableDeposit,
+        nonRefundableDeposit,
+        advanceRent,
+        premium,
+        counterparts);
+  }
+
   private static void require(Object value, String field) {
     if (value == null) {
       throw invalid(field, "is required");

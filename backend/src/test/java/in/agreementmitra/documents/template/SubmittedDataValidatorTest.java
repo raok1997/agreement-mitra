@@ -54,6 +54,20 @@ class SubmittedDataValidatorTest {
     assertThat(coerced.get("purpose")).isEqualTo("residential");
   }
 
+  @Test
+  void fillsDeclaredDefaultForBlankField() {
+    // A blank capture counts as absent, so the declared default renders -- the stamp quote relies
+    // on the same rule (stamp-quote-deed-parity).
+    Map<String, Object> submitted = fullyValidSubmission();
+    submitted.put("purpose", "   ");
+
+    Map<String, Object> coerced =
+        SubmittedDataValidator.validateAndCoerce(
+            referenceTemplate(), submitted, ProjectionMode.GENERATE);
+
+    assertThat(coerced.get("purpose")).isEqualTo("residential");
+  }
+
   // --- bounds / pattern / enum ----------------------------------------------
 
   @Test

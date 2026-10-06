@@ -12,8 +12,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import in.agreementmitra.ConflictException;
+import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.documents.api.TemplateFormApi;
 import in.agreementmitra.rules.DutyOutcome;
 import in.agreementmitra.rules.RuleRef;
 import in.agreementmitra.rules.StampDutyCalculator;
@@ -21,6 +23,7 @@ import in.agreementmitra.signing.PaymentState;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +47,7 @@ class JurisdictionEligibilityTest {
 
   @Mock private AgreementRepository repository;
   @Mock private TemplateCatalogApi templateCatalog;
+  @Mock private TemplateFormApi templateForms;
   @Mock private StampDutyCalculator calculator;
   @Mock private StampQuoteRecordRepository frozenQuotes;
 
@@ -51,7 +55,10 @@ class JurisdictionEligibilityTest {
   private JurisdictionEligibility gate() {
     ObjectProvider<Clock> clock = mock(ObjectProvider.class);
     when(clock.getIfAvailable(any())).thenReturn(Clock.systemUTC());
-    StampQuoting quoting = new StampQuoting(repository, templateCatalog, calculator, clock);
+    when(templateForms.findForm(anyString(), anyString()))
+        .thenReturn(Optional.of(new FormSchema(null, "t", 1, "h", List.of())));
+    StampQuoting quoting =
+        new StampQuoting(repository, templateCatalog, templateForms, calculator, clock);
     return new JurisdictionEligibility(repository, quoting, frozenQuotes);
   }
 

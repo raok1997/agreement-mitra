@@ -8,8 +8,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.documents.api.TemplateFormApi;
 import in.agreementmitra.rules.RuleRef;
 import in.agreementmitra.rules.StampDutyCalculator;
 import in.agreementmitra.signing.PaymentConfirmation;
@@ -32,14 +34,17 @@ class StampValueReferenceTest {
   private final AgreementRepository agreements = mock(AgreementRepository.class);
   private final StampQuoteRecordRepository frozenQuotes = mock(StampQuoteRecordRepository.class);
   private final TemplateCatalogApi catalog = mock(TemplateCatalogApi.class);
+  private final TemplateFormApi forms = mock(TemplateFormApi.class);
   private final StampDutyCalculator calculator = mock(StampDutyCalculator.class);
 
   @SuppressWarnings("unchecked")
   private StampValueReference reference() {
     ObjectProvider<Clock> clock = mock(ObjectProvider.class);
     when(clock.getIfAvailable(any())).thenReturn(Clock.systemUTC());
+    when(forms.findForm(any(), any()))
+        .thenReturn(Optional.of(new FormSchema(null, "t", 1, "h", List.of())));
     return new StampValueReference(
-        agreements, frozenQuotes, new StampQuoting(agreements, catalog, calculator, clock));
+        agreements, frozenQuotes, new StampQuoting(agreements, catalog, forms, calculator, clock));
   }
 
   private Agreement tgAgreement() {
