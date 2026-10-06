@@ -12,6 +12,8 @@ import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -83,6 +85,7 @@ class PaymentGateIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -210,7 +213,7 @@ class PaymentGateIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
   }
@@ -218,7 +221,7 @@ class PaymentGateIntegrationTest {
   private ResponseEntity<String> confirmPayment(UUID agreementId, String reference) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     String body =
         "{\"amount\":\"1499.00\",\"currency\":\"INR\",\"reference\":\"" + reference + "\"}";
     return rest.postForEntity(
@@ -229,7 +232,7 @@ class PaymentGateIntegrationTest {
 
   private ResponseEntity<String> waivePayment(UUID agreementId) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/payments/" + agreementId + "/waive",
         HttpMethod.POST,
@@ -375,8 +378,7 @@ class PaymentGateIntegrationTest {
         "UPDATE agreement SET payment_state = 'UNPAID', payment_recorded_at = NULL WHERE id = ?",
         agreementId);
 
-    ResponseEntity<String> response =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> response = SigningRequests.post(rest, context, agreementId);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(response.getBody()).contains("payment-required");
@@ -397,9 +399,7 @@ class PaymentGateIntegrationTest {
         .isEqualTo(HttpStatus.OK);
     assertThat(uploadStamp(agreementId).getStatusCode()).isEqualTo(HttpStatus.OK);
 
-    assertThat(
-            rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class)
-                .getStatusCode())
+    assertThat(SigningRequests.post(rest, context, agreementId).getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
 
     WIREMOCK.verify(1, postRequestedFor(urlEqualTo(CREATE_URL)));
@@ -425,7 +425,7 @@ class PaymentGateIntegrationTest {
 
     HttpHeaders customer = new HttpHeaders();
     customer.setContentType(MediaType.APPLICATION_JSON);
-    customer.setBearerAuth(customerToken);
+    customer.add(HttpHeaders.COOKIE, SessionCookie.header(customerToken));
     ResponseEntity<String> confirmed =
         rest.postForEntity(
             "/api/staff/payments/" + agreementId + "/confirm",
@@ -449,7 +449,7 @@ class PaymentGateIntegrationTest {
   @Test
   void theActiveGateModeIsObservableAtRuntime() {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
 
     ResponseEntity<String> response =
         rest.exchange(
@@ -463,7 +463,7 @@ class PaymentGateIntegrationTest {
   void theStaffQueueShowsWhoHasNotPaid() {
     UUID unpaid = createFinalisedAgreement();
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
 
     ResponseEntity<String> response =
         rest.exchange(

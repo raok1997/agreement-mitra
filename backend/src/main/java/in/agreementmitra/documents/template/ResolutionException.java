@@ -11,9 +11,22 @@ package in.agreementmitra.documents.template;
  * location only</b> -- a layer id, JSON pointer, field {@code key}, clause {@code id}, or section
  * title/entry -- and carries <b>no data value</b>, so there is nothing sensitive to redact.
  */
-final class ResolutionException extends RuntimeException {
+sealed class ResolutionException extends RuntimeException
+    permits ResolutionException.NoPublishedTemplate {
 
   ResolutionException(String message) {
     super(message);
+  }
+
+  /**
+   * No published template exists for the requested dimensions -- the one <b>data</b> condition
+   * among resolution failures. Every other {@link ResolutionException} is a defect in a template or
+   * its catalog pointer.
+   */
+  static final class NoPublishedTemplate extends ResolutionException {
+
+    NoPublishedTemplate(String message) {
+      super(message);
+    }
   }
 }

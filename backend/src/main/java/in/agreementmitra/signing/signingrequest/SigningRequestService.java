@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.signingrequest;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
@@ -98,7 +99,9 @@ public class SigningRequestService {
         agreementService
             .findById(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
 
     // Every party must be reachable on an ENABLED delivery channel before the provider call —
     // contact is optional at draft (CR-1) and enforced at the payment gate, so this is defence in
@@ -187,7 +190,10 @@ public class SigningRequestService {
     persistence.markRequested(
         signingRequestId, session.providerDocumentId(), rows, session.webhookKey());
 
-    log.debug("Signing request {} created for agreement {}", signingRequestId, agreementId);
+    log.debug(
+        "Signing request {} created for agreement {}",
+        signingRequestId,
+        AgreementIds.redact(agreementId));
     return new SigningRequestResponse(session.providerDocumentId(), views);
   }
 
@@ -204,15 +210,22 @@ public class SigningRequestService {
    *
    * <p>Idempotent: finalising twice returns the same reference and does not place a second order.
    *
-   * @throws ResourceNotFoundException if no such agreement exists (mapped to 404)
+   * <p>Owner-scoped once claimed: the owner check is the first step, so a non-owner gets the
+   * unknown-agreement 404 before any closure, draft or jurisdiction refusal can reveal state.
+   *
+   * @param callerIdentityId the authenticated caller, or null when anonymous
+   * @throws ResourceNotFoundException if no such agreement exists, or it is claimed by someone else
+   *     (mapped to 404)
    * @throws ConflictException if the agreement has no generated/uploaded draft to finalise (409)
    */
-  public FinaliseResponse finalise(UUID agreementId) {
+  public FinaliseResponse finalise(UUID agreementId, UUID callerIdentityId) {
     AgreementResponse agreement =
         agreementService
-            .findById(agreementId)
+            .findByIdForReader(agreementId, callerIdentityId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
 
     // A closed agreement takes no further fulfilment action - it cannot be re-ordered into life.
     agreementService.requireOpen(agreementId);
@@ -228,7 +241,7 @@ public class SigningRequestService {
     jurisdiction.require(agreementId);
 
     persistence.placeOrder(agreementId);
-    log.debug("Order placed for agreement {}", agreementId);
+    log.debug("Order placed for agreement {}", AgreementIds.redact(agreementId));
     return new FinaliseResponse(
         agreementId,
         agreement.trackingNumber(),
@@ -285,7 +298,7 @@ public class SigningRequestService {
    */
   public void extendSigningWindow(UUID agreementId, int additionalMinutes) {
     esignProvider.extendExpiry(pendingTransaction(agreementId), additionalMinutes);
-    log.debug("Signing window extended for agreement {}", agreementId);
+    log.debug("Signing window extended for agreement {}", AgreementIds.redact(agreementId));
   }
 
   /**
@@ -296,7 +309,7 @@ public class SigningRequestService {
    */
   public void resendInvitations(UUID agreementId) {
     esignProvider.resendInvitations(pendingTransaction(agreementId));
-    log.debug("Invitations re-sent for agreement {}", agreementId);
+    log.debug("Invitations re-sent for agreement {}", AgreementIds.redact(agreementId));
   }
 
   /** The in-flight provider transaction id, or a 404 - never a redacted-id-bearing message. */
@@ -323,7 +336,9 @@ public class SigningRequestService {
                 ? agreementService.findById(agreementId)
                 : agreementService.findByIdForReader(agreementId, callerIdentityId))
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
 
     Optional<SigningRequestPersistence.Progress> progress = persistence.progressFor(agreementId);
     Map<UUID, InviteeStatus> statusBySigner =

@@ -15,7 +15,10 @@ spring:
       max-file-size: 10MB
       max-request-size: 11MB
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra}
+    # logServerErrorDetail=false keeps Postgres' DETAIL line (e.g. `Key (agreement_id)=(<uuid>)` on
+    # a unique violation) out of the driver message Hibernate logs at ERROR. The agreement id is a
+    # bearer capability (agreement-id-debug-logging D9). An overriding DB_URL must keep it.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/agreementmitra?logServerErrorDetail=false}
     username: ${DB_USER:agreementmitra}
     password: ${DB_PASSWORD:agreementmitra}
   jpa:
@@ -29,9 +32,30 @@ spring:
   flyway:
     enabled: true
     clean-disabled: true
+  # One thread per @Scheduled job - today four: signing and payment reconciliation, delivery retry,
+  # draft retention. Boot's default pool is ONE thread, so a long draft-retention run would otherwise
+  # delay the reconciliation jobs that are the fallback for missed webhooks (stale-draft-purge D7).
+  # A change that adds a @Scheduled job raises this number.
+  task:
+    scheduling:
+      pool:
+        size: 4
 
 server:
   port: ${SERVER_PORT:8090}
+  # Client-address resolution (anonymous-surface-abuse-controls D2). `native` = Tomcat's
+  # RemoteIpValve, which honours X-Forwarded-For ONLY when the immediate peer matches
+  # internal-proxies; from any other peer the header is ignored. Never `framework`: Spring's
+  # ForwardedHeaderFilter has no trusted-peer list and takes the leftmost value from anyone.
+  # internal-proxies is Caddy's STATIC compose address (deploy/docker-compose.prod.yml), not the
+  # subnet -- that would also trust Postgres, MinIO and Gotenberg. Caddy overwrites the header with
+  # the client address it recovered, so the two halves MUST deploy together. Override with
+  # SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES (a Java regex) if the address ever changes.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      remote-ip-header: x-forwarded-for
+      internal-proxies: '10\.203\.17\.10'
   # The security baseline permits the /error dispatch path (so a permitted endpoint that errors
   # surfaces its real status instead of being masked as 403). Pin the error response to leak
   # nothing — these are Boot defaults, made explicit because /error is reachable.
@@ -78,6 +102,14 @@ signing:
     initial-backoff: ${SIGNING_DELIVERY_INITIAL_BACKOFF:PT1M}
     max-backoff: ${SIGNING_DELIVERY_MAX_BACKOFF:PT1H}
     batch-size: ${SIGNING_DELIVERY_BATCH_SIZE:50}
+  # Daily retention purge of unpaid drafts unedited for 90 days, plus the orphaned drafts/ object
+  # sweep (stale-draft-purge). OPT-IN: it deletes objects in whatever bucket it points at, so a
+  # cloned database against a shared bucket would purge production's live agreements. Production
+  # sets SIGNING_DRAFT_RETENTION_ENABLED=true (docs/DEPLOYMENT.md); each environment has its own
+  # bucket. The 90-day period is a code constant (terms of service section 10), not a property.
+  draft-retention:
+    enabled: ${SIGNING_DRAFT_RETENTION_ENABLED:false}
+    cron: ${SIGNING_DRAFT_RETENTION_CRON:0 30 3 * * *}
 
 # Outbound email (signed-delivery-and-closure CR). ONE SMTP adapter serves both environments:
 # free Zoho Mail in development, Zoho ZeptoMail in production. The upgrade is host plus credentials,
@@ -268,6 +300,16 @@ gotenberg:
   # each render with a client read timeout so a stuck render surfaces as a clean failure.
   max-concurrent-renders: ${GOTENBERG_MAX_CONCURRENT_RENDERS:4}
   request-timeout: ${GOTENBERG_REQUEST_TIMEOUT:PT30S}
+  # Render admission control (anonymous-surface-abuse-controls D6): refuse, do not queue. A render
+  # that finds every eligible slot busy waits at most `admission-wait`, and only while fewer than
+  # `max-waiters` are already waiting; otherwise it is refused 503 + Retry-After at once. Each waiter
+  # holds a DB connection (the render paths run in a transaction), so slots + waiters is the most a
+  # render flood can pin; startup refuses a configuration that would leave the Hikari pool empty.
+  # `reserved-renders` of the slots are kept for the paid e-stamp render, so an anonymous preview
+  # flood cannot fast-fail staff fulfilment of an agreement a customer has paid for.
+  admission-wait: ${GOTENBERG_ADMISSION_WAIT:PT2S}
+  max-waiters: ${GOTENBERG_MAX_WAITERS:2}
+  reserved-renders: ${GOTENBERG_RESERVED_RENDERS:1}
 
 # Optional Google login (google-oauth-login CR). Backend-mediated OAuth (Authorization-Code +
 # PKCE); the SPA never sees a Google token. Secrets come from env only and are NEVER committed. The
@@ -282,6 +324,10 @@ auth:
   session-ttl: ${AUTH_SESSION_TTL:PT24H}
   handoff-ttl: ${AUTH_HANDOFF_TTL:PT60S}
   login-state-ttl: ${AUTH_LOGIN_STATE_TTL:PT5M}
+  # Browser-session cookies (cookie-session-auth D5). `false` drops Secure + the __Host- prefix for
+  # plain-http LAN/Safari testing only; startup refuses it when a Google URI is https.
+  cookie:
+    secure: ${AUTH_COOKIE_SECURE:true}
   google:
     client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
     client-secret: ${GOOGLE_OAUTH_SECRET:}
@@ -291,6 +337,15 @@ auth:
     authorization-uri: ${GOOGLE_OAUTH_AUTHORIZATION_URI:https://accounts.google.com/o/oauth2/v2/auth}
     token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
     jwks-uri: ${GOOGLE_OAUTH_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
+
+# The legal entity operating the service (operating-entity-disclosure). Its legal name is NOT here:
+# it is the constant OperatingEntity.LEGAL_NAME, so no environment can rename the party the terms of
+# service name. The LLPIN and GSTIN are pending: blank means "not yet issued". A non-blank malformed
+# value (or a GSTIN that is not a valid firm GSTIN) refuses startup. The GSTIN has no default and is
+# reachable only via OperatingEntity.gstin(), an Optional.
+operator:
+  llpin: ${OPERATOR_LLPIN:}
+  gstin: ${OPERATOR_GSTIN:}
 
 # Per-page render footer. platform-url is the non-secret provenance URL shown as the footer's
 # centre cell; the documents module keeps no brand literal (blank default omits the cell), so the
@@ -302,8 +357,84 @@ documents:
     # hidden in print media, so it never reaches the executed instrument (a deliberate decision --
     # counsel brief Q6(d)). Lives here, not in the documents module, for the same reason
     # platform-url does: the module holds no brand literal and no legal copy. Blank omits it.
-    screen-notice: ${DOCUMENT_FOOTER_SCREEN_NOTICE:AgreementMitra is not a law firm and this is not legal advice. This document is generated from a template and is not reviewed by a lawyer for your circumstances. See the terms of service at agreementmitra.com/terms.}
+    # Same wording as frontend LegalDisclaimer.vue (LegalDisclaimer.test.ts holds them equal). The
+    # whole value is double-quoted because the wording contains ": ", which breaks a plain scalar.
+    screen-notice: "${DOCUMENT_FOOTER_SCREEN_NOTICE:The wording of this agreement is ours: we wrote the template and we stand behind it. The facts you enter and the choices you make are yours, so check them before you sign. We are not a law firm, no lawyer reviews your agreement for your circumstances, and this is not legal advice; see the terms of service at agreementmitra.com/terms.}"
+
+# Anonymous-surface abuse controls (anonymous-surface-abuse-controls). The product is no-login, so
+# rate limiting is the compensating control (docs/DEPLOYMENT.md). Keys are the client address the
+# trusted proxy forwarded (server.tomcat.remoteip above); IPv6 sources are keyed on their /64.
+#
+# Every API route is in exactly one class (RouteClassifier); budgets and lockouts are held per class.
+# `lockout` applies to the per-SOURCE dimension only - the per-resource (agreement id) dimension
+# refuses within its window but never locks the agreement out, or anyone holding a leaked link could
+# deny its holder their status page or checkout. A class's per-resource limit must be HIGHER than its
+# per-source limit (binding fails), so one link holder hits their own limit before they can fill an
+# agreement's bucket and starve the other parties; the per-source limit is itself generous, because
+# an address is not a person (carrier NAT). Values are deliberately safe
+# rather than measured - tune from real traffic. ABUSE_LIMITS_ENABLED=false turns the route-class
+# limits off without a deploy (recovery keeps its own limiter).
+abuse:
+  source:
+    ipv6-prefix-length: ${ABUSE_SOURCE_IPV6_PREFIX_LENGTH:64}
+  body:
+    # 1 MiB for every unsafe /api request except the two multipart uploads (their own ceilings).
+    max-bytes: ${ABUSE_BODY_MAX_BYTES:1048576}
+  limits:
+    enabled: ${ABUSE_LIMITS_ENABLED:true}
+    # Hard ceiling on keys the limiter retains, whatever the traffic. ~200k entries is tens of MB.
+    maximum-size: ${ABUSE_LIMITS_MAXIMUM_SIZE:200000}
+    classes:
+      # PDF renders (preview download, stored draft). The render cost itself is bounded by gotenberg
+      # admission control.
+      render:
+        per-source: ${ABUSE_LIMIT_RENDER_PER_SOURCE:60}
+        window: PT1M
+        lockout: PT5M
+      # The capture form's HTML live preview: no Gotenberg, and the ~600 ms debounce still fires
+      # once per keystroke for a slow typist on a phone, so a generous ceiling and NO lockout.
+      live-preview:
+        per-source: ${ABUSE_LIMIT_LIVE_PREVIEW_PER_SOURCE:300}
+        window: PT1M
+        lockout: PT0S
+      anonymous-write:
+        per-source: ${ABUSE_LIMIT_ANONYMOUS_WRITE_PER_SOURCE:10}
+        window: PT1M
+        lockout: PT5M
+      auth:
+        per-source: ${ABUSE_LIMIT_AUTH_PER_SOURCE:30}
+        window: PT1M
+        lockout: PT5M
+      capability-write:
+        per-source: ${ABUSE_LIMIT_CAPABILITY_WRITE_PER_SOURCE:30}
+        per-resource: ${ABUSE_LIMIT_CAPABILITY_WRITE_PER_RESOURCE:60}
+        window: PT1M
+        lockout: PT5M
+      # The status page polls three endpoints every 20 s - 9/min per open tab; landlord, tenant, staff
+      # and a spare tab reach ~36. 300 per agreement is above any one source's 120, so a single link
+      # holder cannot starve the others, and still bounds many machines converging on one link.
+      capability-read:
+        per-source: ${ABUSE_LIMIT_CAPABILITY_READ_PER_SOURCE:120}
+        per-resource: ${ABUSE_LIMIT_CAPABILITY_READ_PER_RESOURCE:300}
+        window: PT1M
+        lockout: PT5M
+      # Catalog, jurisdictions and the CSRF bootstrap: far above anything the client generates (its
+      # writes cap at 30/min), and NO lockout - a tight limit here would make every write go out
+      # tokenless and fail CSRF. Still bounded, because every cookie-bearing request is a session
+      # lookup in Postgres.
+      bootstrap:
+        per-source: ${ABUSE_LIMIT_BOOTSTRAP_PER_SOURCE:600}
+        window: PT1M
+        lockout: PT0S
+      # Any unlisted route, including the authenticated and staff routes: generous, so staff work is
+      # never throttled, but no route is born unlimited.
+      default:
+        per-source: ${ABUSE_LIMIT_DEFAULT_PER_SOURCE:120}
+        window: PT1M
+        lockout: PT5M
 
 logging:
   level:
-    in.agreementmitra: DEBUG
+    # INFO outside `local` (agreement-id-debug-logging D5): DEBUG on identity/legal infra is opt-in
+    # per deployment via LOGGING_LEVEL_IN_AGREEMENTMITRA, never the shipped default.
+    in.agreementmitra: INFO

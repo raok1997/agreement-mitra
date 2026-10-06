@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // The SPA landing target of the Google callback. The backend 302s here with the single-use handoff
-// in the URL fragment (never a token, never the session). We read it, exchange it for a session, and
+// in the URL fragment (never a token, never the session). We read it, exchange it (the server sets the session cookie), and
 // signal the app to return to the main flow. The fragment is dropped from history on success.
+// A refused callback lands here as "#error" (no handoff), so it shows the same error screen. The
+// login is bound to the browser that started it, so the copy says to start again from this one.
 import { onMounted, ref } from "vue";
 import { completeLogin } from "../api/authStore";
 
@@ -33,7 +35,9 @@ onMounted(async () => {
       Signing you in&hellip;
     </p>
     <template v-else>
-      <p class="text-ink-800">We couldn't complete sign-in.</p>
+      <p class="text-ink-800">
+        We couldn't complete sign-in. Please start again from this browser.
+      </p>
       <a href="/" class="text-sm font-medium text-sky-700 hover:underline"
         >Back to AgreementMitra</a
       >

@@ -1,9 +1,10 @@
 import { getCurrentScope, onScopeDispose } from "vue";
+import { ServiceBusyError } from "../api/http";
 
 // A re-read loop for a page that has to stay current while something happens elsewhere (staff
 // stamping, parties signing). The rules live here, not in the view, so they can be tested without a
 // DOM or a real clock: a floor so an open tab is a courtesy load and not a hammer, backoff on error
-// with a cap, no reads while the tab is hidden, and a resume on becoming visible that still honours
+// with a cap (or the server's Retry-After when it refuses for load), no reads while the tab is hidden, and a resume on becoming visible that still honours
 // the floor. Every timer is injectable; no test waits on real time.
 
 /** What one read decided about the next: keep going, slow to the cap, or stop for good. */
@@ -99,8 +100,13 @@ export function usePolling(
           return;
         }
         delay = verdict === "slow" ? max : base;
-      } catch {
-        delay = Math.min(delay * 2, max);
+      } catch (e) {
+        // A load refusal says exactly when to come back: wait that long (never under the floor)
+        // rather than guessing with our own backoff. Anything else backs off as before.
+        delay =
+          e instanceof ServiceBusyError
+            ? Math.max(base, e.retryAfterSeconds * 1000)
+            : Math.min(delay * 2, max);
       }
     }
   }

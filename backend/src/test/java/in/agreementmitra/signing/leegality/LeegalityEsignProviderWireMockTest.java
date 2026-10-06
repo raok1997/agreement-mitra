@@ -13,6 +13,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.signing.DocumentStatusView;
@@ -20,12 +21,14 @@ import in.agreementmitra.signing.InviteeStatus;
 import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignSession;
 import in.agreementmitra.signing.SignedDocument;
+import in.agreementmitra.support.LogCapture;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -38,6 +41,9 @@ class LeegalityEsignProviderWireMockTest {
 
   private static final String AUTH_TOKEN = "stub-auth-token";
   private static final String PROFILE_ID = "profile-1";
+
+  @RegisterExtension
+  final LogCapture logs = LogCapture.of(LeegalityEsignProvider.class, Level.DEBUG);
 
   private WireMockServer server;
   private LeegalityEsignProvider adapter;
@@ -195,38 +201,25 @@ class LeegalityEsignProviderWireMockTest {
 
   @Test
   void downloadDoesNotLogArtifactBytesOrUrls() {
-    ch.qos.logback.classic.Logger logger =
-        (ch.qos.logback.classic.Logger)
-            org.slf4j.LoggerFactory.getLogger(LeegalityEsignProvider.class);
-    ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
-        new ch.qos.logback.core.read.ListAppender<>();
-    appender.start();
-    logger.addAppender(appender);
-    try {
-      String signedUrl = server.baseUrl() + "/files/signed.pdf";
-      server.stubFor(
-          get(urlPathEqualTo("/api/v3.3/document/details"))
-              .willReturn(
-                  okJson(
-                      "{\"data\":{\"document\":{\"status\":\"COMPLETED\",\"signedUrl\":\""
-                          + signedUrl
-                          + "\"}}}")));
-      server.stubFor(
-          get(urlPathEqualTo("/files/signed.pdf"))
-              .willReturn(aResponse().withBody("PDFSECRETBYTES".getBytes(StandardCharsets.UTF_8))));
+    String signedUrl = server.baseUrl() + "/files/signed.pdf";
+    server.stubFor(
+        get(urlPathEqualTo("/api/v3.3/document/details"))
+            .willReturn(
+                okJson(
+                    "{\"data\":{\"document\":{\"status\":\"COMPLETED\",\"signedUrl\":\""
+                        + signedUrl
+                        + "\"}}}")));
+    server.stubFor(
+        get(urlPathEqualTo("/files/signed.pdf"))
+            .willReturn(aResponse().withBody("PDFSECRETBYTES".getBytes(StandardCharsets.UTF_8))));
 
-      adapter.download("DOC-SECRET-1234");
+    adapter.download("DOC-SECRET-1234");
 
-      String logged =
-          appender.list.stream()
-              .map(e -> e.getFormattedMessage())
-              .reduce("", (a, b) -> a + "\n" + b);
-      assertThat(logged).doesNotContain("PDFSECRETBYTES"); // bytes never logged
-      assertThat(logged).doesNotContain(signedUrl); // artifact URL never logged
-      assertThat(logged).doesNotContain("DOC-SECRET-1234"); // full doc id never logged (redacted)
-    } finally {
-      logger.detachAppender(appender);
-    }
+    assertThat(logs.hasLevel(Level.DEBUG)).isTrue();
+    String logged = String.join("\n", logs.messages());
+    assertThat(logged).doesNotContain("PDFSECRETBYTES"); // bytes never logged
+    assertThat(logged).doesNotContain(signedUrl); // artifact URL never logged
+    assertThat(logged).doesNotContain("DOC-SECRET-1234"); // full doc id never logged (redacted)
   }
 
   @Test

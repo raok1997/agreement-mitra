@@ -197,6 +197,27 @@ class AgreementApiIntegrationTest {
   }
 
   @Test
+  void anEndDateAtTheMaximumIsoYearIsA400NotA500() {
+    // The reported bug, end to end: Jackson deserialises this signed >4-digit year into a valid
+    // LocalDate, @NotNull and @EndAfterStart both pass, and before the PlausibleDates bound it
+    // reached TenancyDuration's plusDays(1) and surfaced as a 500.
+    // validBody is an immutable Map.of, so copy before overriding the date.
+    Map<String, Object> body =
+        new java.util.HashMap<>(
+            validBody(
+                List.of(
+                    signer("Asha Owner", "asha-maxdate@example.com", "OWNER"),
+                    signer("Tara Tenant", "tara-maxdate@example.com", "TENANT"))));
+    body.put("endDate", "+999999999-12-31");
+
+    ResponseEntity<String> resp = rest.postForEntity("/api/agreements", body, String.class);
+
+    JsonNode problem = assertProblemJson(resp, HttpStatus.BAD_REQUEST);
+    assertThat(problem.path("errors"))
+        .anySatisfy(e -> assertThat(e.path("field").asText()).isEqualTo("endDate"));
+  }
+
+  @Test
   void invalidEmailIsRejectedWith400AndDoesNotEchoEmail() {
     String badEmail = "not-a-valid-email-value";
     Map<String, Object> body =

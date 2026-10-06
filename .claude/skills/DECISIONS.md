@@ -242,3 +242,17 @@ change; 6.1 is explicitly carried rather than retried, keeping the round closed.
   round to ask rather than silently re-run the personas.
 - The 6.1 rejection was tested against `.claude/hooks/pii-secret-guard.sh` and is **not** a
   hook deny; recorded so a future round does not read it as a technical block.
+
+## Round D — 2026-10-04 · what qualifies for the register (triage, not budget)
+
+Raised by the user after `derived-tenancy-term-and-registration-warning` (since renamed `derived-tenancy-term`) added five register rows
+while fixing one bug. All five turned out to duplicate an existing row or to be cheap enough to fix
+on the spot. The user rejected two framings: row-per-finding (the backlog balloons and every row
+costs them a read and a decision) and a zero-row budget (suppression of real issues).
+
+| # | Finding | Status | Resolution |
+|---|---|---|---|
+| D.1 | The Issue policy had exactly two exits for a finding outside the CR's slice -- fold it in, or a new follow-up CR. With nothing in between, every out-of-slice finding became a register row, however small | **fixed** | Issue policy gains step 0 (verify the premise; is it a "same fact in two places" symptom?) and route 3 (small but out-of-slice -> fix now as a separate change set, listed as its own suggested commit; signing/eSign still halts). Route 4 sends outside-decision items to the EXISTING row for that subject. A new row is route 5 only, and carries a recommendation. Pre-archive: report the net row change |
+| D.2 | Policy home | **fixed** | The triage lives ONCE, in CLAUDE.md "Handling what a change uncovers"; the skill references it and says CLAUDE.md wins on conflict -- deliberately not a second copy (see 3.9 on copies drifting). Blast radius: the `follow-up-register` memory and its MEMORY.md line, which said a CR "adds a row", now point at the triage |
+| D.3 | Lower 4c code-review effort to `medium` to cut finding volume | **not adopted** | Proposed alongside a "zero follow-ups" budget the user rejected as suppression. Volume is handled by triage, not by looking less hard |
+

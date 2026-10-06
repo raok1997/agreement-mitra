@@ -1,7 +1,7 @@
 package in.agreementmitra.documents;
 
+import in.agreementmitra.RenderCapacityException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Semaphore;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -18,9 +18,9 @@ import org.springframework.web.util.HtmlUtils;
  *
  * <p>The app holds no browser: each render is one HTTP call to Gotenberg, which owns Chromium's
  * lifecycle and (per compose config) denies Chromium's outbound network -- the SSRF/exfil guard.
- * The app bounds concurrent renders with a {@link Semaphore} and relies on the client's read
- * timeout to fail a stuck render cleanly. <b>Neither the HTML nor the PDF bytes are ever
- * logged.</b>
+ * The app bounds concurrent renders through {@link RenderAdmission} -- refusing, not queueing, when
+ * every eligible slot is busy -- and relies on the client's read timeout to fail a stuck render
+ * cleanly. <b>Neither the HTML nor the PDF bytes are ever logged.</b>
  */
 @Component
 class GotenbergClient {
@@ -40,7 +40,7 @@ class GotenbergClient {
       "<html><head><style>*{margin:0;padding:0;}</style></head><body></body></html>";
 
   private final RestClient restClient;
-  private final Semaphore renderPermits;
+  private final RenderAdmission admission;
   private final String platformUrl;
 
   GotenbergClient(
@@ -48,7 +48,12 @@ class GotenbergClient {
       GotenbergProperties properties,
       DocumentFooterProperties footerProperties) {
     this.restClient = gotenbergRestClient;
-    this.renderPermits = new Semaphore(properties.maxConcurrentRenders());
+    this.admission =
+        new RenderAdmission(
+            properties.generalRenders(),
+            properties.reservedRenders(),
+            properties.maxWaiters(),
+            properties.admissionWait());
     this.platformUrl = footerProperties.platformUrl();
   }
 
@@ -63,8 +68,9 @@ class GotenbergClient {
    * is non-PII; it and the URL are HTML-escaped defensively; the HTML/PDF are never logged.
    *
    * @throws DocumentRenderException if Gotenberg is unreachable/times out or returns no document
+   * @throws RenderCapacityException if no render slot {@code priority} may take frees in time
    */
-  byte[] renderHtml(String html, String reference) {
+  byte[] renderHtml(String html, String reference, RenderPriority priority) {
     MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
     form.add("files", namedHtml(html, "index.html")); // Gotenberg's required main-file name
     form.add("paperWidth", A4_WIDTH_IN);
@@ -78,10 +84,7 @@ class GotenbergClient {
     form.add("marginTop", FURNITURE_MARGIN_IN);
     form.add("marginBottom", FURNITURE_MARGIN_IN);
 
-    boolean acquired = false;
-    try {
-      renderPermits.acquire();
-      acquired = true;
+    try (RenderAdmission.Slot slot = admission.admit(priority)) {
       byte[] pdf =
           restClient
               .post()
@@ -94,16 +97,9 @@ class GotenbergClient {
         throw new DocumentRenderException("Gotenberg returned an empty document");
       }
       return pdf;
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new DocumentRenderException("render interrupted while waiting for a render slot", e);
     } catch (RestClientException e) {
       // Message only -- no HTML/PDF content, no response body echoed.
       throw new DocumentRenderException("Gotenberg render failed: " + e.getMessage(), e);
-    } finally {
-      if (acquired) {
-        renderPermits.release();
-      }
     }
   }
 

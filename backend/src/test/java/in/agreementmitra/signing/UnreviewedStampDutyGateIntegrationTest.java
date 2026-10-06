@@ -51,10 +51,14 @@ class UnreviewedStampDutyGateIntegrationTest {
   }
 
   private UUID tgAgreement() {
+    return tgAgreement("residential");
+  }
+
+  private UUID tgAgreement(String type) {
     Map<String, Object> body =
         Map.of(
             "state", "TG",
-            "type", "residential",
+            "type", type,
             "propertyAddress", "12 MG Road, Hyderabad",
             "monthlyRent", "25000.00",
             "securityDeposit", "50000.00",
@@ -139,6 +143,39 @@ class UnreviewedStampDutyGateIntegrationTest {
                 Long.class,
                 agreementId))
         .isZero();
+  }
+
+  /**
+   * The residential-only release relies on this: the shipped commercial rule is unreviewed, so a
+   * commercial order is refused at finalise and checkout. The quote assertion proves the refusal
+   * comes from an unchargeable rule rather than a basis that failed to build -- every refusal
+   * shares the one 409. Every TG rule is unreviewed here (and the quote omits the rule when
+   * refused), so that the COMMERCIAL rule is the one resolved is pinned by DutyEngineTest, not
+   * here.
+   */
+  @Test
+  void aCommercialOrderIsRefusedOnItsOwnUnreviewedRule() {
+    in.agreementmitra.support.TemplateCatalogFixture.seed(jdbc, "TG", "commercial");
+    UUID agreementId = tgAgreement("commercial");
+    uploadDraft(agreementId);
+
+    ResponseEntity<String> quote =
+        rest.getForEntity("/api/agreements/" + agreementId + "/stamp-quote", String.class);
+    assertThat(quote.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(quote.getBody()).contains("NOT_CHARGEABLE");
+
+    ResponseEntity<String> finalise =
+        rest.postForEntity("/api/agreements/" + agreementId + "/finalise", null, String.class);
+    ResponseEntity<String> checkout =
+        rest.postForEntity(
+            "/api/agreements/" + agreementId + "/payment/order",
+            Map.of("stampValueMinorUnits", 130_000L),
+            String.class);
+
+    assertThat(finalise.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(finalise.getBody()).contains("jurisdiction-unsupported");
+    assertThat(checkout.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(checkout.getBody()).contains("jurisdiction-unsupported");
   }
 
   @Test

@@ -4,9 +4,16 @@
 # the public TLS connection and opens a second one to this origin, which presents
 # a Cloudflare Origin CA certificate. The origin IP is never published in DNS.
 #
-# One origin serves the SPA and /api, so the opaque session cookie is same-site
-# and there is no CORS to configure. This is what resolves the open "/api
-# problem" in docs/DOMAIN-AND-EMAIL-SETUP.md section 4.
+# One origin serves the SPA and /api, so the HttpOnly session cookie
+# (`__Host-am_session`) and its CSRF companion (`__Host-XSRF-TOKEN`) are
+# same-origin and there is no CORS to configure. Both are `__Host-` cookies:
+# no Domain attribute, so they bind to the apex host only -- the single-origin
+# apex redirect below is what they depend on. This is what resolves the open
+# "/api problem" in docs/DOMAIN-AND-EMAIL-SETUP.md section 4.
+#
+# NEVER log request or response cookies (or the Cookie / Set-Cookie headers):
+# the session cookie IS the credential. Any `log` directive added here must
+# keep Caddy's default header redaction or filter those fields out.
 
 {
 	# No admin API in production. It is unauthenticated on localhost by default
@@ -16,9 +23,9 @@
 	servers {
 		# Cloudflare terminates the client connection, so without this every
 		# request would appear to originate from a Cloudflare IP. Rate limiting
-		# and the redacted security-event logging that `signing-auth` will add
-		# are both meaningless on a proxy IP, so real-client-IP recovery has to
-		# be correct from day one.
+		# and the redacted security-event logging are both meaningless on a
+		# proxy IP. This only fills Caddy's {client_ip}; the /api/* proxy below
+		# is what forwards it to the application.
 		#
 		# REFRESH THESE: the canonical list is https://www.cloudflare.com/ips/.
 		# Cloudflare changes it rarely but does change it; a stale list silently
@@ -53,7 +60,8 @@
 }
 
 # Redirect www to the apex so there is a single canonical origin (and a single
-# cookie scope). Cloudflare proxies both hostnames to here.
+# cookie scope -- the `__Host-` cookies are never sent to www). Cloudflare
+# proxies both hostnames to here.
 www.agreementmitra.com {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
 	redir https://agreementmitra.com{uri} permanent
@@ -83,8 +91,42 @@ agreementmitra.com {
 	# API first: this must take precedence over the SPA fallback below, or a
 	# misrouted API call would receive index.html and a fetch() expecting JSON
 	# would fail confusingly instead of loudly.
+	# Never edge-cache /api/*: public GETs carry a per-browser CSRF Set-Cookie
+	# (eager issuance), so a cached response would hand one visitor's token to
+	# everyone. See docs/DEPLOYMENT.md.
 	handle /api/* {
+		# Request-body ceilings (anonymous-surface-abuse-controls D9): refuse an oversized body
+		# here, before the JVM allocates for it. The two multipart upload routes keep the
+		# application's own 11 MiB envelope (spring.servlet.multipart.max-request-size); every
+		# other API route gets the 1 MiB the application's body guard enforces. The matchers must
+		# NOT overlap -- two request_body blocks on one request both apply and the smaller wins,
+		# which would cap uploads at 1 MiB. Units are binary (MiB) to match Spring's `MB`, which
+		# is 1024-based; Caddy's `MB` is decimal.
+		@uploads path /api/agreements/*/draft /api/staff/estamp
+		@ordinary not path /api/agreements/*/draft /api/staff/estamp
+		request_body @uploads {
+			max_size 11MiB
+		}
+		request_body @ordinary {
+			max_size 1MiB
+		}
+
 		reverse_proxy backend:8090 {
+			# The ONE forwarded header the application trusts (D2). OVERWRITE it with the
+			# address Caddy recovered from CF-Connecting-IP above -- trusted only because the
+			# peer is in Cloudflare's pinned ranges -- rather than appending to whatever the
+			# client sent, whose leftmost value would otherwise be attacker-chosen. Strip every
+			# other forwarding header so nothing the client wrote reaches the application as its
+			# address, host, port or path, and pin the scheme. The application honours this
+			# header only from Caddy's static compose address (server.tomcat.remoteip
+			# .internal-proxies), so this block and that property MUST deploy together.
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto https
+			header_up -Forwarded
+			header_up -X-Forwarded-Host
+			header_up -X-Forwarded-Prefix
+			header_up -X-Forwarded-Port
+
 			# The draft-upload route accepts up to 11 MB (spring.servlet
 			# .multipart.max-request-size) and PDF renders can be slow, so do not
 			# let a default read timeout truncate either.

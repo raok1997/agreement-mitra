@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.ClientSourceResolver;
 import in.agreementmitra.signing.recovery.RecoveryService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -32,24 +33,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class RecoveryController {
 
   private final RecoveryService recoveryService;
+  private final ClientSourceResolver sources;
 
-  public RecoveryController(RecoveryService recoveryService) {
+  public RecoveryController(RecoveryService recoveryService, ClientSourceResolver sources) {
     this.recoveryService = recoveryService;
+    this.sources = sources;
   }
 
   @PostMapping
   public ResponseEntity<Void> requestRecovery(
       @Valid @RequestBody RecoveryRequest request, HttpServletRequest httpRequest) {
-    recoveryService.requestRecovery(request.reference(), fingerprint(httpRequest));
+    // The client address as resolved from the trusted proxy chain - never the proxy's own address
+    // (which would put every customer in one bucket) and never a header the client controls.
+    recoveryService.requestRecovery(request.reference(), sources.resolve(httpRequest));
     return ResponseEntity.status(HttpStatus.ACCEPTED).build();
-  }
-
-  /**
-   * A coarse source identifier for rate limiting and forensics. The remote address only - no header
-   * a client controls, because a rate limit keyed on a spoofable value is not a rate limit.
-   */
-  private static String fingerprint(HttpServletRequest request) {
-    String remote = request.getRemoteAddr();
-    return remote == null || remote.isBlank() ? "unknown" : remote;
   }
 }

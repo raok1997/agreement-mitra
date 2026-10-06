@@ -7,14 +7,13 @@ on demand, from the capture screen -- rendered fresh, not stored, non-cacheable,
 unknown agreement and no party PII in logs. Depends on the `document-rendering` capability (the
 `documents` module's `DocumentRenderer`); the agreement-to-template-data mapping lives in the
 `signing` module. (Created by archiving change `agreement-preview` (CR-3b).)
-
 ## Requirements
-
 ### Requirement: Preview the filled agreement document
 
 The system SHALL provide preview of the filled rental-agreement document rendered on demand and **not
 stored**. It SHALL continue to serve the id-bound `GET /api/agreements/{id}/preview` for a persisted
-agreement (inline PDF, `Cache-Control: no-store`, 404 for an unknown id, 400 for a non-UUID id), and it
+agreement (inline PDF, `Cache-Control: no-store`, 404 for an unknown id, 400 for a non-UUID id, and 400
+with field-level `errors[]` when a required party field held on the agreement is blank), and it
 SHALL serve a **stateless** preview (`POST /api/templates/document/preview`) that renders an in-progress
 working-set data map with no persisted agreement. The prior stateless `POST /api/agreements/preview`
 placeholder SHALL be **removed** (superseded by the new route). Both previews SHALL source their HTML
@@ -24,10 +23,19 @@ log.
 
 #### Scenario: The id-bound preview still returns the filled document inline
 
-- **WHEN** a client GETs `/api/agreements/{id}/preview` for an existing agreement
+- **WHEN** a client GETs `/api/agreements/{id}/preview` for an existing agreement whose parties carry a
+  father's name and current address
 - **THEN** the system responds `200 OK` with an inline `application/pdf` body that composes the
   agreement's parties, property, money, and tenancy dates, sourced from the compiler, and persists
   nothing
+
+#### Scenario: The id-bound preview of an agreement with blank party details is refused
+
+- **GIVEN** an agreement whose owner's father's name and current address are blank (the empty-string
+  backfill of rows persisted before structured party capture)
+- **WHEN** a client GETs `/api/agreements/{id}/preview`
+- **THEN** the system responds `400` with `errors[]` citing `ownerFatherName` and `ownerAddress` as
+  `required`, echoing no field value, and persists nothing
 
 #### Scenario: The stateless preview renders an unsaved working set
 
@@ -60,3 +68,4 @@ PDF bytes or the composed party details to any log at any level on the preview p
 
 - **WHEN** a preview render runs
 - **THEN** no log line contains the rendered PDF bytes or the composed party details
+

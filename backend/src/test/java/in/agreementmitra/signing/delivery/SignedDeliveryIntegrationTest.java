@@ -16,6 +16,8 @@ import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -47,6 +49,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.util.LinkedMultiValueMap;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -70,6 +73,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import({HarnessTestConfig.class, MailTestConfig.class})
 @ActiveProfiles("test")
+// Pinned blank so an OPERATOR_LLPIN exported in the shell cannot change the operator line asserted.
+@TestPropertySource(properties = "operator.llpin=")
 @Testcontainers(disabledWithoutDocker = true)
 class SignedDeliveryIntegrationTest {
 
@@ -99,6 +104,7 @@ class SignedDeliveryIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -224,7 +230,7 @@ class SignedDeliveryIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     assertThat(
             rest.exchange(
                     "/api/staff/estamp",
@@ -282,9 +288,7 @@ class SignedDeliveryIntegrationTest {
 
   private UUID requestSigning(UUID agreementId, String documentId) {
     stubCreate(documentId);
-    assertThat(
-            rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class)
-                .getStatusCode())
+    assertThat(SigningRequests.post(rest, context, agreementId).getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(
@@ -371,6 +375,9 @@ class SignedDeliveryIntegrationTest {
                   .isNotEqualTo("AUDITTRAIL");
               assertThat(m.attachment().filename()).doesNotContain("audit");
               assertThat(m.body().toLowerCase(java.util.Locale.ROOT)).doesNotContain("audit");
+              // The operator line closes every body (operating-entity-disclosure D7).
+              assertThat(m.body())
+                  .endsWith("\n\nAgreementMitra is a service of KAVISAT TEK LABS LLP.\n");
             });
 
     // Signed and delivered to every party -> closed, as completed, with a recorded time.
@@ -521,7 +528,7 @@ class SignedDeliveryIntegrationTest {
 
     // ...and staff can see which party is stuck and why, with the address redacted.
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     @SuppressWarnings("unchecked")
     ResponseEntity<List> view =
         rest.exchange(
@@ -564,7 +571,7 @@ class SignedDeliveryIntegrationTest {
                 agreementId,
                 TENANT_EMAIL));
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> resent =
         rest.exchange(
             "/api/staff/deliveries/" + deliveryId + "/resend",
@@ -669,8 +676,7 @@ class SignedDeliveryIntegrationTest {
     assertThat(closureState(agreementId)).isEqualTo("CLOSED");
 
     // Advancing a closed agreement is refused, with its own distinct 409 kind.
-    ResponseEntity<String> signing =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> signing = SigningRequests.post(rest, context, agreementId);
     assertThat(signing.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(signing.getBody()).contains("agreement-closed");
     ResponseEntity<String> finalise =
@@ -728,7 +734,7 @@ class SignedDeliveryIntegrationTest {
 
   private String stampQueueIds() {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> queue =
         rest.exchange(
             "/api/staff/estamp/queue", HttpMethod.GET, new HttpEntity<>(headers), String.class);
@@ -745,7 +751,7 @@ class SignedDeliveryIntegrationTest {
   private ResponseEntity<String> getAs(String path, String bearer) {
     HttpHeaders headers = new HttpHeaders();
     if (bearer != null) {
-      headers.setBearerAuth(bearer);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(bearer));
     }
     return rest.exchange(path, HttpMethod.GET, new HttpEntity<>(headers), String.class);
   }
@@ -755,7 +761,7 @@ class SignedDeliveryIntegrationTest {
     UUID agreementId = readyToSign();
     String ownerToken = customerToken("party-owner-" + UUID.randomUUID());
     HttpHeaders claimHeaders = new HttpHeaders();
-    claimHeaders.setBearerAuth(ownerToken);
+    claimHeaders.add(HttpHeaders.COOKIE, SessionCookie.header(ownerToken));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",

@@ -43,6 +43,7 @@ class TemplateCatalogApiIntegrationTest {
 
   private UUID alpha; // published TG residential
   private UUID beta; // published KA commercial
+  private UUID national; // published IN residential
   private UUID draft; // draft TG residential (hidden)
   private UUID deprecated; // deprecated MH residential (hidden)
 
@@ -51,6 +52,7 @@ class TemplateCatalogApiIntegrationTest {
     jdbc.update("DELETE FROM template");
     alpha = insert("Alpha Residential Rental", "TG", "residential", "PUBLISHED");
     beta = insert("Beta Commercial Lease", "KA", "commercial", "PUBLISHED");
+    national = insert("Epsilon National Rental", "IN", "residential", "PUBLISHED");
     draft = insert("Gamma Draft Rental", "TG", "residential", "DRAFT");
     deprecated = insert("Delta Retired Rental", "MH", "residential", "DEPRECATED");
   }
@@ -83,7 +85,9 @@ class TemplateCatalogApiIntegrationTest {
   void listReturnsOnlyPublishedEntries() throws Exception {
     JsonNode body = getJson("/api/templates");
     assertThat(body.isArray()).isTrue();
-    assertThat(idsOf(body)).containsExactlyInAnyOrder(alpha.toString(), beta.toString());
+    // Commercial and national entries are hidden by the picker only; the API still lists them.
+    assertThat(idsOf(body))
+        .containsExactlyInAnyOrder(alpha.toString(), beta.toString(), national.toString());
     // No draft/deprecated ever appears.
     assertThat(idsOf(body)).doesNotContain(draft.toString(), deprecated.toString());
   }

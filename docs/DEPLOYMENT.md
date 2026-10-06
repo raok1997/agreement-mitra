@@ -17,8 +17,19 @@ and the website.
   Gotenberg all run under Docker Compose on the VPS, and the same origin serves
   the SPA and `/api`. This resolves the open "`/api` problem" in
   `DOMAIN-AND-EMAIL-SETUP.md` section 4 by choosing option (c): one origin, so no
-  CORS and the opaque session cookie works unmodified. **The Cloudflare Pages
-  plan in that document is superseded.**
+  CORS, and the HttpOnly session cookie (`__Host-am_session`) plus its CSRF
+  companion (`__Host-XSRF-TOKEN`) work unmodified. Both are `__Host-` cookies
+  (no `Domain`), so they depend on the apex-only single origin -- `www.`
+  redirects to the apex and never receives them. **The Cloudflare Pages plan in
+  that document is superseded.**
+- **Never edge-cache `/api/*`.** Every API response may carry a per-browser
+  `Set-Cookie: __Host-XSRF-TOKEN` (the CSRF token is issued eagerly), and
+  `GET /api/templates/form` sets its own `Cache-Control: public, max-age`, so
+  Spring Security writes no cache header on it. A Cloudflare cache rule over
+  `/api/*` would serve one visitor's CSRF cookie to others. Leave `/api/*` on
+  Cloudflare's default (bypass for dynamic content) and add no "Cache
+  Everything" rule that matches it. Never log the `Cookie` or `Set-Cookie`
+  headers either: the session cookie is the credential.
 - **Cloudflare in front, proxied (orange cloud), from day one.** The origin IP is
   never published in DNS. TLS is terminated at the Cloudflare edge and
   re-originated to Caddy against a Cloudflare Origin CA certificate, with SSL/TLS
@@ -37,9 +48,13 @@ and the website.
 - **Rate limiting is the compensating control**, not authentication. The
   unauthenticated write endpoints are abuse-exposed rather than breach-exposed:
   unbounded row creation, 10 MB draft uploads filling the disk, and Gotenberg
-  renders exhausting CPU. A Cloudflare rate-limiting rule on `POST /api/*`
-  (excluding the webhook path) bounds all of them without blocking legitimate
-  anonymous use.
+  renders exhausting CPU. Two layers bound them without blocking legitimate
+  anonymous use (`anonymous-surface-abuse-controls`): at the edge, Cloudflare Bot
+  Fight Mode and a rate-limiting rule on `POST /api/*` (excluding the webhook
+  paths), plus Caddy's request-body ceilings; in the application, per-route-class
+  rate limits keyed on the real client address, a 1 MiB body guard, render
+  admission control and redacted security-event logging. Section 5.6 lists the
+  edge half and how to verify it.
 - **Hostnames:** `agreementmitra.com` (canonical) and `www.agreementmitra.com`
   (permanent redirect to the apex).
 
@@ -202,6 +217,7 @@ receives another's credentials:
 | `deploy/env/postgres.env` | `postgres` | `postgres.env.example` |
 | `deploy/env/minio.env` | `minio` | `minio.env.example` |
 | `deploy/env/backend.env` | `backend` | `backend.env.example` |
+| `deploy/env/web-build.env` | the `caddy` image **build** (baked into the public SPA bundle; optional, never a secret) | `web-build.env.example` |
 
 Generate them **on the server**:
 
@@ -289,7 +305,9 @@ is the part of the configuration that actually needs reviewing.
 | `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `DISABLED` to bring the box up before the gateway account exists. |
 | `MAIL_PROVIDER` | `stub` | The email channel is enabled by default, so delivery reports success and sends nothing. |
 | `ESIGN_PROVIDER` | `zoop` | Correct, but `ZOOP_RESPONSE_URL`/`ZOOP_REDIRECT_URL` default **blank**: the callback never arrives and signatures complete only via the reconciliation job. |
-| `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `DEBUG` | Debug logging in production, on identity/legal infra. |
+| `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `INFO` | Correct. Set `DEBUG` only deliberately, for a bounded diagnosis: application lines redact agreement ids to an 8-character prefix, but debug output is still more than production needs. **Do not** raise framework loggers instead -- `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG` logs request URIs (`/api/agreements/<id>/...`), Hibernate bind `TRACE` logs parameter values, root `DEBUG` does both, and enabling a Caddy `log` directive records request URIs; each writes raw agreement ids. |
+| `SIGNING_DRAFT_RETENTION_ENABLED` | `false` | Unpaid drafts are never purged, breaking the 90-day deletion terms of service section 10 promises -- see below. |
+| `DB_URL` | `...?logServerErrorDetail=false` | Correct. An override must keep `logServerErrorDetail=false`, or a unique violation logs the raw agreement id (Postgres `DETAIL`) at ERROR. |
 
 ### Paid fulfilment is off by default, and that is easy to miss
 
@@ -311,7 +329,25 @@ founding-team-beta posture the rule files describe. Confirm that is what you
 want before going live, and revisit it when counsel review lands.
 
 Lock the files down (`provision.sh secrets` already does this):
-`chmod 600 deploy/env/*.env`.
+`chmod 600 deploy/env/*.env`. `web-build.env` holds only public operator identifiers, but is
+locked down with the rest; an existing server created before it existed runs
+`touch deploy/env/web-build.env` once (absent also builds, as "being issued").
+
+### Draft retention is opt-in
+
+A daily job (03:30 IST) deletes every unpaid draft whose content has gone 90
+days without an edit, and sweeps `drafts/` objects a failed delete left behind
+(change `stale-draft-purge`). It runs **only** where
+`SIGNING_DRAFT_RETENTION_ENABLED=true`; `backend.env.example` sets it, and
+production must keep it set -- terms of service section 10 promises the
+deletion. Unsetting it is an incident-only lever.
+
+It is off by default because the purge deletes objects in whatever bucket it
+is pointed at. A database restored or cloned from production and run against
+the same bucket (`S3_BUCKET` defaults to the same name everywhere) would purge
+agreements that are live in production and remove their PDFs. **Invariant: each
+environment has its own bucket.** Never enable the job on a restored or cloned
+database until its `S3_BUCKET` is confirmed to be that environment's own.
 
 ### Why the `sandbox` profile is required
 
@@ -434,6 +470,40 @@ docker compose -f docker-compose.prod.yml exec postgres \
 The template query must return rows. An empty catalog means the `sandbox` profile
 is not active -- see the note in section 3.
 
+### MinIO image -- a manual gate on every deploy
+
+`docker-compose.prod.yml` runs `minio/minio:latest`, which is **unpinned**
+(register row `prod-minio-image-pin`). Two facts make that dangerous:
+
+- **A newer MinIO can break storage.** `RELEASE.2025-09-07` answers minio-java
+  8.6.0's bucket calls in a form it cannot parse, so every PDF write 500s
+  (`Failed to ensure bucket`) while the backend still reports healthy.
+  `RELEASE.2023-09-04T19-57-37Z` is the known-good release (dev and the test
+  harness pin it).
+- **An older MinIO cannot read a newer one's data.** Moving to an older release
+  than the one that wrote the volume makes MinIO exit at startup with
+  `Unknown xl header version 3`. So never "fix" the first problem by pinning
+  lower than what is running.
+
+Until the pin lands, on every deploy:
+
+1. **Before** -- record the running release:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml exec minio minio --version
+   ```
+
+2. **Do not pull MinIO.** `up -d --build` reuses the cached image; a
+   `docker compose pull`, or a fresh box, fetches whatever `latest` is today.
+3. **After** -- run the same command; the release must be unchanged. Then make
+   one real storage write: in the browser, start an agreement at `/start`, fill
+   it in and press **Generate**. A 500 there with MinIO up is this failure, not an
+   application bug.
+
+If the recorded release is `RELEASE.2025-09-07` or later, storage is likely
+already broken -- check with step 3 before deploying anything else, and resolve
+`prod-minio-image-pin` first.
+
 ### Build gates are NOT run by the image builds
 
 The backend image runs `bootJar`, not `check`; the web image runs `build:only`,
@@ -530,6 +600,85 @@ scheduled reconciliation job will quietly complete the signings anyway, several
 minutes late. The system appears to work while the primary path is entirely
 broken, which is considerably harder to notice than an outright failure.
 
+### 5.6 Abuse controls at the edge -- a manual gate
+
+The application enforces its own limits in every environment, but the edge half
+is configuration, not code: nothing in the build proves it is on. **Until
+`prod-readiness-preflight` gives these a production-gate row, they are a manual
+gate -- check each one on every deploy that touches Cloudflare, `deploy/Caddyfile`
+or `deploy/docker-compose.prod.yml`.**
+
+**What makes any of this real:** the origin accepts only Cloudflare's ranges
+(the `DOCKER-USER` chain, fetched live and failing closed -- section 2), so a
+request cannot skip the edge. That allowlist admits **any** Cloudflare tenant,
+whose traffic our zone's rules do not see; the source key stays honest because
+Cloudflare always sets `CF-Connecting-IP`, and the application layer stands on
+its own. **Authenticated Origin Pulls** (Cloudflare presents a client
+certificate Caddy verifies) would close that gap and is not done yet.
+
+1. **Bot Fight Mode** -- **Security** -> **Bots** -> on. The webhook Skip rule in
+   5.5 must cover **both** `/api/webhooks/esign` and `/api/webhooks/razorpay`, or
+   a vendor callback can be challenged.
+   *Verify:* the toggle shows On; a signed test webhook from the vendor dashboard
+   still answers `202`.
+2. **Rate-limiting rule** -- **Security** -> **WAF** -> **Rate limiting rules**:
+   match `http.request.method eq "POST" and starts_with(http.request.uri.path,
+   "/api/") and not starts_with(http.request.uri.path, "/api/webhooks/")`, keyed
+   on IP, block. **Check the current free-plan rule quota and the allowed
+   period/threshold in the dashboard before choosing values** -- it changes. Set
+   the threshold well above the application's own per-source limits so the edge
+   only catches floods.
+   *Verify:* the rule is listed as Deployed with the webhook exclusion visible in
+   its expression.
+3. **Pseudo IPv4 stays Off** -- **Network** -> **Pseudo IPv4**: `Off` (or `Add
+   header`), **never `Overwrite headers`**, or IPv6 clients arrive as synthetic
+   IPv4 addresses and the application's `/64` aggregation is silently defeated.
+   *Verify:* the setting reads Off.
+4. **Caddy forwarded-header overwrite and strip** -- `deploy/Caddyfile`'s `/api/*`
+   proxy sets `X-Forwarded-For` to the address Caddy recovered from
+   `CF-Connecting-IP` (overwrite, not append), pins `X-Forwarded-Proto https`, and
+   strips `Forwarded`, `X-Forwarded-Host`, `X-Forwarded-Prefix` and
+   `X-Forwarded-Port`.
+   *Verify:* the outside-in check below.
+5. **Caddy request-body ceilings** -- 11 MiB on `/api/agreements/*/draft` and
+   `/api/staff/estamp`, 1 MiB on every other `/api/*` path; the two matchers must
+   not overlap or uploads are capped at 1 MiB.
+   *Verify:* `curl -s -o /dev/null -w '%{http_code}' -X POST
+   https://agreementmitra.com/api/agreements -H 'Content-Type: application/json'
+   --data-binary @<(head -c 1200000 /dev/zero | tr '\0' x)` answers `413`.
+6. **Caddy's static address and `internal-proxies` deploy together.**
+   `deploy/docker-compose.prod.yml` pins Caddy to `10.203.17.10` on the declared
+   subnet `10.203.17.0/24`; the application trusts `X-Forwarded-For` only from
+   that address (`server.tomcat.remoteip.internal-proxies`, overridable with
+   `SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES`). Change one, change the other in the
+   same deploy. **Never deploy the application half without the Caddy half:** the
+   application would then trust a header the client can still seed, turning a
+   shared-bucket bug into a bypass. Adding the subnet to an existing stack
+   recreates the network, which needs `docker compose -f docker-compose.prod.yml
+   down` then `up -d` (a plain `up` refuses to change an existing network's IPAM).
+   If `10.203.17.0/24` collides with a network already on the box, pick another
+   and update both halves.
+   *Verify:* `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+   agreementmitra-caddy-1` prints `10.203.17.10`.
+
+**Outside-in check that a forged header does not become the source** (run from
+a machine outside Cloudflare's and the box's networks, once per deploy of items
+4 or 6). Use a cheap route and log no agreement id doing so:
+
+```sh
+# Forge both headers with an address in a DIFFERENT /24 from your own.
+for i in $(seq 1 130); do
+  curl -s -o /dev/null https://agreementmitra.com/api/auth/me \
+    -H 'X-Forwarded-For: 198.51.100.23' -H 'Forwarded: for=198.51.100.23'
+done
+# On the server: the default-class lockout event must name YOUR /24 -- not
+# 198.51.100.0/24, not a Cloudflare range, not the Docker gateway.
+docker compose -f docker-compose.prod.yml logs backend | grep 'event=rate_limit_lockout' | tail -1
+```
+
+The event carries `route=default`, the redacted `source=` prefix and a count --
+never a URI or an agreement id.
+
 ---
 
 ## 6. Verify end to end
@@ -616,6 +765,13 @@ Cloudflare R2 is the natural target (no egress fees, same account you already
 have); Backblaze B2 is equivalent. Restore drills matter more than backup jobs --
 an untested backup is a hypothesis.
 
+**Object storage must be unversioned, with no object lock.** A customer can delete an unpaid
+draft, and the app then removes `drafts/{id}.pdf`; on a versioned bucket that only adds a
+delete marker and the PDF stays. Nothing in this repo enables versioning — keep it that way.
+The backup target must likewise be unversioned or expire old versions. A deleted draft does
+survive in backups until they rotate out, which is why the product says a deleted draft is
+removed *from the service*, not that it is gone permanently.
+
 **Not yet implemented.** See the gaps below.
 
 ---
@@ -624,12 +780,14 @@ an untested backup is a hypothesis.
 
 Carried deliberately, in rough priority order:
 
-1. **`signing-auth` has not landed.** `POST /api/signing/*/request` and
-   `POST /api/agreements/*/draft` carry no ownership authorization, rate
-   limiting, or redacted security-event logging in the application. Anonymous
-   *creation* is intended; what is missing is the abuse bounding and the
-   ownership checks on routes that act on an existing agreement. A Cloudflare
-   rate-limiting rule stands in for the first; the second still needs the CR.
+1. **No ownership authorization on the capability routes.** `POST
+   /api/agreements/*/draft` and the other routes that act on an existing
+   agreement are rate limited and logged (`anonymous-surface-abuse-controls`),
+   but holding the id is still the only authorization -- by design for the
+   no-login product (`claim-bound-to-initiator` in the register is the nearest
+   open item).
+   `POST /api/signing/*/request` is now STAFF-only. The edge half of the abuse
+   controls is a manual gate (section 5.6).
 2. **SSH password authentication is enabled** (section 2). Deferred by decision
    on 2026-07-29 to keep the box reachable during build-out. Port 22 on a public
    VPS is brute-forced continuously; fail2ban is the only thing standing in.

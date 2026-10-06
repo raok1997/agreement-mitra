@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import java.math.BigDecimal;
@@ -50,9 +51,9 @@ public record StampInfo(
     return "StampInfo{certificateNumber="
         + redactedCertificateNumber()
         + ", stampedPdfKey="
-        + stampedPdfKey
+        + AgreementIds.redactIn(stampedPdfKey)
         + ", scanKey="
-        + scanKey
+        + AgreementIds.redactIn(scanKey)
         + ", jurisdiction="
         + jurisdiction
         + ", dutyPaid="

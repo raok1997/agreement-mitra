@@ -4,6 +4,13 @@
 // submitted payload is server-side (document-projection CR).
 
 import type { FormField, FormSchema } from "../api/templateForm";
+import {
+  MAX_YEAR,
+  MIN_YEAR,
+  parseEntry,
+  parseIso,
+  type EntryFailure,
+} from "./dateEntry";
 
 /** In-progress values for one section, keyed by field key. Always strings (matches the shell). */
 export type SectionData = Record<string, string>;
@@ -55,7 +62,7 @@ export function emptyWorking(schema: FormSchema | null): WorkingSet {
 /**
  * Validate one field's raw string value against its metadata. Returns a human message when invalid,
  * or null when valid. Enforces required, numeric min/max (int/money), integer-ness (int), text
- * minLength/maxLength/pattern, and enum options membership.
+ * minLength/maxLength/pattern, date validity and year range, and enum options membership.
  */
 export function validateField(field: FormField, raw: string): string | null {
   const value = (raw ?? "").trim();
@@ -93,12 +100,40 @@ export function validateField(field: FormField, raw: string): string | null {
         // A malformed server-side pattern is not a client failure -- skip the check.
       }
     }
+  } else if (field.type === "date") {
+    return dateError(field.label, value);
   } else if (field.type === "enum") {
     // Membership is checked on the option VALUE (the label is display-only).
     if (field.options && !field.options.some((o) => o.value === value))
       return `Choose a valid ${field.label}.`;
   }
   return null;
+}
+
+const DATE_MESSAGES: Record<EntryFailure, (label: string) => string> = {
+  incomplete: (label) => `${label} is incomplete -- enter it as dd/mm/yyyy.`,
+  "not-a-date": (label) => `${label} must be a date in dd/mm/yyyy format.`,
+  "impossible-date": (label) =>
+    `${label} is not a real date -- check the day and month.`,
+  "out-of-range": (label) =>
+    `${label} must be between ${MIN_YEAR} and ${MAX_YEAR}.`,
+};
+
+/**
+ * A non-empty date value's error, or null. The widget hands over ISO for a valid entry and the raw
+ * typed text otherwise, so anything that is not an in-range ISO date is reported with the reason
+ * `parseEntry` gives. Messages name the field and the format, never the entry.
+ */
+function dateError(label: string, value: string): string | null {
+  const iso = parseIso(value);
+  if (iso) {
+    return iso.year < MIN_YEAR || iso.year > MAX_YEAR
+      ? DATE_MESSAGES["out-of-range"](label)
+      : null;
+  }
+  const entry = parseEntry(value);
+  // A well-formed dd/mm/yyyy that is not ISO is still not a storable value; the widget never emits one.
+  return DATE_MESSAGES[entry.ok ? "not-a-date" : entry.reason](label);
 }
 
 /** Per-field errors for a set of fields against their current values (only invalid fields present). */
@@ -116,76 +151,42 @@ export function fieldErrors(
 
 /**
  * The tenancy term in WHOLE months between two ISO (`yyyy-mm-dd`) dates, or null when either is
- * missing or unparseable. Complete months only, measured exclusive of the end date, with a trailing
- * partial month truncated -- 2026-01-01 to 2026-12-01 is 11, and so is 2026-01-01 to 2026-12-20.
+ * missing or unparseable. Complete months only, counting the end date as the tenancy's LAST DAY
+ * (inclusive), with a trailing partial month truncated -- 2026-09-01 to 2027-07-31 is 11, and so
+ * are 2026-01-01 to 2026-12-01 and 2026-01-01 to 2026-12-20.
  *
- * This mirrors the server's count (java.time.Period.between(...).toTotalMonths()), which is what the
- * rendered document and the stored agreement both use. The server stays authoritative: this exists
- * so the capture form can show the term as the user tabs between the two date fields, without a
- * round-trip. A drift here would show a wrong number on screen but could never sign a wrong term.
+ * This mirrors the server's count (java.time.Period.between(start, end + 1 day).toTotalMonths()),
+ * which is what the rendered document and the stored agreement both use. The server stays
+ * authoritative: this exists so the capture form can show the term as the user tabs between the two
+ * date fields, without a round-trip. A drift here would show a wrong number on screen but could
+ * never sign a wrong term.
  *
- * Deliberately does NOT go through Date arithmetic: `new Date(2026, 0, 31)` plus a month silently
- * rolls over to 3 March. Comparing y/m/d components directly is the only way to get month-end
- * clamping right (31 Jan to 28 Feb is 0 whole months, not 1).
+ * Month arithmetic compares y/m/d components, never Date month addition: `new Date(2026, 0, 31)`
+ * plus a month silently rolls over to 3 March. Date is used only for the one-day step past the end
+ * date, where its rollover is exactly the calendar rule wanted (31 Jan + 1 day = 1 Feb).
  */
-export function tenancyMonths(
-  startIso: string,
-  endIso: string,
-): number | null {
-  const start = parseIsoDate(startIso);
-  const end = parseIsoDate(endIso);
+export function tenancyMonths(startIso: string, endIso: string): number | null {
+  const start = parseIso(startIso);
+  const end = parseIso(endIso);
   if (!start || !end) return null;
 
-  let months =
-    (end.year - start.year) * 12 + (end.month - start.month);
-  // The final month is only COMPLETE once the end day reaches the start day.
-  if (end.day < start.day) months -= 1;
+  const dayAfterEnd = new Date(Date.UTC(end.year, end.month - 1, end.day + 1));
+  const endYear = dayAfterEnd.getUTCFullYear();
+  const endMonth = dayAfterEnd.getUTCMonth() + 1;
+  const endDay = dayAfterEnd.getUTCDate();
+
+  let months = (endYear - start.year) * 12 + (endMonth - start.month);
+  const days = endDay - start.day;
+  // Period.between: a month only counts once complete, in either direction.
+  if (months > 0 && days < 0) months -= 1;
+  else if (months < 0 && days > 0) months += 1;
   return months;
-}
-
-/** An ISO `yyyy-mm-dd` string as y/m/d components, or null when it is not a real calendar date. */
-function parseIsoDate(
-  raw: string,
-): { year: number; month: number; day: number } | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((raw ?? "").trim());
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  // Round-trip through Date to reject a day the month does not have (e.g. 2026-02-31), which the
-  // regex alone accepts and Date alone would silently roll over.
-  const probe = new Date(year, month - 1, day);
-  if (
-    probe.getFullYear() !== year ||
-    probe.getMonth() !== month - 1 ||
-    probe.getDate() !== day
-  ) {
-    return null;
-  }
-  return { year, month, day };
-}
-
-/**
- * The term in months above which registration with the Sub-Registrar is compulsory (Registration
- * Act 1908 s.17(1)(d)). This is the NATIONAL default, mirroring the stamp-duty rules' base
- * `requiredWhenTermMonthsOver: 11`.
- *
- * It is deliberately a fixed number here: the capture form does not reach the rules engine, so a
- * state whose rule is stricter (Telangana sets 0 -- every lease is registrable) is under-warned at
- * capture time and still caught by the state-aware notice at the stamp-quote step. Making this
- * threshold state-aware is tracked in the follow-up register in docs/ROADMAP.md.
- */
-export const REGISTRABLE_OVER_MONTHS = 11;
-
-/** True when a term of this many months must be registered. Null (undetermined) never warns. */
-export function requiresRegistration(months: number | null): boolean {
-  return months !== null && months > REGISTRABLE_OVER_MONTHS;
 }
 
 /**
  * Per-field errors PLUS cross-field rules for a section. `validateField` stays per-field and pure;
- * this is the only place that compares one field against another, so the per-field call sites (and
- * `isSectionComplete`) are unaffected.
+ * this is the only place that compares one field against another, so the per-field call sites are
+ * unaffected. `isSectionComplete` DOES consult the cross-field rules (see `crossFieldErrors`).
  *
  * Today the one cross-field rule is the tenancy date range. The error attaches to the END date --
  * where the user can fix it -- and only once both dates are individually present and valid, so a
@@ -199,24 +200,59 @@ export function sectionErrors(
   data: SectionData,
 ): Record<string, string> {
   const errors = fieldErrors(fields, data);
+  return { ...errors, ...crossFieldErrors(fields, data, errors) };
+}
+
+/**
+ * The cross-field rules ALONE -- the errors `sectionErrors` adds on top of the per-field ones.
+ *
+ * Kept separately addressable because the two classes of error block different things. A per-field
+ * "required" error must NOT prevent saving a section: capture is progressive, and a customer is
+ * expected to fill a section over more than one visit. A cross-field error must, because a section
+ * that saves with a reversed date range reaches the preview and compiles a non-positive term into
+ * the document body.
+ *
+ * `perFieldErrors` is passed in so a rule can stay silent while either field still has an error of
+ * its own -- a half-filled form reports "required", not a confusing range error. Callers that do
+ * not have it to hand may omit it.
+ */
+export function crossFieldErrors(
+  fields: FormField[],
+  data: SectionData,
+  perFieldErrors: Record<string, string> = fieldErrors(fields, data),
+): Record<string, string> {
+  const errors: Record<string, string> = {};
 
   const keys = new Set(fields.map((f) => f.key));
   if (keys.has("startDate") && keys.has("endDate")) {
-    const start = parseIsoDate(data.startDate ?? "");
-    const end = parseIsoDate(data.endDate ?? "");
+    const start = parseIso(data.startDate ?? "");
+    const end = parseIso(data.endDate ?? "");
     // Only when both parse and neither already has an error of its own.
-    if (start && end && !errors.startDate && !errors.endDate) {
-      const months = tenancyMonths(data.startDate ?? "", data.endDate ?? "");
-      const sameDay =
-        start.year === end.year &&
-        start.month === end.month &&
-        start.day === end.day;
-      if (months !== null && (months < 0 || sameDay)) {
+    if (start && end && !perFieldErrors.startDate && !perFieldErrors.endDate) {
+      const endNotAfterStart =
+        end.year * 10000 + end.month * 100 + end.day <=
+        start.year * 10000 + start.month * 100 + start.day;
+      if (endNotAfterStart) {
         errors.endDate = "The end date must be after the start date.";
       }
     }
   }
   return errors;
+}
+
+/**
+ * Whether a section must not be saved as it stands: a cross-field rule fails, or a date field holds
+ * a non-empty value that is not a valid date. Missing is allowed, wrong is not -- a blank date is
+ * reported as required but still saves (capture is progressive), while a malformed one would
+ * otherwise reach the preview as raw text or be silently replaced by the previous value.
+ */
+export function blocksSave(fields: FormField[], data: SectionData): boolean {
+  if (Object.keys(crossFieldErrors(fields, data)).length > 0) return true;
+  return fields.some((f) => {
+    if (f.type !== "date" || f.readOnly) return false;
+    const value = (data[f.key] ?? "").trim();
+    return value !== "" && validateField(f, value) !== null;
+  });
 }
 
 /** True when a section carries at least one required field (so it counts toward completeness). */
@@ -257,12 +293,19 @@ export function isSectionComplete(
   fields: FormField[],
   data: SectionData,
 ): boolean {
-  return fields
+  const everyRequiredFieldFilled = fields
     // A read-only (derived) field is never the customer's to fill, so it can never hold a section
     // back. The backend already projects it required:false, but filtering here too means a stale
     // cached schema cannot strand a section as permanently incomplete.
     .filter((f) => f.required && !f.readOnly)
     .every((f) => !validateField(f, data[f.key] ?? ""));
+  if (!everyRequiredFieldFilled) return false;
+
+  // A cross-field rule must hold too, or a section with a reversed date range would report
+  // complete and let the flow proceed to a deed stating a non-positive term. Only the CROSS-FIELD
+  // rules are added here: per-field errors on OPTIONAL fields deliberately keep their existing
+  // (non-blocking) effect on completeness.
+  return Object.keys(crossFieldErrors(fields, data)).length === 0;
 }
 
 /** True when the customer supplies this field's value -- i.e. it is not a server-derived display. */

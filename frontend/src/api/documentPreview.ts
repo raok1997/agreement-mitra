@@ -13,6 +13,7 @@
 // dropped into a sandboxed iframe via `srcdoc`. The working set is full party PII: nothing here logs
 // the data map or the rendered document.
 
+import { apiFetch } from "./http";
 import type { FormDimensions } from "./templateForm";
 
 /** The flattened working-set data map POSTed to the stateless preview: field key -> string value. */
@@ -60,7 +61,7 @@ async function postDocumentPreview(
   const body: DocumentProjectionRequestBody = { data, activeSections };
   if (dimensions) body.dimensions = dimensions;
   if (documentReference) body.documentReference = documentReference;
-  const res = await fetch(PREVIEW, {
+  const res = await apiFetch(PREVIEW, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: accept },
     body: JSON.stringify(body),

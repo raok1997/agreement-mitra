@@ -2,12 +2,11 @@ package in.agreementmitra.signing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import ch.qos.logback.classic.Level;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.LogCapture;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +15,7 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -149,29 +148,23 @@ class AgreementPreviewIntegrationTest {
     assertThat(flat).doesNotContain("Veeranjaneyulu").doesNotContain("Kukatpally");
   }
 
+  /** PII-absence assertions need the DEBUG lines in the capture; the shipped default is INFO. */
+  @RegisterExtension final LogCapture logs = LogCapture.root("in.agreementmitra", Level.DEBUG);
+
   @Test
   void previewLeavesNoPiiInLogs() {
     String distinctiveTenant = "Zephyrina";
     UUID id = createAgreement(distinctiveTenant);
 
-    Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
-    ListAppender<ILoggingEvent> appender = new ListAppender<>();
-    appender.start();
-    root.addAppender(appender);
-    try {
-      ResponseEntity<byte[]> resp =
-          rest.getForEntity("/api/agreements/{id}/preview", byte[].class, id);
-      assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    int before = logs.messages().size();
+    ResponseEntity<byte[]> resp =
+        rest.getForEntity("/api/agreements/{id}/preview", byte[].class, id);
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-      String logged =
-          appender.list.stream()
-              .map(ILoggingEvent::getFormattedMessage)
-              .reduce("", (a, b) -> a + "\n" + b);
-      assertThat(logged).doesNotContain(distinctiveTenant); // party PII never logged
-      assertThat(logged).doesNotContain("%PDF-"); // rendered bytes never logged
-      assertThat(logged).doesNotContain("Veeranjaneyulu"); // father's name never logged
-    } finally {
-      root.detachAppender(appender);
-    }
+    List<String> messages = logs.messages();
+    String logged = String.join("\n", messages.subList(before, messages.size()));
+    assertThat(logged).doesNotContain(distinctiveTenant); // party PII never logged
+    assertThat(logged).doesNotContain("%PDF-"); // rendered bytes never logged
+    assertThat(logged).doesNotContain("Veeranjaneyulu"); // father's name never logged
   }
 }

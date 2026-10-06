@@ -93,10 +93,21 @@ header, hashes it, looks up a live unexpired session in constant time, and sets 
 Spring Security `Authentication` (principal is the identity id). **Alternatives rejected:**
 a self-contained signed JWT (not server-revocable; tempts encoding PII; key-management
 overhead) -- an opaque hashed handle is revocable, leaks nothing, and matches this
-platform's audit-first ethos. **Deferred hardening:** delivering the session as an
-`HttpOnly; Secure; SameSite` cookie (with CSRF defence) instead of a bearer value in SPA
-memory -- noted as a follow-up (bearer-in-memory is acceptable for the sandbox; XSS risk
-flagged in Risks).
+platform's audit-first ethos. **Superseded by `cookie-session-auth`:** the session now
+travels only as the `__Host-am_session` HttpOnly cookie (no Bearer), with double-submit CSRF
+protection on every unsafe request. The OTP verify endpoint therefore mints through
+`SessionService`, then calls the identity module's package-private
+`SessionCookies.establish` **only on success** (sets the cookie, rotates the CSRF token,
+revokes any prior session last), and is itself CSRF-protected. `login-browser-binding`
+bound only the **Google** flow (a `__Host-am_login` nonce checked at callback and exchange);
+it does **not** cover OTP. CSRF on the verify POST is not the test -- that CR's own exchange
+was CSRF-protected and still exploitable. The test is whether attacker-chosen verify inputs
+(a challenge id and code, or any magic/WhatsApp link) can reach an SPA route that submits
+them in the victim's browser. If any route does, bind the challenge to the requesting
+browser, with its own cookie setter (sharing `am_login` means a Google and an OTP login
+started together overwrite each other's binding); if none does, the gap does not apply. The `auth.cookie.secure` startup guard keys on the
+Google URIs today; if this CR adds a provider-neutral public-origin property, the guard
+should move to it rather than be weakened.
 
 ### D5: Agreement-to-identity linkage is a UUID set at claim -- no cross-module type leak
 
@@ -239,9 +250,10 @@ SPA                         AuthController            OtpService              DB
   plus attempt cap plus per-mobile and per-challenge rate limits plus the peppered hash.
   Residual online-guess risk is bounded by the caps; residual offline risk (DB leak) is
   bounded by the env pepper.
-- **Bearer value in SPA memory is XSS-exposed** -- accepted for sandbox; the `HttpOnly`
-  cookie plus CSRF hardening (D4) is the flagged production follow-up. No PII is in the
-  value.
+- **Session value exposure** -- resolved by `cookie-session-auth`: the value is an
+  HttpOnly cookie no script can read. Residual: any XSS can still *ride* the session while
+  the page is open (tracked as `spa-content-security-policy`), and whether the verify step
+  needs its own browser binding depends on D4's URL-input test. No PII is in the value.
 - **Single-instance rate-limiter and session store** -- correct only for one instance;
   multi-instance needs a shared store (D6). Sandbox is single-instance; flagged.
 - **Un-owned PII lives server-side** -- anonymous drafts hold party names/emails (and, in
@@ -272,8 +284,8 @@ V7 manually (`flyway.clean` stays disabled). No deployed consumers.
 - **Session lifetime, idle vs absolute expiry** -- proposing an absolute expiry with a
   `last_seen_at` touch; confirm whether idle-timeout sliding expiry is wanted now or
   deferred.
-- **Cookie vs bearer for the session** -- D4 ships bearer-in-memory for the sandbox and
-  defers the `HttpOnly` cookie; confirm that ordering is acceptable.
+- **Cookie vs bearer for the session** -- settled by `cookie-session-auth` (see D4): cookie
+  only, CSRF-protected, minted via `SessionCookies.establish`.
 - **Unclaimed-draft retention window** -- how long an owner-null draft is kept before the
   purge job (D14) deletes it. Proposing a conservative default (for example 30 days,
   env-tunable); confirm the window and whether the purge should run in this CR or land as a

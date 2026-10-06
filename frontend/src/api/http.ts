@@ -1,0 +1,175 @@
+// The one fetch wrapper every src/api module goes through (cookie-session-auth D8). The session is
+// an HttpOnly cookie the browser attaches by itself; this wrapper adds the double-submit CSRF header
+// to unsafe methods, retries exactly once on a CSRF refusal, and asks the auth store to re-check
+// the session after an authorization failure. A guard test fails the build if any other module
+// calls fetch directly.
+//
+// It is also the ONE place a server refusal for load is recognised (anonymous-surface-abuse-controls
+// D5): a 429, or a 503 whose problem type is render-busy, is thrown as a ServiceBusyError carrying
+// the server's Retry-After, so every view shows "try again in N seconds" rather than a raw status.
+// Every other response -- including the staff console's stamp-render-unavailable 503 and a bodyless
+// edge 5xx -- is returned unchanged, exactly as before.
+
+import { readCookie } from "./cookies";
+import { PROBLEM } from "./problems";
+
+const SECURE_CSRF_COOKIE = "__Host-XSRF-TOKEN";
+const INSECURE_CSRF_COOKIE = "XSRF-TOKEN";
+const CSRF_HEADER = "X-XSRF-TOKEN";
+const CSRF_BOOTSTRAP = "/api/auth/csrf";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * An error whose message is written for customers, so a view may show it as is. Every other error
+ * -- an API HTTP error carrying a status string, a failed fetch -- gets the view's generic message
+ * instead (agreement-error-problem-type-plumbing D4). A guard test limits where one is constructed.
+ */
+export class CustomerFacingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CustomerFacingError";
+  }
+}
+
+/**
+ * The server refused a request for load -- rate limited (429) or every renderer busy (503
+ * render-busy). Not a session problem and not a failure of the request itself: the same request
+ * will succeed after `retryAfterSeconds`. Never retried automatically.
+ */
+export class ServiceBusyError extends CustomerFacingError {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super(
+      `We're getting a lot of requests right now. Please try again in ${retryAfterSeconds} second${
+        retryAfterSeconds === 1 ? "" : "s"
+      }.`,
+    );
+    this.name = "ServiceBusyError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/** The customer-facing retry message when `e` is a load refusal, otherwise null. */
+export function busyMessage(e: unknown): string | null {
+  return e instanceof ServiceBusyError ? e.message : null;
+}
+
+/** Retry-After in whole seconds; the default when it is absent or not a positive integer. */
+function retryAfterSeconds(res: Response): number {
+  const raw = res.headers?.get?.("Retry-After");
+  const seconds = raw == null ? NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds > 0
+    ? seconds
+    : DEFAULT_RETRY_AFTER_SECONDS;
+}
+
+async function isServiceBusy(res: Response): Promise<boolean> {
+  if (res.status === 429) return true;
+  if (res.status !== 503 || typeof res.clone !== "function") return false;
+  try {
+    const body = await res.clone().json();
+    return body?.type === PROBLEM.renderBusy;
+  } catch {
+    return false;
+  }
+}
+
+let bootstrap: Promise<void> | null = null;
+let reconcileHook: (() => void) | null = null;
+
+/** Registered by the auth store: re-check /me after a 401 or a non-CSRF 403. */
+export function setReconcileHook(hook: (() => void) | null): void {
+  reconcileHook = hook;
+}
+
+/** The CSRF token, preferring the __Host- cookie over a (possibly planted) unprefixed one. */
+function csrfToken(): string | null {
+  return readCookie(SECURE_CSRF_COOKIE) ?? readCookie(INSECURE_CSRF_COOKIE);
+}
+
+/** Obtain a CSRF cookie when neither exists. Concurrent callers share one bootstrap request. */
+export function ensureCsrf(): Promise<void> {
+  if (csrfToken() !== null) return Promise.resolve();
+  if (!bootstrap) {
+    bootstrap = fetch(CSRF_BOOTSTRAP, { credentials: "same-origin" })
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        bootstrap = null;
+      });
+  }
+  return bootstrap;
+}
+
+function pathOf(input: string): string {
+  try {
+    return new URL(input, "http://localhost").pathname;
+  } catch {
+    return input;
+  }
+}
+
+async function isCsrfRefusal(res: Response): Promise<boolean> {
+  if (res.status !== 403 || typeof res.clone !== "function") return false;
+  try {
+    const body = await res.clone().json();
+    return body?.type === PROBLEM.csrf;
+  } catch {
+    return false;
+  }
+}
+
+function withCsrfHeader(init: RequestInit): RequestInit {
+  const token = csrfToken();
+  if (token === null) return init;
+  if (init.headers instanceof Headers) {
+    const headers = new Headers(init.headers);
+    headers.set(CSRF_HEADER, token);
+    return { ...init, headers };
+  }
+  const base = Array.isArray(init.headers)
+    ? Object.fromEntries(init.headers)
+    : (init.headers as Record<string, string> | undefined);
+  return { ...init, headers: { ...base, [CSRF_HEADER]: token } };
+}
+
+export async function apiFetch(
+  input: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const unsafe = !SAFE_METHODS.has(method);
+  const base: RequestInit = { ...init, credentials: "same-origin" };
+
+  let res: Response;
+  let csrfRefused = false;
+  if (unsafe) {
+    await ensureCsrf();
+    res = await fetch(input, withCsrfHeader(base));
+    if (await isCsrfRefusal(res)) {
+      // CsrfFilter refused before any handler ran, so resending cannot double-apply anything. The
+      // refusal itself normally carries a fresh cookie; bootstrap only if there is still none.
+      await ensureCsrf();
+      res = await fetch(input, withCsrfHeader(base));
+      csrfRefused = await isCsrfRefusal(res);
+    }
+  } else {
+    res = await fetch(input, base);
+  }
+
+  // A refusal for load is neither retried here nor a reason to re-check the session.
+  if (await isServiceBusy(res)) {
+    throw new ServiceBusyError(retryAfterSeconds(res));
+  }
+
+  const authFailure =
+    res.status === 401 || (res.status === 403 && !csrfRefused);
+  if (authFailure && !pathOf(input).startsWith("/api/auth/") && reconcileHook) {
+    reconcileHook();
+  }
+  return res;
+}

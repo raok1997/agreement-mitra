@@ -1,5 +1,6 @@
 package in.agreementmitra.documents;
 
+import static in.agreementmitra.support.CsrfMockMvc.csrf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -9,12 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import ch.qos.logback.classic.Level;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.LogCapture;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -25,7 +25,7 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -91,6 +91,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(fullData("Asha Rao"))))
@@ -116,6 +117,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(fullData("Asha Rao"))))
@@ -137,6 +139,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(Map.of("ownerName", "Asha Rao"))))
@@ -154,6 +157,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(data)))
@@ -175,6 +179,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(data)))
@@ -194,6 +199,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(fullData("Asha Rao"))))
@@ -213,6 +219,7 @@ class DocumentProjectionApiIntegrationTest {
     mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(mapper.writeValueAsString(body)))
@@ -229,6 +236,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(fullData("Asha Rao"))))
@@ -314,6 +322,9 @@ class DocumentProjectionApiIntegrationTest {
 
   // --- 4.5 log hygiene ------------------------------------------------------
 
+  /** PII-absence assertions need the DEBUG lines in the capture; the shipped default is INFO. */
+  @RegisterExtension final LogCapture logs = LogCapture.root("in.agreementmitra", Level.DEBUG);
+
   @Test
   void statelessPreviewLeavesNoPiiOrBytesInLogs() throws Exception {
     String distinctive = "Zephyrina";
@@ -323,6 +334,7 @@ class DocumentProjectionApiIntegrationTest {
                 mockMvc
                     .perform(
                         post(PREVIEW)
+                            .with(csrf())
                             .contentType(MediaType.APPLICATION_JSON)
                             .accept(MediaType.APPLICATION_PDF)
                             .content(previewBody(fullData(distinctive))))
@@ -379,6 +391,7 @@ class DocumentProjectionApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/agreements")
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(body)))
             .andExpect(status().isCreated())
@@ -388,19 +401,11 @@ class DocumentProjectionApiIntegrationTest {
   }
 
   /** Run {@code action} with a root-logger appender attached, returning the concatenated log. */
-  private static String captureRootLogsWhile(ThrowingRunnable action) throws Exception {
-    Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
-    ListAppender<ILoggingEvent> appender = new ListAppender<>();
-    appender.start();
-    root.addAppender(appender);
-    try {
-      action.run();
-      return appender.list.stream()
-          .map(ILoggingEvent::getFormattedMessage)
-          .reduce("", (a, b) -> a + "\n" + b);
-    } finally {
-      root.detachAppender(appender);
-    }
+  private String captureRootLogsWhile(ThrowingRunnable action) throws Exception {
+    int before = logs.messages().size();
+    action.run();
+    List<String> messages = logs.messages();
+    return String.join("\n", messages.subList(before, messages.size()));
   }
 
   @FunctionalInterface

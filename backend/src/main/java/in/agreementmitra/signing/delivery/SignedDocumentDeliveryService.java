@@ -1,5 +1,7 @@
 package in.agreementmitra.signing.delivery;
 
+import in.agreementmitra.AgreementIds;
+import in.agreementmitra.OperatingEntity;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.ClosureReason;
@@ -71,6 +73,7 @@ public class SignedDocumentDeliveryService {
   private final EmailSender emailSender;
   private final AttachmentCeiling attachmentCeiling;
   private final DeliveryProperties properties;
+  private final String operatorLine;
 
   SignedDocumentDeliveryService(
       SigningRequestQuery signingRequestQuery,
@@ -79,7 +82,8 @@ public class SignedDocumentDeliveryService {
       BlobStore blobStore,
       EmailSender emailSender,
       AttachmentCeiling attachmentCeiling,
-      DeliveryProperties properties) {
+      DeliveryProperties properties,
+      OperatingEntity operator) {
     this.signingRequestQuery = signingRequestQuery;
     this.agreementService = agreementService;
     this.persistence = persistence;
@@ -87,6 +91,7 @@ public class SignedDocumentDeliveryService {
     this.emailSender = emailSender;
     this.attachmentCeiling = attachmentCeiling;
     this.properties = properties;
+    this.operatorLine = DeliveryMessages.operatorLine(operator);
   }
 
   /**
@@ -204,8 +209,9 @@ public class SignedDocumentDeliveryService {
     boolean oversize = attachmentCeiling.exceededBy(signedPdf.length);
     EmailMessage message =
         oversize
-            ? DeliveryMessages.notificationOnly(row.recipientEmail(), reference)
-            : DeliveryMessages.withAttachment(row.recipientEmail(), reference, signedPdf);
+            ? DeliveryMessages.notificationOnly(row.recipientEmail(), reference, operatorLine)
+            : DeliveryMessages.withAttachment(
+                row.recipientEmail(), reference, signedPdf, operatorLine);
     try {
       emailSender.send(message);
     } catch (EmailDeliveryException e) {
@@ -265,7 +271,7 @@ public class SignedDocumentDeliveryService {
     if (agreementService.close(view.agreementId(), ClosureReason.COMPLETED)) {
       log.info(
           "Agreement {} closed as completed: signed and delivered to every party",
-          view.agreementId());
+          AgreementIds.redact(view.agreementId()));
     }
   }
 
@@ -287,7 +293,8 @@ public class SignedDocumentDeliveryService {
           default -> ClosureReason.ABANDONED_SIGNING_FAILED;
         };
     if (agreementService.close(view.agreementId(), reason)) {
-      log.info("Agreement {} closed as abandoned ({})", view.agreementId(), reason);
+      log.info(
+          "Agreement {} closed as abandoned ({})", AgreementIds.redact(view.agreementId()), reason);
     }
   }
 

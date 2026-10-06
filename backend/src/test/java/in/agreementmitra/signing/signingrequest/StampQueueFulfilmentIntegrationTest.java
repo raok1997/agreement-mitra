@@ -10,6 +10,7 @@ import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -216,7 +217,7 @@ class StampQueueFulfilmentIntegrationTest {
 
   private ResponseEntity<String> queueAs(String token) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(token);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     ResponseEntity<String> response =
         rest.exchange(QUEUE, HttpMethod.GET, new HttpEntity<>(headers), String.class);
     return response;
@@ -317,7 +318,7 @@ class StampQueueFulfilmentIntegrationTest {
     }
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
   }

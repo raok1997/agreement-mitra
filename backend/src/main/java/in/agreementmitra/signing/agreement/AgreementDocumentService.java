@@ -1,8 +1,11 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
+import in.agreementmitra.RenderCapacityException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampRenderUnavailableException;
 import in.agreementmitra.documents.DocumentRenderException;
+import in.agreementmitra.documents.RenderPriority;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
@@ -69,40 +72,38 @@ public class AgreementDocumentService {
 
   /**
    * Render the agreement's document and return the PDF bytes. Nothing is stored. Uses the generate
-   * projection (full validation over the effective template's field schema); a persisted agreement
-   * always carries its required fields.
+   * projection (full validation over the effective template's field schema), so an agreement whose
+   * stored party father's name or address is blank (a row persisted before structured party
+   * capture) is refused with field-level errors rather than rendered with blanks.
    *
-   * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
+   * <p>Owner-scoped once claimed: a non-owner is refused before anything is rendered.
+   *
+   * @param callerIdentityId the authenticated caller, or null when anonymous
+   * @throws ResourceNotFoundException if the agreement does not exist or is claimed by someone else
+   *     (mapped to 404)
    */
   @Transactional(readOnly = true)
-  public byte[] renderPreview(UUID agreementId) {
-    return render(agreementId).pdf();
+  public byte[] renderPreview(UUID agreementId, UUID callerIdentityId) {
+    return render(findFor(agreementId, callerIdentityId)).pdf();
   }
 
   /**
    * Render the agreement's document for generate-as-draft and return the PDF bytes <b>plus</b> the
    * {@link EffectiveTemplateIdentity} of the template rendered and the execution date printed.
    * Nothing is stored here; the caller stores the bytes as the draft and then records the identity
-   * and date via {@link #pinEffectiveTemplate(UUID, EffectiveTemplateIdentity, String)} once
+   * and date via {@link #pinEffectiveTemplate(UUID, UUID, EffectiveTemplateIdentity, String)} once
    * storage succeeds. Uses the same full generate projection as {@link #renderPreview}.
    *
-   * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
+   * <p>Owner-scoped once claimed, and unlocked: it stores nothing, and the attach and pin that
+   * follow re-check under the row lock.
+   *
+   * @param callerIdentityId the authenticated caller, or null when anonymous
+   * @throws ResourceNotFoundException if the agreement does not exist or is claimed by someone else
+   *     (mapped to 404)
    */
   @Transactional(readOnly = true)
-  public DocumentProjectionResult renderForDraft(UUID agreementId) {
-    return render(agreementId);
-  }
-
-  /**
-   * Record the effective-template <b>reproducibility pin</b> ({@code contentHash} + layer versions)
-   * on the agreement, recording no draft execution date. Prefer the three-argument form on the
-   * generate path.
-   *
-   * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
-   */
-  @Transactional
-  public void pinEffectiveTemplate(UUID agreementId, EffectiveTemplateIdentity identity) {
-    pinEffectiveTemplate(agreementId, identity, null);
+  public DocumentProjectionResult renderForDraft(UUID agreementId, UUID callerIdentityId) {
+    return render(findFor(agreementId, callerIdentityId));
   }
 
   /**
@@ -113,12 +114,28 @@ public class AgreementDocumentService {
    * so a rejected/frozen generate pins nothing. Reuses the existing generate-as-draft transition --
    * no new signing-status FSM state.
    *
-   * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
+   * <p><b>Invariant: loads under the row lock {@code claim} takes, and re-checks the owner.</b>
+   * Generate is three transactions, so a claim or an owner's edit can land between the draft attach
+   * and this pin. {@link Agreement} has no version column and flushes every column, so an unlocked
+   * pin that read the pre-claim row would write {@code owner_identity_id = NULL} back. A refused
+   * pin writes nothing; the draft stored before the claim keeps a null execution date, so stamping
+   * never trusts the hash for it.
+   *
+   * @param callerIdentityId the authenticated caller, or null when anonymous
+   * @throws ResourceNotFoundException if the agreement does not exist or is claimed by someone else
+   *     (mapped to 404)
    */
   @Transactional
   public void pinEffectiveTemplate(
-      UUID agreementId, EffectiveTemplateIdentity identity, String executionDate) {
-    Agreement agreement = find(agreementId);
+      UUID agreementId,
+      UUID callerIdentityId,
+      EffectiveTemplateIdentity identity,
+      String executionDate) {
+    Agreement agreement =
+        repository
+            .findByIdForUpdate(agreementId)
+            .filter(a -> a.admits(callerIdentityId))
+            .orElseThrow(() -> notFound(agreementId));
     // managed entity -- flushed on tx commit
     agreement.pinEffectiveTemplate(
         identity.contentHash(),
@@ -140,15 +157,17 @@ public class AgreementDocumentService {
    * <p>When the captured {@code agreementDate} is blank the draft printed the date it was rendered;
    * that recorded date is passed back so the re-render never prints the intake date instead.
    *
-   * @throws StampRenderUnavailableException if the renderer is unavailable -- retryable, nothing
-   *     has been written
+   * @throws StampRenderUnavailableException if the renderer is unavailable or at capacity --
+   *     retryable, nothing has been written
    * @throws ResourceNotFoundException if the agreement does not exist (mapped to 404)
    */
   @Transactional(readOnly = true)
   public Optional<byte[]> renderForStamp(UUID agreementId, BigDecimal dutyAmount) {
     try {
       return reRenderStoredDraft(find(agreementId), dutyAmount);
-    } catch (DocumentRenderException e) {
+    } catch (DocumentRenderException | RenderCapacityException e) {
+      // A capacity refusal (the reserved slot is also busy) is render unavailability like any
+      // other: audited OUTCOME_RENDER_UNAVAILABLE, and staff see "nothing saved; retry".
       throw new StampRenderUnavailableException("instrument re-render failed", e);
     }
   }
@@ -186,7 +205,11 @@ public class AgreementDocumentService {
         documentProjection.generate(
             new DocumentProjectionRequest(
                 dimensions, data, activeSectionsFor(agreement), agreement.trackingReference()),
-            Map.of(STAMP_DUTY_AMOUNT_KEY, stampDutyAmount));
+            Map.of(STAMP_DUTY_AMOUNT_KEY, stampDutyAmount),
+            // The one FULFILMENT render: it may take the slot reserved for paid fulfilment, so an
+            // anonymous preview flood cannot fast-fail stamping an agreement that has been paid
+            // for.
+            RenderPriority.FULFILMENT);
     if (!pinnedHash.equals(result.identity().contentHash())) {
       // The layers changed between the check above and the render: still drift.
       return fallBack(agreementId, "PIN_DRIFT");
@@ -197,19 +220,30 @@ public class AgreementDocumentService {
   private static Optional<byte[]> fallBack(UUID agreementId, String reason) {
     log.info(
         "Stamping agreement {} onto its stored draft without a re-render (reason {})",
-        agreementId,
+        AgreementIds.redact(agreementId),
         reason);
     return Optional.empty();
   }
 
+  /** Caller-less load: the staff/fulfilment path only, never a customer route. */
   private Agreement find(UUID agreementId) {
-    return repository
-        .findById(agreementId)
-        .orElseThrow(() -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+    return repository.findById(agreementId).orElseThrow(() -> notFound(agreementId));
   }
 
-  private DocumentProjectionResult render(UUID agreementId) {
-    Agreement agreement = find(agreementId);
+  /** Owner-scoped load: an unknown id and a non-owner both get the same 404. */
+  private Agreement findFor(UUID agreementId, UUID callerIdentityId) {
+    return repository
+        .findById(agreementId)
+        .filter(a -> a.admits(callerIdentityId))
+        .orElseThrow(() -> notFound(agreementId));
+  }
+
+  private static ResourceNotFoundException notFound(UUID agreementId) {
+    return new ResourceNotFoundException(
+        "Agreement not found: " + AgreementIds.redact(agreementId));
+  }
+
+  private DocumentProjectionResult render(Agreement agreement) {
     // The agreement's ONE tracking reference is passed as the document reference; the projection
     // renders it (with the platform URL) as the body provenance line -- system-owned body content
     // that does not affect the effective template or its pin. It is the same value the customer was

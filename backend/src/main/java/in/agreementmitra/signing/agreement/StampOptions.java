@@ -23,7 +23,8 @@ public record StampOptions(long dutyPaise, List<Option> options) {
   /**
    * The current version of the under-stamping warning a customer must acknowledge to buy a stamp
    * value below the legal duty. Bump it whenever the warning text changes, so an acknowledgement
-   * given against older wording is refused rather than silently reused.
+   * given against older wording is refused rather than silently reused. ToS §7
+   * (frontend/src/content/termsOfService.ts) paraphrases the warning: re-check it on every bump.
    */
   public static final String UNDER_STAMP_WARNING_VERSION = "under-stamp-v1";
 

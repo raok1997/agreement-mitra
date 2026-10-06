@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.payment;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.signing.PaymentConfirmation;
 import in.agreementmitra.signing.agreement.AgreementService;
@@ -69,7 +70,7 @@ public class PaymentService {
       PaymentStateResponse response =
           agreementService.recordPayment(agreementId, confirmation, staffIdentityId);
       // Never log the amount or the reference - the fact is enough for an operations trail.
-      log.debug("Payment recorded for agreement {}", agreementId);
+      log.debug("Payment recorded for agreement {}", AgreementIds.redact(agreementId));
       return response;
     } catch (DataIntegrityViolationException e) {
       throw ConflictException.paymentReferenceAlreadyUsed();
@@ -83,7 +84,7 @@ public class PaymentService {
    */
   public PaymentStateResponse waive(UUID staffIdentityId, UUID agreementId) {
     PaymentStateResponse response = agreementService.waivePayment(agreementId, staffIdentityId);
-    log.debug("Payment waived for agreement {}", agreementId);
+    log.debug("Payment waived for agreement {}", AgreementIds.redact(agreementId));
     return response;
   }
 

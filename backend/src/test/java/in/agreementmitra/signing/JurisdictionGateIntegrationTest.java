@@ -62,6 +62,7 @@ class JurisdictionGateIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   // --- helpers ---------------------------------------------------------------
@@ -401,11 +402,14 @@ class JurisdictionGateIntegrationTest {
     attachDraft(id);
     in.agreementmitra.support.Payments.waive(jdbc, id);
 
+    // The route is STAFF-only; staff are exactly who would retry it.
+    HttpHeaders staff = json();
+    staff.addAll(in.agreementmitra.support.SigningRequests.staffHeaders(context));
     ResponseEntity<String> refused =
         rest.exchange(
             "/api/signing/" + id + "/request",
             HttpMethod.POST,
-            new HttpEntity<>(json()),
+            new HttpEntity<>(staff),
             String.class);
 
     assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);

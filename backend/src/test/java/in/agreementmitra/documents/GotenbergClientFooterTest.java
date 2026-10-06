@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Test;
 class GotenbergClientFooterTest {
 
   private static final GotenbergProperties GOTENBERG =
-      new GotenbergProperties("http://localhost:3000", 4, Duration.ofSeconds(30));
+      new GotenbergProperties(
+          "http://localhost:3000", 4, Duration.ofSeconds(30), Duration.ofSeconds(2), 2, 1);
 
   private static GotenbergClient clientWithFooterUrl(String platformUrl) {
     return new GotenbergClient(null, GOTENBERG, new DocumentFooterProperties(platformUrl, ""));

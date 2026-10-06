@@ -7,9 +7,7 @@ and no longer holds the agreement's unguessable identifier. A link carrying that
 emailed to a signer address on file -- unprompted at payment, and again on request. The
 tracking reference selects the agreement but never grants access to it. Recovery restores what
 the customer already had; it grants no capability they did not hold before closing the tab.
-
 ## Requirements
-
 ### Requirement: A tracking reference alone SHALL NOT grant access to an agreement
 
 The system SHALL NOT return agreement data, or any field of it, in response to a request that
@@ -207,6 +205,15 @@ The system SHALL limit the rate of recovery requests per source and per referenc
 apply a lockout after repeated failures. Rate limiting SHALL NOT change the shape of the
 response in a way that reveals whether a reference exists.
 
+The **source** SHALL be the requester's own address as resolved from the trusted reverse-proxy
+chain, never the address of the proxy in front of the application. Keyed on a proxy address, a
+per-source limit stops being per-source: every customer shares one bucket, so one caller's
+lockout refuses every other customer, and the limit this requirement describes is not in force.
+Source resolution is specified by `anonymous-abuse-controls`.
+
+The limiter SHALL NOT retain an entry for a key whose window and lockout have elapsed, so that
+the control cannot be turned into a memory-exhaustion vector by rotating sources.
+
 Every recovery request SHALL produce an audit record capturing the reference, the outcome, and
 the time. Logs and audit records SHALL record recipient addresses only in redacted form.
 
@@ -214,6 +221,12 @@ the time. Logs and audit records SHALL record recipient addresses only in redact
 
 - **WHEN** recovery requests exceed the configured rate from one source
 - **THEN** further requests are refused for a lockout period
+
+#### Scenario: One source's lockout does not refuse another customer
+
+- **GIVEN** two customers reaching the application through the same reverse proxy
+- **WHEN** one of them is placed in lockout by the per-source limit
+- **THEN** the other's recovery request is still accepted
 
 #### Scenario: Throttling is not an oracle
 
@@ -235,3 +248,4 @@ and audit records only.
 
 - **WHEN** recovery is requested in an environment with no real mail provider configured
 - **THEN** no mail is attempted and the caller sees the standard response
+

@@ -44,16 +44,15 @@ For an unknown `agreementId` the system SHALL respond `404 Not Found` as RFC 945
 respond `400 Bad Request` as problem+json, not 404. The response SHALL NOT echo signer
 PII beyond the signing URLs needed by the caller.
 
-> Note (documented risk, deferred): this endpoint is currently **unauthenticated** —
-> consistent with the rest of the API (no auth mechanism exists yet). Because it now
-> triggers a real provider call (outbound signer PII + signing invites + quota use),
-> ownership-based authorization, rate-limiting, and security-event logging are deferred
-> to a dedicated follow-up `signing-auth` change. Sandbox + dummy data only mitigates
-> this in this repo.
+The endpoint SHALL be restricted to callers holding the STAFF authority (per
+`backend-security-baseline`). Signing is initiated server-side once the e-stamp is attached,
+so this endpoint is a staff retry hatch, not a customer path; because it triggers a real
+provider call (outbound signer PII, signing invites, provider quota), it is not reachable
+anonymously.
 
 #### Scenario: Signing request is created for a valid agreement
 
-- **WHEN** a client POSTs `/api/signing/{agreementId}/request` for an existing
+- **WHEN** a STAFF caller POSTs `/api/signing/{agreementId}/request` for an existing
   multi-party agreement **that has an uploaded draft**
 - **THEN** the system loads the stored draft bytes, persists a signing-request row before
   the provider call, **stamps the document**, calls the provider once **with the stamped

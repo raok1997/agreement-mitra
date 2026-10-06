@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -50,7 +51,7 @@ public record StaffAgreementView(
   @Override
   public String toString() {
     return "StaffAgreementView{agreementId="
-        + agreementId
+        + AgreementIds.redact(agreementId)
         + ", trackingReference="
         + trackingReference
         + ", parties="

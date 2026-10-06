@@ -16,12 +16,18 @@ interface OauthLoginStateRepository extends JpaRepository<OauthLoginState, UUID>
   /**
    * Atomically consume a login state: mark it consumed only if it is currently unconsumed and
    * unexpired. Returns the number of rows updated -- {@code 1} means this caller won the single-use
-   * race, {@code 0} means the state was unknown, already consumed, or expired. Doing the guard in
-   * one conditional UPDATE (not read-then-write) makes the single-use guarantee race-safe.
+   * race, {@code 0} means the state was unknown, already consumed, expired, or bound to another
+   * browser. Doing the guard in one conditional UPDATE (not read-then-write) makes the single-use
+   * guarantee race-safe, and makes a binding mismatch indistinguishable from an unknown state. A
+   * row with a null binding hash never matches, so it is never consumed (login-browser-binding D2).
    */
   @Modifying
   @Query(
       "update OauthLoginState s set s.consumedAt = :now "
-          + "where s.stateHash = :stateHash and s.consumedAt is null and s.expiresAt > :now")
-  int consume(@Param("stateHash") String stateHash, @Param("now") Instant now);
+          + "where s.stateHash = :stateHash and s.browserBindingHash = :bindingHash "
+          + "and s.consumedAt is null and s.expiresAt > :now")
+  int consume(
+      @Param("stateHash") String stateHash,
+      @Param("bindingHash") String bindingHash,
+      @Param("now") Instant now);
 }

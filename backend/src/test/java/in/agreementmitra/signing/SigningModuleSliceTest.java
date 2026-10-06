@@ -1,5 +1,6 @@
 package in.agreementmitra.signing;
 
+import in.agreementmitra.OperatingEntityConfig;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.support.HarnessTestConfig;
@@ -20,10 +21,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * collaborator module is not loaded, so its bean is supplied as a {@link MockitoBean} — the
  * Modulith-idiomatic way to isolate a slice from another module.
  *
+ * <p>A standalone slice does not scan the root package, so the root {@link OperatingEntityConfig}
+ * the delivery service depends on is imported explicitly.
+ *
  * <p>{@code disabledWithoutDocker = true} makes this skip (not fail) without a Docker daemon.
  */
 @ApplicationModuleTest
-@Import(HarnessTestConfig.class)
+@Import({HarnessTestConfig.class, OperatingEntityConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class SigningModuleSliceTest {

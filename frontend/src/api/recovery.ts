@@ -4,6 +4,8 @@
 // claimed, nobody contactable, throttled, or sent. There is deliberately nothing to parse and
 // nothing to branch on, and this module must not invent a distinction the server refuses to make.
 
+import { apiFetch } from "./http";
+
 const BASE = "/api";
 
 /**
@@ -14,7 +16,7 @@ const BASE = "/api";
  * failure, which says nothing about the reference either.
  */
 export async function requestRecovery(reference: string): Promise<void> {
-  const res = await fetch(`${BASE}/agreements/recovery`, {
+  const res = await apiFetch(`${BASE}/agreements/recovery`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reference }),

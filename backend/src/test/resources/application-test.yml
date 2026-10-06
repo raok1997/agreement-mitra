@@ -21,6 +21,31 @@ spring:
     enabled: true
     clean-disabled: true
 
+# Client-address resolution (anonymous-surface-abuse-controls D2). Tests reach a RANDOM_PORT server
+# from loopback, so loopback plays the trusted reverse proxy and a test simulates distinct clients
+# with X-Forwarded-For (TEST-NET addresses, 203.0.113.x). MockMvc never runs Tomcat's RemoteIpValve,
+# so MockMvc tests set the remote address directly instead.
+server:
+  tomcat:
+    remoteip:
+      internal-proxies: '127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1'
+
+# Render admission (anonymous-surface-abuse-controls D6) must leave connections free in the pool of 4
+# above: 2 slots (1 general + 1 reserved for the stamp render) + 1 waiter = 3. Suite tests render one
+# at a time, so the single general slot never refuses them; the saturation tests set their own.
+gotenberg:
+  max-concurrent-renders: 2
+  reserved-renders: 1
+  max-waiters: 1
+
+# Route-class rate limits OFF suite-wide: every test request comes from loopback, so at the real
+# defaults one test's traffic would throttle the next (36 anonymous creates alone pass the anonymous
+# write limit). Tests ABOUT the limits run in their own context with this on and reset() between
+# cases. Recovery's own limiter stays on, as before.
+abuse:
+  limits:
+    enabled: false
+
 # The reconciliation scheduler is disabled in tests so it never fires against unrelated test
 # fixtures; reconciliation behaviour is tested by invoking the job method directly.
 signing:
@@ -33,6 +58,10 @@ signing:
     retry-enabled: false
     initial-backoff: PT0S
     max-backoff: PT0S
+  # The draft retention job is opt-in everywhere; pinned off here too. Tests call DraftRetention
+  # directly.
+  draft-retention:
+    enabled: false
 
 # The email seam stays on the STUB in tests: messages are captured in memory and nothing is sent, so
 # no test needs a mailbox, a credential, or network access. Delivery tests assert against the

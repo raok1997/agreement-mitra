@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.SigningRequestQuery;
@@ -71,20 +72,24 @@ public class SignedDocumentController {
    */
   @GetMapping("/{id}/signed-document")
   public ResponseEntity<byte[]> signedDocument(
-      @PathVariable UUID id, Authentication authentication) {
+      @PathVariable("id") UUID agreementId, Authentication authentication) {
     UUID identityId =
         authentication != null && authentication.getPrincipal() instanceof UUID principal
             ? principal
             : null;
     // AUTHORIZATION FIRST. A refused caller never reaches the artifact lookup, so the refusal
     // cannot differ between an agreement that exists and one that does not.
-    if (!isStaff(authentication) && !agreementService.isAccessibleBy(id, identityId)) {
-      throw new ResourceNotFoundException("Agreement not found: " + id);
+    if (!isStaff(authentication) && !agreementService.isAccessibleBy(agreementId, identityId)) {
+      throw new ResourceNotFoundException(
+          "Agreement not found: " + AgreementIds.redact(agreementId));
     }
     String key =
         signingRequestQuery
-            .signedPdfKeyForAgreement(id)
-            .orElseThrow(() -> new ResourceNotFoundException("No signed document: " + id));
+            .signedPdfKeyForAgreement(agreementId)
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "No signed document: " + AgreementIds.redact(agreementId)));
     byte[] pdf = blobStore.get(key);
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_PDF)

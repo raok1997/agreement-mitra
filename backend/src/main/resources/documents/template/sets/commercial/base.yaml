@@ -16,8 +16,11 @@
 # pets, occupants) do not carry over.
 #
 # PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
-# (ownerName, tenantName, propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate,
-# endDate). Those are the ONLY fields marked required here -- relabelled for commercial (Lessor name,
+# (ownerName, ownerFatherName, ownerAddress, tenantName, tenantFatherName, tenantAddress,
+# propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate, endDate). Of those,
+# durationMonths is DERIVED (source: derived, required: false) -- the server computes it from the
+# dates, so it is mapped and rendered but never required of the customer.
+# The rest are the ONLY fields marked required here -- relabelled for commercial (Lessor name,
 # Lessee name, Demised premises, Monthly lease rent, Lease term, ...) but the SAME keys, so the signed
 # draft (generate) and the live preview stay in parity. Every other field is optional or carries a
 # system-authored default. A mandatory section (optional: false) always renders; its individual
@@ -35,7 +38,12 @@ meta:
   # different terms. Bumped because the rendered output changes for any lease whose typed term
   # disagreed with its dates, and Agreement.pinEffectiveTemplate must keep "which wording did this
   # deed render?" answerable.
-  version: 2
+  #
+  # v3 (2026-10-06): the party father's-name / address keys (labelled authorised signatory /
+  # address here) became required and aggregate-backed, matching the agreement API's @NotBlank and
+  # the residential set's v4 (capture-required-fields-drift). Bumped because the composed template
+  # and potentially the rendered lease change.
+  version: 3
   status: published
   document:
     title: "Commercial Lease Agreement"
@@ -45,12 +53,12 @@ meta:
 fields:
   # --- Lessor (Landlord) ---
   - { key: ownerName,        label: "Lessor name",                        type: text,     required: true }
-  - { key: ownerFatherName,  label: "Lessor authorised signatory",        type: text,     required: false }
-  - { key: ownerAddress,     label: "Lessor address",                     type: longtext, required: false }
+  - { key: ownerFatherName,  label: "Lessor authorised signatory",        type: text,     required: true }
+  - { key: ownerAddress,     label: "Lessor address",                     type: longtext, required: true }
   # --- Lessee (Tenant) ---
   - { key: tenantName,       label: "Lessee name",                        type: text,     required: true }
-  - { key: tenantFatherName, label: "Lessee authorised signatory",        type: text,     required: false }
-  - { key: tenantAddress,    label: "Lessee address",                     type: longtext, required: false }
+  - { key: tenantFatherName, label: "Lessee authorised signatory",        type: text,     required: true }
+  - { key: tenantAddress,    label: "Lessee address",                     type: longtext, required: true }
   # --- Schedule of Premises ---
   - { key: propertyAddress,  label: "Demised premises address",           type: longtext, required: true }
   - { key: premisesType,     label: "Premises type",                      type: enum,     required: false,

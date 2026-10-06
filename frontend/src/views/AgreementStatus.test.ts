@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
+import { ServiceBusyError } from "../api/http";
 import AgreementStatus from "./AgreementStatus.vue";
 import * as payments from "../api/payments";
 import * as signing from "../api/signingProgress";
@@ -7,6 +8,8 @@ import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
 import type { AgreementView } from "../api/client";
 import type { PaymentProgress } from "../api/payments";
 import type { SigningProgress } from "../api/signingProgress";
+import * as authStore from "../api/authStore";
+import type { Ref } from "vue";
 
 // The page behind the emailed link. Every milestone here is a claim about the server's state, so
 // each rule in design D2 gets a case; and because the page keeps itself current, the polling rules
@@ -58,13 +61,13 @@ vi.mock("../api/signingProgress", async (importOriginal) => {
     downloadSignedDocument: vi.fn(),
   };
 });
-// Hoisted with the mock: vi.mock factories run before module-level code, so the shared session
-// state must be created the same way or the factory sees it before initialisation.
-const authState = vi.hoisted(() => ({ session: null as string | null }));
-vi.mock("../api/authStore", () => ({
-  auth: authState,
-  authHeader: () => ({}),
-}));
+// The view reads `isSignedIn` (a computed ref in the real store), so the mock exports a ref the
+// tests flip directly. Built inside the factory: vi.mock runs before module-level code.
+vi.mock("../api/authStore", async () => {
+  const { ref } = await import("vue");
+  return { isSignedIn: ref(false) };
+});
+const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
 
 const mockedPayment = vi.mocked(payments.getPaymentProgress);
 const mockedPay = vi.mocked(payments.payForAgreement);
@@ -213,7 +216,7 @@ beforeEach(() => {
   mockedProgress.mockReset();
   mockedPay.mockReset();
   mockedDownload.mockReset();
-  authState.session = null;
+  signedIn.value = false;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -483,6 +486,46 @@ describe("AgreementStatus — payment is the server's word", () => {
   });
 });
 
+describe("AgreementStatus — load refusals", () => {
+  it("shows the retry message, preferring a busy refusal over any other rejection", async () => {
+    // Payment fails generically and progress is refused for load: the busy refusal must win, since
+    // it is the one that carries when to come back.
+    mockedPayment.mockRejectedValue(new Error("boom"));
+    mockedProgress.mockRejectedValue(new ServiceBusyError(30));
+    const wrapper = mount(AgreementStatus, {
+      props: {
+        agreement: agreement(),
+        pollIntervalMs: 20,
+        pollWait: controlledWait().wait,
+      },
+    });
+    await flushPromises();
+
+    const shown = wrapper.get('[data-testid="status-error"]').text();
+    expect(shown).toContain("try again in 30 seconds");
+    expect(shown).not.toMatch(/429|503/);
+  });
+});
+
+describe("AgreementStatus — recovering from a busy first load", () => {
+  it("clears the retry message and shows the status once a poll succeeds", async () => {
+    const wait = controlledWait();
+    mockedPayment.mockRejectedValueOnce(new ServiceBusyError(5));
+    mockedProgress.mockRejectedValueOnce(new ServiceBusyError(5));
+    mockedPayment.mockResolvedValue(UNPAID_WITH_ORDER());
+    mockedProgress.mockResolvedValue(progress());
+    const wrapper = mount(AgreementStatus, {
+      props: { agreement: agreement(), pollIntervalMs: 20, pollWait: wait.wait },
+    });
+    await flushPromises();
+    expect(wrapper.get('[data-testid="status-error"]').text()).toContain("try again in 5");
+
+    await wait.tick(); // the poll the busy refusal started
+    expect(wrapper.find('[data-testid="status-error"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="status-pay"]').exists()).toBe(true);
+  });
+});
+
 describe("AgreementStatus — the signed document", () => {
   it("offers the download only when the server says the document is ready, via the API helper", async () => {
     const { wrapper } = mountWith(payment(), signed());
@@ -492,7 +535,7 @@ describe("AgreementStatus — the signed document", () => {
     await wrapper.get('[data-testid="status-download"]').trigger("click");
     await flushPromises();
 
-    // The helper is what carries the session header; the view never builds a URL.
+    // The helper is what rides the session cookie; the view never builds a URL.
     expect(mockedDownload).toHaveBeenCalledWith(
       "ag-1",
       "AM3G3VXSAKD-signed.pdf",
@@ -596,7 +639,7 @@ describe("AgreementStatus — keeping current (design D3)", () => {
   });
 
   it("shows the unavailable message on first load too, and no sign-in button for a signed-in viewer", async () => {
-    authState.session = "s-1";
+    signedIn.value = true;
     const wait = controlledWait();
     mockedPayment.mockRejectedValue(new payments.PaymentHttpError(404));
     mockedProgress.mockResolvedValue(progress());

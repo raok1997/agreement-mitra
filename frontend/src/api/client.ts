@@ -1,9 +1,6 @@
 // Thin API client. Keep all backend calls here, not scattered in components.
 
-export interface SignSession {
-  providerRequestId: string;
-  signingUrl: string;
-}
+import { apiFetch, CustomerFacingError } from "./http";
 
 export type Role = "OWNER" | "TENANT";
 
@@ -100,12 +97,12 @@ const BASE = "/api";
 export async function createAgreement(
   input: CreateAgreementInput,
 ): Promise<AgreementView> {
-  const res = await fetch(`${BASE}/agreements`, {
+  const res = await apiFetch(`${BASE}/agreements`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(await describeProblem(res));
+  if (!res.ok) throw new CustomerFacingError(await describeProblem(res));
   return res.json();
 }
 
@@ -117,7 +114,8 @@ interface FieldError {
 /**
  * Build a human message from an RFC 9457 problem+json body. Surfaces the per-field
  * validation errors the backend returns so a 400 says *which* fields are wrong, not just
- * the status. Falls back to the status code if the body is not the expected shape.
+ * the status. Falls back to a generic message -- never the status code -- if the body is not the
+ * expected shape.
  */
 async function describeProblem(res: Response): Promise<string> {
   try {
@@ -138,21 +136,7 @@ async function describeProblem(res: Response): Promise<string> {
   } catch {
     // non-JSON body — fall through to the generic message
   }
-  return `Sorry, that couldn't be saved (${res.status}). Please check the form and try again.`;
-}
-
-/**
- * Fetch the agreement's rental-agreement PDF preview and return an object URL suitable for
- * embedding in an `<iframe>`/`<object>`. The preview is rendered on demand and not stored. The
- * caller owns the returned URL and MUST `URL.revokeObjectURL` it when replacing or unmounting.
- */
-export async function fetchAgreementPreview(
-  agreementId: string,
-): Promise<string> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/preview`);
-  if (!res.ok) throw new Error(await describeProblem(res));
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  return "Sorry, that couldn't be saved. Please try again.";
 }
 
 /**
@@ -163,38 +147,8 @@ export async function fetchAgreementPreview(
 export async function generateAgreementDocument(
   agreementId: string,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/document`, {
+  const res = await apiFetch(`${BASE}/agreements/${agreementId}/document`, {
     method: "POST",
   });
-  if (!res.ok) throw new Error(await describeProblem(res));
-}
-
-export async function requestSignature(
-  agreementId: string,
-): Promise<SignSession> {
-  const res = await fetch(`${BASE}/signing/${agreementId}/request`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error(`Sign request failed: ${res.status}`);
-  return res.json();
-}
-
-/**
- * Whole months between two ISO dates, exclusive of the end date — mirrors the server's
- * java.time.Period semantics (1 Jan to 1 Dec is 11 months). Returns null for an incomplete or
- * non-positive range so the UI can hide the duration until both dates are valid.
- */
-export function durationMonths(
-  startDate: string,
-  endDate: string,
-): number | null {
-  if (!startDate || !endDate) return null;
-  const s = new Date(startDate);
-  const e = new Date(endDate);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e <= s)
-    return null;
-  let months =
-    (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
-  if (e.getDate() < s.getDate()) months -= 1;
-  return months;
+  if (!res.ok) throw new CustomerFacingError(await describeProblem(res));
 }

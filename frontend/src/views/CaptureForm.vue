@@ -17,7 +17,6 @@ import {
   type Role,
 } from "../api/client";
 import {
-  AgreementHttpError,
   claimAgreement,
   finaliseAgreement,
   getAgreement,
@@ -37,7 +36,15 @@ import {
   getPaymentProgress,
   payForAgreement,
 } from "../api/payments";
-import { auth } from "../api/authStore";
+import { isSignedIn, reconcile, whenReady } from "../api/authStore";
+import { busyMessage } from "../api/http";
+import { hasProblemType, PROBLEM } from "../api/problems";
+import {
+  AGREEMENT_UNAVAILABLE_MESSAGE,
+  customerMessage,
+  JURISDICTION_UNSUPPORTED_MESSAGE,
+  TERMS_FROZEN_MESSAGE,
+} from "./refusalMessages";
 import {
   fetchDocumentPreviewHtml,
   fetchDocumentPreviewPdf,
@@ -49,13 +56,14 @@ import {
   type FormSchema,
 } from "../api/templateForm";
 import FieldWidget from "../components/widgets/FieldWidget.vue";
+import { formatIso, isAcceptedIso } from "./dateEntry";
 import {
+  blocksSave,
   emptyWorking,
   isSectionComplete,
   isSectionMandatory,
   reconcileActiveSections,
-  REGISTRABLE_OVER_MONTHS,
-  requiresRegistration,
+  crossFieldErrors,
   sectionErrors,
   sectionIcon,
   sectionId,
@@ -258,7 +266,8 @@ function summary(s: UiSection): string {
   const data = working[s.id] ?? {};
   for (const f of s.fields) {
     const v = (data[f.key] ?? "").trim();
-    if (v && f.widget !== "checkbox") return v.split("\n")[0];
+    if (!v || f.widget === "checkbox") continue;
+    return f.type === "date" ? formatIso(v) || v : v.split("\n")[0];
   }
   return "";
 }
@@ -338,9 +347,14 @@ const previewLoading = ref(false);
 const previewError = ref<string | null>(null);
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ~600 ms: long enough that typing through a field renders once at the pause rather than per
+// keystroke, which keeps a customer well inside the server's render rate limit
+// (anonymous-surface-abuse-controls D5) and is the cheapest render-load cut there is.
+const PREVIEW_DEBOUNCE_MS = 600;
+
 function schedulePreview(): void {
   if (previewTimer) clearTimeout(previewTimer);
-  previewTimer = setTimeout(refreshPreview, 250);
+  previewTimer = setTimeout(refreshPreview, PREVIEW_DEBOUNCE_MS);
 }
 
 async function refreshPreview(): Promise<void> {
@@ -371,7 +385,23 @@ const activeSection = computed(() =>
 );
 const modalForm = reactive<SectionData>({});
 const modalErrors = computed(() =>
-  activeSection.value ? sectionErrors(activeSection.value.fields, modalForm) : {},
+  activeSection.value
+    ? sectionErrors(activeSection.value.fields, modalForm)
+    : {},
+);
+
+/**
+ * Whether the open section violates a CROSS-FIELD rule. Drives only the Save button's disabled state:
+ * a malformed date also blocks the save (`blocksSave`, in `saveSection`) but leaves the button live,
+ * because a dead button gives no reason -- the click blurs the field and reveals its error instead.
+ */
+const hasModalCrossFieldErrors = computed(
+  () =>
+    Object.keys(
+      activeSection.value
+        ? crossFieldErrors(activeSection.value.fields, modalForm)
+        : {},
+    ).length > 0,
 );
 
 // --- Derived tenancy term -------------------------------------------------------------------
@@ -389,19 +419,6 @@ watch(modalTermMonths, (months) => {
   modalForm.durationMonths = months === null ? "" : String(months);
 });
 
-/**
- * True when the term being captured crosses the registrability line, so the Term section warns.
- * Advisory only -- a term over eleven months is a lawful choice, and the platform's job is to make
- * sure it is not made unknowingly.
- */
-const modalNeedsRegistration = computed(() =>
-  requiresRegistration(modalTermMonths.value),
-);
-
-/** The Term section is the one that captures the dates; only it carries the warning. */
-const modalShowsTerm = computed(() =>
-  (activeSection.value?.fields ?? []).some((f) => f.key === "durationMonths"),
-);
 const dialogRef = ref<HTMLElement | null>(null);
 let lastFocused: HTMLElement | null = null;
 
@@ -417,7 +434,10 @@ function openSection(id: string): void {
   // Seed the derived duration from the dates the modal just loaded, so it is correct on open and
   // not only after the user touches a date (the watcher fires on CHANGE, not on mount).
   if ("durationMonths" in modalForm) {
-    const months = tenancyMonths(modalForm.startDate ?? "", modalForm.endDate ?? "");
+    const months = tenancyMonths(
+      modalForm.startDate ?? "",
+      modalForm.endDate ?? "",
+    );
     modalForm.durationMonths = months === null ? "" : String(months);
   }
   void nextTick(() => {
@@ -436,11 +456,21 @@ function closeModal(): void {
 function saveSection(): void {
   const id = activeSectionId.value;
   if (!id) return;
+  // A cross-field error (today: an end date not after the start) must block the save, or a
+  // reversed range reaches the preview and compiles a non-positive term into the document. A
+  // per-field "required" error must still be saveable, because capture is progressive and a
+  // section may be filled over more than one visit.
+  // A malformed date blocks too: saving its text would send garbage to the preview, and keeping the
+  // previous value would silently replace the user's edit. A blank date still saves.
+  if (activeSection.value && blocksSave(activeSection.value.fields, modalForm))
+    return;
   // Read-only (server-derived) keys are NOT committed: the server strips them from captureData as
   // anti-mass-assignment and recomputes them at render, so persisting one would only create a
   // second, drifting copy of a value the server owns.
   const derivedKeys = new Set(
-    (activeSection.value?.fields ?? []).filter((f) => f.readOnly).map((f) => f.key),
+    (activeSection.value?.fields ?? [])
+      .filter((f) => f.readOnly)
+      .map((f) => f.key),
   );
   const slice: SectionData = {};
   for (const key of Object.keys(modalForm)) {
@@ -568,6 +598,9 @@ function loadDraft(): void {
         ) {
           continue; // stored enum value is not an option for this template's field -- skip it.
         }
+        if (field?.type === "date" && value !== "" && !isAcceptedIso(value)) {
+          continue; // a non-ISO date would reach the preview as raw text -- drop it.
+        }
         working[id][key] = value;
       }
     }
@@ -659,7 +692,7 @@ const claiming = ref(false);
 const claimed = ref(false);
 const claimError = ref<string | null>(null);
 const canSaveToAccount = computed(
-  () => !editMode.value && saved.value && !claimed.value && !!auth.session,
+  () => !editMode.value && saved.value && !claimed.value && isSignedIn.value,
 );
 // The saved agreement's tracking reference (the one persisted number). Held after save so the
 // confirmation can show it and the preview/download can render the real number in the provenance
@@ -703,8 +736,10 @@ async function saveAndContinue(): Promise<void> {
       savedTrackingNumber.value = created.trackingNumber; // now the client holds the reference
       // If the user is signed in, claim it straight away so it lands in "My Agreements" without a
       // second click. A failed claim is non-fatal -- the manual "Save to my account" button remains
-      // as a fallback (canSaveToAccount stays true while not yet claimed).
-      if (auth.session) {
+      // as a fallback (canSaveToAccount stays true while not yet claimed). Wait for the boot /me so
+      // a signed-in reload is not mistaken for anonymous.
+      await whenReady();
+      if (isSignedIn.value) {
         try {
           await claimAgreement(created.id);
           claimed.value = true;
@@ -718,8 +753,10 @@ async function saveAndContinue(): Promise<void> {
     }
   } catch (e) {
     saved.value = false;
-    saveError.value =
-      e instanceof Error ? e.message : "Could not save. Please try again.";
+    // An edit refused because the order is already placed can never succeed, so say why.
+    saveError.value = hasProblemType(e, PROBLEM.draftFrozen)
+      ? TERMS_FROZEN_MESSAGE
+      : customerMessage(e, "Could not save. Please try again.");
   } finally {
     saving.value = false;
   }
@@ -826,9 +863,23 @@ async function openContactStep(): Promise<void> {
       mobile: s.mobile ?? "",
     }));
     contactStep.value = true;
-  } catch {
-    payError.value = "Could not load the party details. Please try again.";
+  } catch (e) {
+    payError.value = unavailable(e)
+      ? AGREEMENT_UNAVAILABLE_MESSAGE
+      : (busyMessage(e) ??
+        "Could not load the party details. Please try again.");
   }
+}
+
+/**
+ * Whether a pay-path call was refused as not found: unknown, or claimed by an account this session
+ * is not signed in as. A 404 does not trip the client's 401/403 hook, so re-check the session here,
+ * or a header still showing an ended session would contradict the message.
+ */
+function unavailable(e: unknown): boolean {
+  if (!hasProblemType(e, PROBLEM.notFound)) return false;
+  void reconcile();
+  return true;
 }
 
 /**
@@ -880,10 +931,14 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
     // The contacts freeze is keyed on PAYMENT, not on the order existing, so this is reachable only
     // once the money is settled. "Please try again" would be a lie there: the freeze is permanent
     // and retrying refuses forever, so the message has to name the real condition instead.
-    contactError.value =
-      e instanceof AgreementHttpError && e.contactsFrozen
-        ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
-        : "Could not save those contact details. Please try again.";
+    contactError.value = hasProblemType(e, PROBLEM.contactsFrozen)
+      ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
+      : unavailable(e)
+        ? AGREEMENT_UNAVAILABLE_MESSAGE
+        : customerMessage(
+          e,
+          "Could not save those contact details. Please try again.",
+        );
   } finally {
     contactSaving.value = false;
   }
@@ -928,17 +983,13 @@ async function finaliseAndPay(selection: StampSelection): Promise<void> {
       paymentConfirmed.value = true;
     }
   } catch (e) {
-    if (e instanceof AgreementHttpError && e.jurisdictionUnsupported) {
-      // A retry can never succeed, so do not invite one: say what this agreement CAN still do.
-      payError.value =
-        "Stamping and eSign are not yet available for this agreement's jurisdiction. You can " +
-        "still preview and download the draft free of charge.";
-    } else {
-      payError.value =
-        e instanceof Error && e.message
-          ? e.message
-          : "Could not start payment. Please try again.";
-    }
+    // Finalise and the checkout re-gate refuse an unsupported jurisdiction with the same type. A
+    // retry can never succeed, so do not invite one: say what this agreement CAN still do.
+    payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
+      ? JURISDICTION_UNSUPPORTED_MESSAGE
+      : unavailable(e)
+        ? AGREEMENT_UNAVAILABLE_MESSAGE
+        : customerMessage(e, "Could not start payment. Please try again.");
   } finally {
     paying.value = false;
   }
@@ -1507,21 +1558,6 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
-      <!--
-        Registration warning. Advisory and NON-BLOCKING: a term over eleven months is a lawful
-        choice, so this exists to stop the parties making it unknowingly, not to refuse it. The
-        threshold is the national default; Telangana requires registration at ANY term and is still
-        caught by the state-aware notice at the stamp-quote step (see the follow-up register).
-      -->
-      <p
-        v-if="modalShowsTerm && modalNeedsRegistration"
-        class="mx-5 mb-4 rounded bg-amber-50 px-3 py-2 text-xs text-amber-900"
-        data-testid="registration-warning"
-      >
-        A term of more than {{ REGISTRABLE_OVER_MONTHS }} months must be
-        registered with the Sub-Registrar. Registration is separate from stamp
-        duty and is not included in what you pay here.
-      </p>
       <footer
         class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4"
       >
@@ -1538,8 +1574,9 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
           data-testid="modal-save"
+          :disabled="hasModalCrossFieldErrors"
           @click="saveSection"
         >
           Save section

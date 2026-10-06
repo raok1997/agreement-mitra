@@ -15,8 +15,11 @@
 # layer; the Telangana layers add only the statutory overlay and jurisdiction default over this set.
 #
 # PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
-# (ownerName, tenantName, propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate,
-# endDate). Those are the ONLY fields marked required here -- every other field is optional or carries
+# (ownerName, ownerFatherName, ownerAddress, tenantName, tenantFatherName, tenantAddress,
+# propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate, endDate). Of those,
+# durationMonths is DERIVED (source: derived, required: false) -- the server computes it from the
+# dates, so it is mapped and rendered but never required of the customer.
+# The rest are the ONLY fields marked required here -- every other field is optional or carries
 # a system-authored default, so the signed draft (generate) and the live preview stay in parity.
 # A mandatory section (optional: false) always renders; its individual fields may still be optional.
 # Sandbox + dummy data only.
@@ -53,7 +56,15 @@ meta:
   # 11-month term and sign as a 24-month one. Bumped for the same reason as v2: the rendered output
   # changes for any agreement whose typed term disagreed with its dates, and two materially
   # different deeds must not report one authored version.
-  version: 3
+  #
+  # v4 (2026-10-06): the party father's/spouse's name and current address became required and
+  # aggregate-backed (capture-required-fields-drift). The agreement API already required them
+  # (@NotBlank), but the template marked them optional, so the capture form enabled Save on a
+  # body the server then refused. AgreementDocumentMapper now supplies them from the first
+  # owner/tenant signer, so the stored party record wins over a differing capture-map value, and a
+  # blank legacy party field fails generate instead of rendering a recital with blanks. Bumped
+  # because the composed template and potentially the rendered deed change.
+  version: 4
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -67,12 +78,12 @@ meta:
 fields:
   # --- Owner (Lessor) ---
   - { key: ownerName,        label: "Owner name",                        type: text,     required: true }
-  - { key: ownerFatherName,  label: "Owner father's / spouse's name",    type: text,     required: false }
-  - { key: ownerAddress,     label: "Owner current address",             type: longtext, required: false }
+  - { key: ownerFatherName,  label: "Owner father's / spouse's name",    type: text,     required: true }
+  - { key: ownerAddress,     label: "Owner current address",             type: longtext, required: true }
   # --- Tenant ---
   - { key: tenantName,       label: "Tenant name",                       type: text,     required: true }
-  - { key: tenantFatherName, label: "Tenant father's / spouse's name",   type: text,     required: false }
-  - { key: tenantAddress,    label: "Tenant current address",            type: longtext, required: false }
+  - { key: tenantFatherName, label: "Tenant father's / spouse's name",   type: text,     required: true }
+  - { key: tenantAddress,    label: "Tenant current address",            type: longtext, required: true }
   # --- Schedule of Property ---
   - { key: propertyAddress,  label: "Scheduled property address",        type: longtext, required: true }
   - { key: propertyType,     label: "Property type",                     type: enum,     required: false,

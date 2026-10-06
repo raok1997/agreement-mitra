@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import TermsOfService from "./TermsOfService.vue";
-import { TERMS_CLAUSES } from "../content/termsOfService";
+import { clauseById } from "../content/legalDocument";
+import { TERMS_OF_SERVICE } from "../content/termsOfService";
+import { CONTACT_EMAIL, PRICE } from "../content/promises";
 
 // The page is published DELIBERATELY unfinished (docs/LEGAL-POSTURE.md item 2: a draft beats
 // nothing). What makes that defensible rather than sloppy is that the unfinished parts announce
@@ -16,7 +20,7 @@ describe("TermsOfService", () => {
 
   it("renders every clause", () => {
     const text = mount(TermsOfService).text();
-    for (const clause of TERMS_CLAUSES) {
+    for (const clause of TERMS_OF_SERVICE.clauses) {
       expect(text).toContain(clause.heading);
     }
   });
@@ -24,7 +28,9 @@ describe("TermsOfService", () => {
   it("shows a visible gap for every clause we have not written", () => {
     const wrapper = mount(TermsOfService);
     const gaps = wrapper.findAll('[data-testid="terms-gap"]');
-    const unwritten = TERMS_CLAUSES.filter((c) => c.status !== "drafted");
+    const unwritten = TERMS_OF_SERVICE.clauses.filter(
+      (c) => c.status !== "drafted",
+    );
 
     expect(unwritten.length).toBeGreaterThan(0);
     expect(gaps).toHaveLength(unwritten.length);
@@ -57,25 +63,28 @@ describe("TermsOfService", () => {
   it("leaves open only what nobody has decided, and marks it", () => {
     // The failure this guards against: a placeholder number reaching counsel as though intended.
     // The fee, the compensation for our own error and the turnaround are now decided, so they are
-    // stated. What a customer gets back once we have already bought their certificate is not, and
+    // stated. What a customer gets back once we have already bought their stamp is not, and
     // it stays a visible gap rather than acquiring a plausible-looking number.
-    const byHeading = (needle: string) =>
-      TERMS_CLAUSES.find((c) => c.heading.includes(needle));
+    const byId = (id: string) => clauseById(TERMS_OF_SERVICE, id);
 
-    expect(byHeading("Our fee")?.status).toBe("drafted");
-    expect(byHeading("Availability and support")?.status).toBe("drafted");
-    expect(byHeading("Refunds")?.status).toBe("product");
+    expect(byId("our-fee").status).toBe("drafted");
+    expect(byId("availability-and-support").status).toBe("drafted");
+    expect(byId("refunds").status).toBe("product");
     // Retention is decided (three years); what remains on it is a legal question, not a
     // commercial one, so it carries a counsel gap rather than a product one.
-    expect(byHeading("How long we keep things")?.status).toBe("counsel");
+    expect(byId("retention").status).toBe("counsel");
   });
 
-  it("states the price as a rule, not as a single number that hides the duty", () => {
-    // The total moves with stamp duty, and the whole pricing pillar is that the movement is
-    // visible. A clause saying only "INR 499" would be false for most agreements.
+  it("states the price as a rule on the chosen stamp value", () => {
+    // payment-processing charges on the stamp value, not the legal duty, so the clause does too.
+    // A clause saying only "INR 499" would be false for most agreements.
     const text = mount(TermsOfService).text();
-    expect(text).toContain("INR 499 where the stamp duty");
-    expect(text).toContain("plus the amount by which the duty exceeds INR 100");
+    expect(text).toContain(
+      `INR ${PRICE.totalRupees} where the stamp value on your agreement is INR ${PRICE.includedStampRupees} or less`,
+    );
+    expect(text).toContain(
+      `the total is INR ${PRICE.totalRupees} plus the amount by which it exceeds INR ${PRICE.includedStampRupees}`,
+    );
   });
 
   it("never pays back more than the customer actually paid", () => {
@@ -90,20 +99,14 @@ describe("TermsOfService", () => {
     expect(text).toContain("never pay you back more than you actually paid us");
   });
 
-  it("does not claim a duty calculation the product does not yet do", () => {
-    // The fee clause states the rule that will apply. The product charges a flat constant and
-    // computes no duty, so the clause has to say so -- the same discipline as the landing page's
-    // status board, and the reason there is no correctness claim to walk back.
+  it("lets a customer go below the duty only after the under-stamping warning", () => {
+    // stamp-selection: a below-duty stamp needs an audited acknowledgement. §7 paraphrases it.
     const text = mount(TermsOfService).text();
     expect(text).toContain(
-      "still building the part that works the duty out automatically",
+      "You can go ahead with a stamp below the duty only after",
     );
-    // No practice history is claimed -- no external customer has yet paid us, so the clause states
-    // what we will do about a duty above INR 100, not what we have been doing.
-    expect(text).not.toContain("we have been absorbing the difference");
-    expect(text).toContain(
-      "we correct the total to the right amount and show you the corrected figure",
-    );
+    expect(text).not.toContain("still building");
+    expect(text).not.toContain("corrected figure");
     // The promise that must survive whatever the pricing does: never a second bill.
     expect(text).toContain("take payment and then come back to you for more");
   });
@@ -119,5 +122,53 @@ describe("TermsOfService", () => {
     );
     // No remedy may be reintroduced as a multiple or share of the duty.
     expect(text).not.toContain("equal to the stamp duty");
+  });
+});
+
+// operating-entity-disclosure D6: the identifiers render after the clauses, never inside them.
+describe("TermsOfService operator details", () => {
+  const entity = {
+    legalName: "KAVISAT TEK LABS LLP",
+    llpin: null,
+    registeredOffice: null,
+  };
+
+  it("follows the last clause and names the LLP, its LLPIN state and the support email", () => {
+    const wrapper = mount(TermsOfService, { props: { entity } });
+    const details = wrapper.get('[data-testid="terms-operator-details"]');
+    const text = details.text();
+
+    expect(text).toContain("Operator details");
+    expect(text).toContain("KAVISAT TEK LABS LLP");
+    expect(text).toContain("being issued");
+    expect(text).toContain("to be confirmed");
+    expect(text).toContain(CONTACT_EMAIL);
+
+    const sections = wrapper.findAll("section").map((s) => s.element);
+    const lastClause = sections
+      .filter((el) =>
+        el.getAttribute("data-testid")?.startsWith("terms-clause-"),
+      )
+      .at(-1)!;
+    expect(
+      lastClause.compareDocumentPosition(details.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders values as text, never as HTML", () => {
+    for (const file of [
+      "src/views/TermsOfService.vue",
+      "src/components/OperatorDetails.vue",
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), "utf8");
+      expect(source, file).not.toContain("v-html");
+    }
+  });
+
+  it("renders the unpaid-draft retention period in §10", () => {
+    expect(mount(TermsOfService).text()).toContain(
+      "Once an unpaid draft has gone 90 days without a change to its content, we delete it",
+    );
   });
 });

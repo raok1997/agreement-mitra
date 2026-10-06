@@ -25,7 +25,8 @@ import org.springframework.stereotype.Component;
  * <p>The scan is fitted inside the page's printable area with its <b>aspect ratio preserved</b> and
  * is never <b>upscaled beyond its native resolution</b> (its pixel dimensions read as points at 72
  * dpi) - a stretched or blown-up certificate would read as a forgery-grade artefact on a document
- * that evidences real duty.
+ * that evidences real duty. The printable area stops above the every-page signature band (see
+ * {@link #SIGNATURE_BAND_TOP_PT}), so no signer's strip is drawn over the certificate.
  *
  * <p>Both inputs are <b>untrusted</b>: the draft had only its {@code %PDF-} magic bytes checked at
  * upload, and the scan was validated by {@link CertificateScanValidator} at intake. Parsing fails
@@ -39,6 +40,16 @@ class PdfStampComposer {
 
   /** Printable inset for the prepended certificate page, in points. */
   private static final float SCAN_PAGE_MARGIN = 28f;
+
+  /**
+   * Top of the every-page signature band, in points from the bottom edge: the scan stays above it.
+   *
+   * <p>The certificate page gets a signer's strip like every other page, and the ZOOP adapter draws
+   * that strip at 26-66pt ({@code ZoopSignCoordinate.FOOTER_Y_PT + BOX_HEIGHT_PT}). With only the
+   * 28pt margin, a portrait A4 scan fitted to the page width came out ~762pt tall and reached down
+   * to ~40pt, so a signature landed on the certificate itself.
+   */
+  static final float SIGNATURE_BAND_TOP_PT = 66f;
 
   /**
    * Compose the stamped PDF: {@code certificateScan} becomes page 1, the draft's pages follow, each
@@ -91,21 +102,33 @@ class PdfStampComposer {
   }
 
   /**
-   * Page 1: the scanned certificate, centred inside the printable area, aspect preserved, never
-   * upscaled. An undecodable scan raises {@link IOException} from PDFBox and fails closed above.
+   * Page 1: the scanned certificate, inside the printable area above the signature band, aspect
+   * preserved, never upscaled. An undecodable scan raises {@link IOException} from PDFBox and fails
+   * closed above.
    */
   private void addCertificatePage(PDDocument doc, byte[] certificateScan) throws IOException {
     PDPage page = new PDPage(PDRectangle.A4);
     doc.addPage(page);
     PDImageXObject image = PDImageXObject.createFromByteArray(doc, certificateScan, "estamp-scan");
-    float boxWidth = PDRectangle.A4.getWidth() - 2 * SCAN_PAGE_MARGIN;
-    float boxHeight = PDRectangle.A4.getHeight() - 2 * SCAN_PAGE_MARGIN;
-    float[] drawn = fitWithoutUpscaling(image.getWidth(), image.getHeight(), boxWidth, boxHeight);
-    float x = (PDRectangle.A4.getWidth() - drawn[0]) / 2f;
-    float y = (PDRectangle.A4.getHeight() - drawn[1]) / 2f;
+    float[] placed = placeScan(image.getWidth(), image.getHeight());
     try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-      cs.drawImage(image, x, y, drawn[0], drawn[1]);
+      cs.drawImage(image, placed[0], placed[1], placed[2], placed[3]);
     }
+  }
+
+  /**
+   * The {@code [x, y, width, height]} in points of a scan on the A4 certificate page: fitted by
+   * {@link #fitWithoutUpscaling} into the area between the top margin and {@link
+   * #SIGNATURE_BAND_TOP_PT}, and centred in it. Package-private so the geometry is unit-testable.
+   */
+  static float[] placeScan(float imageWidth, float imageHeight) {
+    float pageWidth = PDRectangle.A4.getWidth();
+    float boxWidth = pageWidth - 2 * SCAN_PAGE_MARGIN;
+    float boxHeight = PDRectangle.A4.getHeight() - SCAN_PAGE_MARGIN - SIGNATURE_BAND_TOP_PT;
+    float[] drawn = fitWithoutUpscaling(imageWidth, imageHeight, boxWidth, boxHeight);
+    float x = (pageWidth - drawn[0]) / 2f;
+    float y = SIGNATURE_BAND_TOP_PT + (boxHeight - drawn[1]) / 2f;
+    return new float[] {x, y, drawn[0], drawn[1]};
   }
 
   /**

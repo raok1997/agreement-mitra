@@ -6,6 +6,8 @@
 // These types mirror the backend documents.api DTO tree exactly (FormSchema / FormSection /
 // FormField / FormField.Validation) served by GET /api/templates/form?state=..&type=..
 
+import { apiFetch } from "./http";
+
 /** The resolved widget-vocabulary token the client renders (from the field's FieldType). */
 export type Widget =
   "text" | "textarea" | "number" | "money" | "date" | "checkbox" | "select";
@@ -101,7 +103,7 @@ export async function getTemplateForm(
   type: string,
 ): Promise<FormSchema> {
   const params = new URLSearchParams({ state, type });
-  const res = await fetch(`${BASE}/templates/form?${params.toString()}`);
+  const res = await apiFetch(`${BASE}/templates/form?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to load the form (${res.status}).`);
   return res.json();
 }

@@ -3,6 +3,7 @@ package in.agreementmitra.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.UUID;
@@ -24,8 +25,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * SecurityConfig wiring for the auth routes (task 5.8), against the real full pipeline. The
- * handshake routes are reachable without a session; me/logout require one; and -- critically -- an
- * existing agreement route is still permitted exactly as before, proving no existing matcher
+ * handshake routes and logout are reachable without a session; me requires one; and -- critically
+ * -- an existing agreement route is still permitted exactly as before, proving no existing matcher
  * regressed.
  *
  * <p>Uses {@link TestRestTemplate} (which does not follow redirects by default) so a permitted
@@ -57,22 +58,25 @@ class AuthSecurityConfigIntegrationTest {
 
   @Test
   void meRequiresASession() {
-    // No Bearer -> the filter is a no-op, the request stays unauthenticated -> denied (403, no
+    // No session cookie -> the filter is a no-op, the request stays unauthenticated -> denied (403,
+    // no
     // AuthenticationEntryPoint) rather than reaching the controller.
     assertThat(rest.getForEntity("/api/auth/me", String.class).getStatusCode().value())
         .isIn(401, 403);
   }
 
   @Test
-  void logoutRequiresASession() {
+  void anonymousLogoutWithCsrfIs204() {
+    // Logout is permitAll (cookie-session-auth): a browser with a stale or no session cookie can
+    // still have it cleared. The harness interceptor supplies the CSRF token.
     assertThat(rest.postForEntity("/api/auth/logout", null, String.class).getStatusCode().value())
-        .isIn(401, 403);
+        .isEqualTo(204);
   }
 
   @Test
-  void anInvalidBearerDoesNotAuthenticateMe() {
+  void anInvalidSessionCookieDoesNotAuthenticateMe() {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth("not-a-real-session-value");
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header("not-a-real-session-value"));
     ResponseEntity<String> resp =
         rest.exchange("/api/auth/me", HttpMethod.GET, new HttpEntity<>(headers), String.class);
     assertThat(resp.getStatusCode().value()).isIn(401, 403);

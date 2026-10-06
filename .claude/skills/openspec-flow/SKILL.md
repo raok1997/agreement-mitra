@@ -549,12 +549,37 @@ Then produce the wrap-up (see Reporting).
 
 ## Issue policy (review + validation findings)
 
-For each finding, in order:
+The triage below is the CLAUDE.md section **"Handling what a change uncovers"** applied to the
+flow — that section is the policy and wins on any conflict; read it rather than re-deriving it.
+Findings are **addressed, never suppressed**; the question is only where it is cheapest.
+
+For each finding, first:
+0. **Does the premise hold, and is it one instance of "the same fact in two places"?** Verify the
+   claimed defect against the code or a source before building anything. If it is a duplication
+   symptom, the fix is to remove the duplication or move the rule to the boundary both copies
+   share — not to patch this instance.
+
+Then, in order:
 1. **Minimal & clearly in-scope?** → fold the fix into the current change. No need to ask.
 2. **Within the CR's slice but non-trivial?** → fix in-change, but note it in the halt/report.
-3. **Crosses the scope heuristics** (another aggregate / another endpoint / a different state-machine change), or is risky/signing-flow-adjacent → **do NOT expand the current change.** Propose a new follow-up CR (name + one-line scope) and **halt** for the user to confirm before creating it.
+3. **Small, but outside this CR's slice** (another module, another aggregate, local tooling) →
+   **fix it now as a separate change set** while the context is loaded, and list it in the
+   wrap-up as its own suggested commit. Do not fold it into the CR, and do not turn it into a
+   register row: a deferred fix costs more than the fix. Signing-flow / eSign / webhook changes
+   are excluded from this route — they still halt (Operating mode).
+4. **Needs an outside decision** (counsel, product) → **append it to the existing register row
+   for that subject**; search the register first. A new row only when no row covers it, and it
+   must carry a recommended action.
+5. **Genuinely large and crossing the scope heuristics** (another aggregate / endpoint /
+   state-machine change, not fixable in a sitting) → propose a new follow-up CR (name + one-line
+   scope + recommendation) and **halt** for the user to confirm before creating it.
 
-Never co-ship unrelated work into one CR.
+**Before archive, count what this change did to the register.** Rows it made moot are deleted and
+overlapping rows merged in the same CR (rows closed by this work are the completion record — see
+7a). Report the net row change in the wrap-up.
+
+Never co-ship unrelated work into one CR — route 3 keeps the CR clean by making the fix its own
+change set, not by deferring it.
 
 ## Git guardrails (hard rules)
 

@@ -81,8 +81,10 @@ Conflating them is the most likely way to introduce a serious PII leak here, so
 the distinction is recorded rather than left to be rediscovered.
 
 - **The agreement UUID is a bearer capability.** 122 bits, unguessable. Any caller
-  presenting it may read an **unowned** agreement; once claimed, only the owner
-  may. That is the existing model and it predates recovery.
+  presenting it may read or act on an **unowned** agreement (generate, upload,
+  preview, finalise, contacts, pay); once claimed, only the owner may, and anyone
+  else gets the same 404 as an unknown id. The rule is `Agreement.admits`, defined
+  once. That is the existing model and it predates recovery.
 - **The tracking reference authorises nothing.** `AM` + eight characters + a check
   character - roughly 40 bits. It appears on the rendered document, in emails, and
   in support conversations. It is a *selector*, never a credential.

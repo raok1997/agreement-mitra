@@ -10,11 +10,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import in.agreementmitra.documents.api.TemplateFormApi;
+import in.agreementmitra.documents.template.ProductionRentalLayersTestConfig;
 import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import java.util.List;
 import java.util.Map;
@@ -47,9 +50,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * single INR 100 stamp paper, pre-selected; it is below the duty, so paying for it needs the
  * acknowledgement, and it costs the base INR 499. The TG figures are UNVERIFIED and the test
  * profile allows unreviewed rules, exactly as local and beta deployments run.
+ *
+ * <p>Forms resolve against the production rental layers, so a blank rent escalation takes the
+ * shipped template's default exactly as the deed does; the 11-month fixture is unaffected (no
+ * escalation inside the first year). The deed-parity cases use their own 24-month agreements.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import({HarnessTestConfig.class, MailTestConfig.class})
+@Import({HarnessTestConfig.class, MailTestConfig.class, ProductionRentalLayersTestConfig.class})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class StampDutyCheckoutIntegrationTest {
@@ -83,6 +90,7 @@ class StampDutyCheckoutIntegrationTest {
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
+  @Autowired private TemplateFormApi templateForms;
 
   @BeforeEach
   void reset() {
@@ -93,31 +101,40 @@ class StampDutyCheckoutIntegrationTest {
   // --- fixtures --------------------------------------------------------------
 
   private UUID createAgreement() {
+    return createAgreement("2026-12-01", null);
+  }
+
+  /** TG residential from 2026-01-01 at INR 25,000 / INR 50,000 deposit, to {@code endDate}. */
+  private UUID createAgreement(String endDate, Map<String, String> captureData) {
     Map<String, Object> body =
-        Map.of(
-            "state", "TG",
-            "type", "residential",
-            "propertyAddress", "12 MG Road, Hyderabad",
-            "monthlyRent", "25000.00",
-            "securityDeposit", "50000.00",
-            "startDate", "2026-01-01",
-            "endDate", "2026-12-01",
-            "signers",
-                List.of(
-                    Map.of(
-                        "firstName", "Asha",
-                        "lastName", "Owner",
-                        "fatherName", "Ravi Owner",
-                        "currentAddress", "1 A St",
-                        "email", "asha@example.com",
-                        "role", "OWNER"),
-                    Map.of(
-                        "firstName", "Tara",
-                        "lastName", "Tenant",
-                        "fatherName", "Hari Tenant",
-                        "currentAddress", "3 C St",
-                        "email", "tara@example.com",
-                        "role", "TENANT")));
+        new java.util.HashMap<>(
+            Map.of(
+                "state", "TG",
+                "type", "residential",
+                "propertyAddress", "12 MG Road, Hyderabad",
+                "monthlyRent", "25000.00",
+                "securityDeposit", "50000.00",
+                "startDate", "2026-01-01",
+                "endDate", endDate,
+                "signers",
+                    List.of(
+                        Map.of(
+                            "firstName", "Asha",
+                            "lastName", "Owner",
+                            "fatherName", "Ravi Owner",
+                            "currentAddress", "1 A St",
+                            "email", "asha@example.com",
+                            "role", "OWNER"),
+                        Map.of(
+                            "firstName", "Tara",
+                            "lastName", "Tenant",
+                            "fatherName", "Hari Tenant",
+                            "currentAddress", "3 C St",
+                            "email", "tara@example.com",
+                            "role", "TENANT"))));
+    if (captureData != null) {
+      body.put("captureData", captureData);
+    }
     @SuppressWarnings("unchecked")
     ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -202,7 +219,7 @@ class StampDutyCheckoutIntegrationTest {
         StaffSessions.customerSession(
             identityService, handoffService, sessionService, "quote-other-" + UUID.randomUUID());
     HttpHeaders ownerHeaders = new HttpHeaders();
-    ownerHeaders.setBearerAuth(owner);
+    ownerHeaders.add(HttpHeaders.COOKIE, SessionCookie.header(owner));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",
@@ -212,7 +229,7 @@ class StampDutyCheckoutIntegrationTest {
                 .getStatusCode())
         .isEqualTo(HttpStatus.OK);
     HttpHeaders otherHeaders = new HttpHeaders();
-    otherHeaders.setBearerAuth(other);
+    otherHeaders.add(HttpHeaders.COOKIE, SessionCookie.header(other));
 
     ResponseEntity<String> refused = quote(agreementId, otherHeaders);
 
@@ -340,5 +357,77 @@ class StampDutyCheckoutIntegrationTest {
     assertThat(frozen.path("frozen").asBoolean()).isTrue();
     assertThat(frozen.path("dutyMinorUnits").asLong()).isEqualTo(130_000L);
     assertThat(frozen.path("options").size()).isEqualTo(1);
+  }
+
+  // --- deed parity -----------------------------------------------------------
+
+  private static final String TWO_YEARS_END = "2028-01-01";
+
+  @Test
+  void aBlankEscalationIsQuotedAtTheDeedsDefault() throws Exception {
+    Object templateDefault =
+        templateForms.findForm("TG", "residential").orElseThrow().sections().stream()
+            .flatMap(section -> section.fields().stream())
+            .filter(field -> field.key().equals("rentEscalationPercent"))
+            .findFirst()
+            .orElseThrow()
+            .defaultValue();
+    UUID absent = createAgreement(TWO_YEARS_END, null);
+    UUID captured =
+        createAgreement(
+            TWO_YEARS_END, Map.of("rentEscalationPercent", String.valueOf(templateDefault)));
+
+    JsonNode absentQuote = json(quote(absent, null));
+    JsonNode capturedQuote = json(quote(captured, null));
+
+    assertThat(absentQuote.path("available").asBoolean()).isTrue();
+    assertThat(absentQuote.path("dutyMinorUnits").asLong())
+        .isEqualTo(capturedQuote.path("dutyMinorUnits").asLong());
+    assertThat(absentQuote.path("breakdown")).isEqualTo(capturedQuote.path("breakdown"));
+  }
+
+  @Test
+  void theEscalationIsNamedInTheBreakdownAndFrozenWithTheOrder() throws Exception {
+    UUID agreementId = createAgreement(TWO_YEARS_END, null);
+
+    JsonNode live = json(quote(agreementId, null));
+
+    // 5% every 12 months on INR 25,000: years of 300,000 and 315,000 average 307,500.
+    assertThat(amount(line(live, "QUANTITY", "AVERAGE_ANNUAL_RENT")))
+        .isEqualByComparingTo("307500");
+    JsonNode escalation = line(live, "ESCALATION", null);
+    assertThat(escalation.path("label").asText()).isEqualTo("5% rent escalation every 12 months");
+    assertThat(amount(escalation)).isEqualByComparingTo("7500");
+    assertThat(escalation.path("delta").asBoolean()).isFalse();
+    assertThat(line(live, "ROUNDING", null).path("delta").asBoolean()).isTrue();
+
+    stubOrderCreation("order_QUOTE_ESCALATION");
+    long stampValue = live.path("options").get(0).path("stampValueMinorUnits").asLong();
+    boolean belowDuty = live.path("options").get(0).path("belowDuty").asBoolean();
+    ResponseEntity<String> session =
+        checkout(
+            agreementId,
+            belowDuty ? acknowledged(stampValue) : Map.of("stampValueMinorUnits", stampValue));
+    assertThat(session.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    JsonNode frozen = json(quote(agreementId, null));
+    assertThat(frozen.path("frozen").asBoolean()).isTrue();
+    JsonNode frozenEscalation = line(frozen, "ESCALATION", null);
+    assertThat(amount(frozenEscalation)).isEqualByComparingTo("7500");
+    assertThat(frozenEscalation.path("delta").asBoolean()).isFalse();
+  }
+
+  private static java.math.BigDecimal amount(JsonNode line) {
+    return new java.math.BigDecimal(line.path("amount").asText());
+  }
+
+  private static JsonNode line(JsonNode quote, String kind, String label) {
+    for (JsonNode line : quote.path("breakdown")) {
+      if (line.path("kind").asText().equals(kind)
+          && (label == null || line.path("label").asText().equals(label))) {
+        return line;
+      }
+    }
+    throw new AssertionError("no " + kind + " line in " + quote.path("breakdown"));
   }
 }

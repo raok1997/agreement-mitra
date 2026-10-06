@@ -1,3 +1,15 @@
+Coordination with `delete-draft-agreement` (noted 2026-10-05, re-check at the next review of this
+change):
+- **Migration number.** `V22` is already taken (`V22__agreement_last_edited_and_signer_position.sql`),
+  and `delete-draft-agreement` plans `V23__draft_deletion.sql`. Renumber task 1.2 to the next free
+  version when this change is applied.
+- **Draft-stage object keys.** `delete-draft-agreement` lets an owner delete an unpaid draft and removes
+  its objects by the single key list `DraftService.draftStageKeys(UUID)` (today only `drafts/{id}.pdf`).
+  This change's `uploads/{agreementId}.{pdf,docx}` and `converted/{agreementId}.pdf` hold the customer's
+  original document, so they must be added to that list. Otherwise a deleted BYO draft leaves the
+  uploaded original in the bucket. Add a task for it and a test that deleting a BYO draft removes them.
+  If this change lands first, `delete-draft-agreement` picks the keys up instead.
+
 ## 1. Prerequisites and schema
 
 - [ ] 1.1 Confirm `signing-auth` has landed. If it has not, note the partial this change
@@ -119,7 +131,7 @@
 - [ ] 9.1 Edit the terms generator source (never `docs/TERMS-OF-SERVICE.md` directly) so the
       terms cover a customer-supplied instrument, including that a Word upload is converted
       and that the converted document is what is signed, and regenerate via
-      `npm run terms:doc`.
+      `npm run legal:doc`.
 - [ ] 9.2 Record in `docs/LEGAL-POSTURE.md` what the declaration attests to and what the
       integrity record is for a BYO agreement (uploaded-bytes hash, not a template pin).
 

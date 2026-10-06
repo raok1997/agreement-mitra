@@ -34,7 +34,8 @@ class SessionServiceTest {
           Duration.ofSeconds(60),
           Duration.ofMinutes(5),
           new AuthProperties.Google(
-              "client", "secret", "redirect", "spa", "issuer", "auth", "token", "jwks"));
+              "client", "secret", "redirect", "spa", "issuer", "auth", "token", "jwks"),
+          null);
 
   private final AuthSessionRepository sessions = mock(AuthSessionRepository.class);
   private final HandoffService handoffService = mock(HandoffService.class);
@@ -47,7 +48,7 @@ class SessionServiceTest {
   @Test
   void exchangePersistsOnlyTheHashNotThePlaintextValue() {
     UUID identityId = UUID.randomUUID();
-    when(handoffService.consume("handoff")).thenReturn(identityId);
+    when(handoffService.consume("handoff", "nonce")).thenReturn(identityId);
     when(identityService.summary(identityId))
         .thenReturn(
             Optional.of(
@@ -58,7 +59,7 @@ class SessionServiceTest {
                     in.agreementmitra.identity.IdentityRole.CUSTOMER)));
     when(secretTokens.newToken()).thenReturn("plaintext-session-value");
 
-    SessionService.SessionIssued issued = service.exchange("handoff");
+    SessionService.SessionIssued issued = service.exchange("handoff", "nonce");
 
     assertThat(issued.value()).isEqualTo("plaintext-session-value");
     ArgumentCaptor<AuthSession> captor = ArgumentCaptor.forClass(AuthSession.class);
@@ -66,6 +67,8 @@ class SessionServiceTest {
     // Only the hash is persisted; the plaintext value never appears on the row.
     assertThat(captor.getValue().toString()).doesNotContain("plaintext-session-value");
     assertThat(captor.getValue().identityId()).isEqualTo(identityId);
+    // The returned expiry is the persisted one -- the single source for the cookie's Max-Age.
+    assertThat(issued.expiresAt()).isEqualTo(captor.getValue().expiresAt());
   }
 
   @Test

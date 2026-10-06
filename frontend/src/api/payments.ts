@@ -14,7 +14,8 @@
 // Card, UPI, netbanking and wallet details are collected entirely inside the provider's hosted
 // checkout. They never pass through our code, so nothing here can accept, proxy, store, or log one.
 
-import { authHeader } from "./authStore";
+import { apiFetch, CustomerFacingError } from "./http";
+import { problemTypeOf } from "./problems";
 import type { StampSelection } from "./stampQuote";
 
 const BASE = "/api";
@@ -50,11 +51,23 @@ export interface PaymentProgress {
   stampValueMinorUnits?: number | null;
 }
 
-/** An Error carrying the HTTP status so callers can distinguish 404 (not yours) from the rest. */
+/**
+ * An Error carrying the HTTP status so callers can distinguish 404 (not yours) from the rest, and
+ * the RFC 9457 problem `type` so a refusal such as the jurisdiction gate's re-check at checkout is
+ * recognised exactly as it is when finalise refuses it.
+ */
 export class PaymentHttpError extends Error {
-  constructor(public readonly status: number) {
+  constructor(
+    public readonly status: number,
+    public readonly problemType: string | null = null,
+  ) {
     super(`Payment request failed: ${status}`);
     this.name = "PaymentHttpError";
+  }
+
+  /** The one way to build this error from a refusal: it always carries the problem type. */
+  static async from(res: Response): Promise<PaymentHttpError> {
+    return new this(res.status, await problemTypeOf(res));
   }
 }
 
@@ -70,14 +83,19 @@ export async function startCheckout(
   agreementId: string,
   selection?: StampSelection,
 ): Promise<CheckoutSession> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/payment/order`, {
-    method: "POST",
-    headers: selection
-      ? { "Content-Type": "application/json", ...authHeader() }
-      : { ...authHeader() },
-    ...(selection ? { body: JSON.stringify(selection) } : {}),
-  });
-  if (!res.ok) throw new PaymentHttpError(res.status);
+  const res = await apiFetch(
+    `${BASE}/agreements/${agreementId}/payment/order`,
+    {
+      method: "POST",
+      ...(selection
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(selection),
+          }
+        : {}),
+    },
+  );
+  if (!res.ok) throw await PaymentHttpError.from(res);
   return res.json();
 }
 
@@ -85,10 +103,8 @@ export async function startCheckout(
 export async function getPaymentProgress(
   agreementId: string,
 ): Promise<PaymentProgress> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/payment`, {
-    headers: { ...authHeader() },
-  });
-  if (!res.ok) throw new PaymentHttpError(res.status);
+  const res = await apiFetch(`${BASE}/agreements/${agreementId}/payment`);
+  if (!res.ok) throw await PaymentHttpError.from(res);
   return res.json();
 }
 
@@ -108,11 +124,11 @@ export async function reportCheckoutResult(
   agreementId: string,
   result: CheckoutResult,
 ): Promise<PaymentProgress> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${BASE}/agreements/${agreementId}/payment/callback`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         razorpayOrderId: result.razorpay_order_id,
         razorpayPaymentId: result.razorpay_payment_id,
@@ -120,7 +136,7 @@ export async function reportCheckoutResult(
       }),
     },
   );
-  if (!res.ok) throw new PaymentHttpError(res.status);
+  if (!res.ok) throw await PaymentHttpError.from(res);
   return res.json();
 }
 
@@ -155,7 +171,7 @@ export async function loadCheckoutScript(): Promise<RazorpayConstructor> {
     if (existing) {
       existing.addEventListener("load", () => resolve());
       existing.addEventListener("error", () =>
-        reject(new Error("Could not load the payment window.")),
+        reject(new CustomerFacingError("Could not load the payment window.")),
       );
       return;
     }
@@ -164,10 +180,11 @@ export async function loadCheckoutScript(): Promise<RazorpayConstructor> {
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () =>
-      reject(new Error("Could not load the payment window."));
+      reject(new CustomerFacingError("Could not load the payment window."));
     document.head.appendChild(script);
   });
-  if (!window.Razorpay) throw new Error("Could not load the payment window.");
+  if (!window.Razorpay)
+    throw new CustomerFacingError("Could not load the payment window.");
   return window.Razorpay;
 }
 
@@ -281,14 +298,20 @@ export async function payForAgreement(
   return settled.kind === "failed" ? "FAILED" : "DISMISSED";
 }
 
-/** Minor units (paise) to a rupee string for display. Integer arithmetic only - never a float. */
+const indianGrouping = new Intl.NumberFormat("en-IN");
+
+/**
+ * Minor units (paise) to a display string with Indian digit grouping and paise always shown, e.g.
+ * "₹1,20,000.50". Integer arithmetic only - never a float. A currency other than INR keeps its code.
+ */
 export function formatMinorUnits(
   amountMinorUnits: number,
   currency: string,
 ): string {
-  const whole = Math.trunc(amountMinorUnits / 100);
-  const fraction = Math.abs(amountMinorUnits % 100)
-    .toString()
-    .padStart(2, "0");
-  return `${currency} ${whole}.${fraction}`;
+  const sign = amountMinorUnits < 0 ? "-" : "";
+  const abs = Math.abs(amountMinorUnits);
+  const whole = indianGrouping.format(Math.trunc(abs / 100));
+  const fraction = (abs % 100).toString().padStart(2, "0");
+  const symbol = currency === "INR" ? "₹" : `${currency} `;
+  return `${sign}${symbol}${whole}.${fraction}`;
 }

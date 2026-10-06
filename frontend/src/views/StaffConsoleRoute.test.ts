@@ -22,7 +22,8 @@ vi.mock("../api/auth", async (importOriginal) => {
   return {
     ...actual,
     exchangeHandoff: vi.fn(),
-    fetchMe: vi.fn(),
+    // No session cookie by default; signInAs settles the state before mount, so init() skips /me.
+    fetchMe: vi.fn(() => Promise.reject(new actual.AuthHttpError(401))),
     logout: vi.fn(),
   };
 });
@@ -34,7 +35,6 @@ const mockedExchange = vi.mocked(auth.exchangeHandoff);
 /** Sign in as a role, through the real store, with only the network stubbed. */
 async function signInAs(role: IdentityRole): Promise<void> {
   mockedExchange.mockResolvedValue({
-    session: "session-value",
     me: {
       identityId: "id-1",
       displayName: "Tester",

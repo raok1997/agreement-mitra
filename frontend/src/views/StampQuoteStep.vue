@@ -15,10 +15,16 @@
 
 import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
+import { busyMessage } from "../api/http";
+import {
+  JURISDICTION_UNSUPPORTED_MESSAGE,
+  STAMP_UNPLANNABLE_MESSAGE,
+} from "./refusalMessages";
 import {
   getStampQuote,
   selectionFor,
   type StampQuote,
+  type StampQuoteLine,
   type StampQuoteOption,
   type StampSelection,
 } from "../api/stampQuote";
@@ -49,8 +55,9 @@ onMounted(async () => {
     const preselected =
       q.options.find((o) => o.recommended) ?? q.options[0] ?? null;
     selectedValue.value = preselected?.stampValueMinorUnits ?? null;
-  } catch {
+  } catch (e) {
     loadError.value =
+      busyMessage(e) ??
       "Could not load the stamp duty for this agreement. Please try again.";
   } finally {
     loading.value = false;
@@ -81,6 +88,64 @@ function money(minorUnits: number | null | undefined): string {
   return minorUnits == null
     ? ""
     : formatMinorUnits(minorUnits, quote.value?.currency ?? "INR");
+}
+
+// The breakdown is display-only formatting of the server's lines -- no amount is derived here except
+// the closing total, which is the server's dutyMinorUnits. The server marks each line's `delta`
+// (DutyLine replay semantics): deltas carry an explicit sign and are never mistaken for a total;
+// every other line (QUANTITY, BASE, and the informational ESCALATION) is an unsigned amount.
+const QUANTITY_LABELS: Record<string, string> = {
+  TOTAL_RENT: "Total rent for the term",
+  AVERAGE_ANNUAL_RENT: "Average annual rent",
+  MONTHLY_RENT: "Monthly rent",
+  REFUNDABLE_DEPOSIT: "Refundable deposit",
+  NON_REFUNDABLE_DEPOSIT: "Non-refundable deposit",
+  ADVANCE_RENT: "Advance rent",
+  PREMIUM: "Premium",
+  DEPOSIT_NOTIONAL_INTEREST: "Notional interest on the deposit",
+};
+
+const rupees = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const grouped = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+
+function isDelta(line: StampQuoteLine): boolean {
+  return line.delta;
+}
+
+function isEscalation(line: StampQuoteLine): boolean {
+  return line.kind === "ESCALATION";
+}
+
+function lineLabel(line: StampQuoteLine): string {
+  if (line.kind === "QUANTITY") {
+    return QUANTITY_LABELS[line.label] ?? sentenceCase(line.label);
+  }
+  if (isEscalation(line)) {
+    return `Includes ${line.label}`;
+  }
+  const label = line.label
+    .replace(/\d{4,}(\.\d+)?/g, (n) => grouped.format(Number(n)))
+    .replace(
+      /\brounded (UP|DOWN|HALF_UP)\b/,
+      (_, mode: string) => `rounded ${mode.replace("_", " ").toLowerCase()}`,
+    );
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function lineAmount(line: StampQuoteLine): string {
+  const value = Number(line.amount);
+  if (!isDelta(line)) return rupees.format(value);
+  return `${value < 0 ? "−" : "+"}${rupees.format(Math.abs(value))}`;
+}
+
+function sentenceCase(name: string): string {
+  const words = name.toLowerCase().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 // The medium id comes from the jurisdiction's stamp paper catalog, so this must name every medium
@@ -116,9 +181,14 @@ function confirm(): void {
     </p>
 
     <div v-else-if="quote && !quote.available" class="mt-3 space-y-3">
+      <!-- UNPLANNABLE is a supported state whose duty no stamp paper covers, not a jurisdiction
+           refusal; every other unavailable status is the jurisdiction gate stated ahead of time. -->
       <p class="text-sm text-slate-700" data-testid="stamp-quote-unavailable">
-        Stamping is not available for this agreement yet. You can still preview
-        and download the draft free of charge.
+        {{
+          quote.status === "UNPLANNABLE"
+            ? STAMP_UNPLANNABLE_MESSAGE
+            : JURISDICTION_UNSUPPORTED_MESSAGE
+        }}
       </p>
     </div>
 
@@ -144,9 +214,21 @@ function confirm(): void {
             v-for="(line, i) in quote.breakdown"
             :key="i"
             class="flex flex-wrap justify-between gap-2"
+            :class="{ 'pl-3 text-slate-500': isEscalation(line) }"
+            :data-testid="isEscalation(line) ? 'breakdown-escalation' : undefined"
           >
-            <span>{{ line.label }}</span>
-            <span class="tabular-nums">{{ line.amount }}</span>
+            <span>{{ lineLabel(line) }}</span>
+            <span class="tabular-nums" data-testid="breakdown-amount">{{
+              lineAmount(line)
+            }}</span>
+          </li>
+          <li
+            v-if="quote.dutyMinorUnits != null"
+            class="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-1 font-medium text-slate-900"
+            data-testid="breakdown-total"
+          >
+            <span>Stamp duty</span>
+            <span class="tabular-nums">{{ money(quote.dutyMinorUnits) }}</span>
           </li>
         </ul>
         <p v-if="quote.rule" class="mt-2 text-xs text-slate-500">
@@ -215,6 +297,7 @@ function confirm(): void {
         class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900"
         data-testid="under-stamp-warning"
       >
+        <!-- ToS §7 (termsOfService.ts, our-fee) paraphrases this warning: re-check it when this text changes. -->
         <p>
           This stamp value is below the stamp duty payable on this agreement. An
           under-stamped agreement cannot be relied on as evidence in court until

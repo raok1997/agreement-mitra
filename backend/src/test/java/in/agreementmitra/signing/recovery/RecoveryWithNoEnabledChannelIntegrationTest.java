@@ -2,6 +2,7 @@ package in.agreementmitra.signing.recovery;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import in.agreementmitra.SlidingWindowRateLimiter;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
@@ -12,6 +13,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
@@ -52,12 +54,15 @@ class RecoveryWithNoEnabledChannelIntegrationTest {
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private RecordingEmailSender mail;
-  @Autowired private RecoveryRateLimiter rateLimiter;
+
+  @Autowired
+  @Qualifier(RecoveryLimiterConfig.LIMITER)
+  private SlidingWindowRateLimiter rateLimiter;
 
   @BeforeEach
   void resetHarness() {
     mail.reset();
-    rateLimiter.clear();
+    rateLimiter.reset();
   }
 
   private record Created(UUID id, String reference) {}

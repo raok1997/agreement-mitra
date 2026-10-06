@@ -3,7 +3,10 @@ package in.agreementmitra.signing.agreement;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import in.agreementmitra.signing.ClosureReason;
+import in.agreementmitra.signing.PaymentConfirmation;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -161,6 +164,25 @@ class AgreementTest {
   }
 
   @Test
+  void anUnownedAgreementAdmitsAnyCallerIncludingAnonymous() {
+    Agreement agreement = newAgreement();
+
+    assertThat(agreement.admits(null)).isTrue();
+    assertThat(agreement.admits(UUID.randomUUID())).isTrue();
+  }
+
+  @Test
+  void aClaimedAgreementAdmitsOnlyItsOwner() {
+    Agreement agreement = newAgreement();
+    UUID owner = UUID.randomUUID();
+    agreement.claimBy(owner);
+
+    assertThat(agreement.admits(owner)).isTrue();
+    assertThat(agreement.admits(UUID.randomUUID())).isFalse();
+    assertThat(agreement.admits(null)).isFalse();
+  }
+
+  @Test
   void replaceTermsRewritesTermsAndRederivesTheMonthTerm() {
     Agreement agreement = newAgreement();
 
@@ -284,5 +306,95 @@ class AgreementTest {
 
     org.junit.jupiter.api.Assertions.assertThrows(
         UnsupportedOperationException.class, () -> agreement.signers().clear());
+  }
+
+  private static void addParty(Agreement agreement, String name, Role role) {
+    agreement.addSigner(name, name, "X", "Father", "1 A St", null, null, role);
+  }
+
+  @Test
+  void createSetsLastEditedAtToCreatedAt() {
+    Agreement agreement = newAgreement();
+
+    assertThat(agreement.lastEditedAt()).isEqualTo(agreement.createdAt());
+  }
+
+  @Test
+  void markEditedMovesLastEditedAtAndLeavesCreatedAt() {
+    Agreement agreement = newAgreement();
+    Instant created = agreement.createdAt();
+    Instant later = created.plusSeconds(3600);
+
+    agreement.markEdited(later);
+
+    assertThat(agreement.lastEditedAt()).isEqualTo(later);
+    assertThat(agreement.createdAt()).isEqualTo(created);
+  }
+
+  @Test
+  void addSignerAssignsEntryPositionsInCallOrder() {
+    Agreement agreement = newAgreement();
+    addParty(agreement, "A", Role.OWNER);
+    addParty(agreement, "T", Role.TENANT);
+    addParty(agreement, "B", Role.OWNER);
+
+    assertThat(agreement.signers()).extracting(Signer::name).containsExactly("A", "T", "B");
+    assertThat(agreement.signers()).extracting(Signer::entryPosition).containsExactly(0, 1, 2);
+  }
+
+  @Test
+  void clearSignersThenAddSignerRenumbersFromZeroInTheNewOrder() {
+    Agreement agreement = newAgreement();
+    addParty(agreement, "A", Role.OWNER);
+    addParty(agreement, "B", Role.OWNER);
+    addParty(agreement, "T", Role.TENANT);
+
+    agreement.clearSigners();
+    addParty(agreement, "B", Role.OWNER);
+    addParty(agreement, "A", Role.OWNER);
+
+    assertThat(agreement.signers()).extracting(Signer::name).containsExactly("B", "A");
+    assertThat(agreement.signers()).extracting(Signer::entryPosition).containsExactly(0, 1);
+  }
+
+  // --- isDeletableDraft: the one deletability rule -----------------------------------------
+
+  @Test
+  void anUnpaidOpenDraftWithNoSigningRequestAndNoOrderIsDeletable() {
+    assertThat(newAgreement().isDeletableDraft(false, false)).isTrue();
+  }
+
+  @Test
+  void aSigningRequestAloneMakesItNotDeletable() {
+    assertThat(newAgreement().isDeletableDraft(true, false)).isFalse();
+  }
+
+  @Test
+  void aPaymentOrderAloneMakesItNotDeletable() {
+    assertThat(newAgreement().isDeletableDraft(false, true)).isFalse();
+  }
+
+  @Test
+  void aPaidAgreementIsNotDeletable() {
+    Agreement agreement = newAgreement();
+    agreement.recordPayment(
+        new PaymentConfirmation(
+            agreement.getId(), new BigDecimal("499.00"), "INR", "pay_x", Instant.now()),
+        null);
+    assertThat(agreement.isDeletableDraft(false, false)).isFalse();
+  }
+
+  @Test
+  void aWaivedAgreementIsNotDeletable() {
+    Agreement agreement = newAgreement();
+    agreement.waivePayment(UUID.randomUUID(), Instant.now());
+    assertThat(agreement.isDeletableDraft(false, false)).isFalse();
+  }
+
+  @Test
+  void aClosedAgreementIsNotDeletable() {
+    Agreement agreement = newAgreement();
+    agreement.close(ClosureReason.COMPLETED, Instant.now());
+    assertThat(agreement.isDeletableDraft(false, false)).isFalse();
   }
 }

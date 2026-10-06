@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.payment;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.StampChoiceInvalidException;
@@ -121,7 +122,9 @@ public class PaymentOrderService {
         agreementService
             .findById(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
 
     Map<Role, Integer> seenPerRole = new EnumMap<>(Role.class);
     List<String> unreachable = new ArrayList<>();
@@ -195,7 +198,9 @@ public class PaymentOrderService {
         quoting
             .evaluate(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     if (!evaluation.payable()) {
       // jurisdiction.require just passed, so only a concurrent rule change lands here.
       throw ConflictException.jurisdictionUnsupported(
@@ -314,7 +319,9 @@ public class PaymentOrderService {
         quoting
             .evaluate(agreementId)
             .orElseThrow(
-                () -> new ResourceNotFoundException("Agreement not found: " + agreementId));
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
     if (!evaluation.payable()) {
       return StampQuoteResponse.unavailable(agreementId, evaluation.status().name());
     }
@@ -338,13 +345,28 @@ public class PaymentOrderService {
         quote.amountPaise(),
         pricing.currency(),
         quote.breakdown().stream()
-            .map(l -> new StampQuoteResponse.Line(l.kind().name(), l.label(), lineOf(l).amount()))
+            .map(
+                l ->
+                    new StampQuoteResponse.Line(
+                        l.kind().name(), l.label(), lineOf(l).amount(), l.kind().isDelta()))
             .toList(),
         quote.registrationRequired(),
         new StampQuoteResponse.Rule(
             quote.rule().id(), quote.rule().legalReference(), quote.rule().reviewed()),
         StampOptions.UNDER_STAMP_WARNING_VERSION,
         options);
+  }
+
+  /**
+   * A frozen line's kind is a stored string; one no longer in {@link DutyLine.Kind} still shows,
+   * signed as a delta -- how every kind past BASE rendered before the server sent the flag.
+   */
+  private static boolean isDelta(String storedKind) {
+    try {
+      return DutyLine.Kind.valueOf(storedKind).isDelta();
+    } catch (IllegalArgumentException retired) {
+      return true;
+    }
   }
 
   private static StampQuoteResponse frozenQuote(
@@ -357,7 +379,9 @@ public class PaymentOrderService {
         frozen.dutyMinorUnits(),
         order.currency(),
         frozen.breakdown().stream()
-            .map(l -> new StampQuoteResponse.Line(l.kind(), l.label(), l.amount()))
+            .map(
+                l ->
+                    new StampQuoteResponse.Line(l.kind(), l.label(), l.amount(), isDelta(l.kind())))
             .toList(),
         frozen.registrationRequired(),
         new StampQuoteResponse.Rule(frozen.ruleId(), null, frozen.ruleReviewed()),
@@ -541,7 +565,8 @@ public class PaymentOrderService {
             ? agreementService.paymentState(agreementId).isPresent()
             : agreementService.isAccessibleBy(agreementId, callerIdentityId);
     if (!permitted) {
-      throw new ResourceNotFoundException("Agreement not found: " + agreementId);
+      throw new ResourceNotFoundException(
+          "Agreement not found: " + AgreementIds.redact(agreementId));
     }
   }
 

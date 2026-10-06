@@ -54,6 +54,20 @@ class SubmittedDataValidatorTest {
     assertThat(coerced.get("purpose")).isEqualTo("residential");
   }
 
+  @Test
+  void fillsDeclaredDefaultForBlankField() {
+    // A blank capture counts as absent, so the declared default renders -- the stamp quote relies
+    // on the same rule (stamp-quote-deed-parity).
+    Map<String, Object> submitted = fullyValidSubmission();
+    submitted.put("purpose", "   ");
+
+    Map<String, Object> coerced =
+        SubmittedDataValidator.validateAndCoerce(
+            referenceTemplate(), submitted, ProjectionMode.GENERATE);
+
+    assertThat(coerced.get("purpose")).isEqualTo("residential");
+  }
+
   // --- bounds / pattern / enum ----------------------------------------------
 
   @Test
@@ -223,6 +237,69 @@ class SubmittedDataValidatorTest {
         new Dimensions("TG", "residential"),
         Map.of("rental-base", 1),
         "hash-abc");
+  }
+
+  // --- date range: one shared bound (PlausibleDates) at the input boundary --------
+
+  @Test
+  void rejectsADateBeforeTheAcceptedRangeAsMin() {
+    Map<String, Object> submitted = fullyValidSubmission();
+    submitted.put("startDate", "1899-12-31");
+
+    DocumentDataInvalidException ex =
+        catchThrowableOfType(
+            DocumentDataInvalidException.class,
+            () ->
+                SubmittedDataValidator.validateAndCoerce(
+                    referenceTemplate(), submitted, ProjectionMode.GENERATE));
+
+    assertThat(ex.errors()).contains(new FieldErrorDetail("startDate", "min"));
+  }
+
+  @Test
+  void rejectsADateAfterTheAcceptedRangeAsMax() {
+    Map<String, Object> submitted = fullyValidSubmission();
+    submitted.put("startDate", "2200-01-01");
+
+    DocumentDataInvalidException ex =
+        catchThrowableOfType(
+            DocumentDataInvalidException.class,
+            () ->
+                SubmittedDataValidator.validateAndCoerce(
+                    referenceTemplate(), submitted, ProjectionMode.GENERATE));
+
+    assertThat(ex.errors()).contains(new FieldErrorDetail("startDate", "max"));
+  }
+
+  @Test
+  void rejectsTheMaximumIsoYearCleanlyRatherThanLettingItReachDateArithmetic() {
+    // ISO-8601 parsing accepts a signed >4-digit year, so this is a valid LocalDate. Downstream
+    // month arithmetic adds a day to it and overflows; it must stop here as a 400-shaped error.
+    Map<String, Object> submitted = fullyValidSubmission();
+    submitted.put("startDate", "+999999999-12-31");
+
+    DocumentDataInvalidException ex =
+        catchThrowableOfType(
+            DocumentDataInvalidException.class,
+            () ->
+                SubmittedDataValidator.validateAndCoerce(
+                    referenceTemplate(), submitted, ProjectionMode.GENERATE));
+
+    assertThat(ex.errors()).contains(new FieldErrorDetail("startDate", "max"));
+  }
+
+  @Test
+  void acceptsTheBoundaryYearsThemselves() {
+    for (String date : List.of("1900-01-01", "2199-12-31")) {
+      Map<String, Object> submitted = fullyValidSubmission();
+      submitted.put("startDate", date);
+
+      Map<String, Object> coerced =
+          SubmittedDataValidator.validateAndCoerce(
+              referenceTemplate(), submitted, ProjectionMode.GENERATE);
+
+      assertThat(coerced.get("startDate")).isEqualTo(date);
+    }
   }
 
   private static Map<String, Object> fullyValidSubmission() {

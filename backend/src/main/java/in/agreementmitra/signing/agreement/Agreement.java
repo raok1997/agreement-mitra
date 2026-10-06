@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.agreement;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentState;
@@ -11,6 +12,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
@@ -63,6 +65,16 @@ class Agreement implements Persistable<UUID> {
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
+
+  /**
+   * When the agreement's content was last changed through the drafting surface: set to {@link
+   * #createdAt} on create, then moved by {@link #markEdited} on an edit of terms or parties, a
+   * contacts edit, or a draft attach. Deliberately <b>not</b> a JPA {@code @UpdateTimestamp}: that
+   * would miss the edits touching only child rows and fire on payment, stamping and closure, so
+   * "Edited 2h ago" would mean "a webhook arrived 2h ago". Server-managed.
+   */
+  @Column(name = "last_edited_at", nullable = false)
+  private Instant lastEditedAt;
 
   /**
    * The agreement's <b>one</b> externally-visible reference (design D3): short, checksummed,
@@ -223,6 +235,7 @@ class Agreement implements Persistable<UUID> {
   private ClosureReason closureReason;
 
   @OneToMany(mappedBy = "agreement", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OrderBy("entryPosition ASC")
   private List<Signer> signers = new ArrayList<>();
 
   @Transient private boolean isNew = true;
@@ -250,6 +263,7 @@ class Agreement implements Persistable<UUID> {
     this.startDate = startDate;
     this.endDate = endDate;
     this.createdAt = createdAt;
+    this.lastEditedAt = createdAt;
   }
 
   static Agreement create(
@@ -270,7 +284,10 @@ class Agreement implements Persistable<UUID> {
         Instant.now());
   }
 
-  /** Add a signer to the aggregate, wiring both sides of the relationship. */
+  /**
+   * Add a signer to the aggregate, wiring both sides of the relationship. Its entry position is the
+   * current list size, so after {@link #clearSigners} the new list renumbers from 0 in call order.
+   */
   void addSigner(
       String name,
       String firstName,
@@ -282,7 +299,25 @@ class Agreement implements Persistable<UUID> {
       Role role) {
     signers.add(
         Signer.create(
-            this, name, firstName, lastName, fatherName, currentAddress, email, mobile, role));
+            this,
+            signers.size(),
+            name,
+            firstName,
+            lastName,
+            fatherName,
+            currentAddress,
+            email,
+            mobile,
+            role));
+  }
+
+  /**
+   * Record that the agreement's content was just changed through the drafting surface. Called once
+   * per action by the service (edit, contacts edit, draft attach), never by a read or a system
+   * transition.
+   */
+  void markEdited(Instant at) {
+    this.lastEditedAt = at;
   }
 
   /** Attach (or replace) the uploaded draft's object-storage key. Server-managed only. */
@@ -310,6 +345,17 @@ class Agreement implements Persistable<UUID> {
       throw new IllegalStateException("agreement already owned by another identity");
     }
     // same owner -> idempotent no-op
+  }
+
+  /**
+   * The owner rule, defined once: an <b>unowned</b> agreement admits anyone presenting its id (the
+   * unguessable id is a bearer capability); a <b>claimed</b> one admits only its owner. A null
+   * caller (anonymous) is admitted only to an unowned agreement. Every customer route that is
+   * owner-scoped once claimed applies this. Deliberately NOT the rule of the owner-only edit or of
+   * unowned-only recovery.
+   */
+  boolean admits(UUID callerIdentityId) {
+    return ownerIdentityId == null || ownerIdentityId.equals(callerIdentityId);
   }
 
   /**
@@ -408,6 +454,22 @@ class Agreement implements Persistable<UUID> {
   }
 
   /**
+   * The one deletability rule: an unpaid draft that never reached a signing request or an order.
+   * Drives both the owner's delete and the list's {@code deletable} flag, so the two cannot
+   * disagree. {@code OPEN} is defence in depth - nothing closes an agreement without a signing
+   * request today, but the rule must not depend on that staying true.
+   *
+   * <p>Restated by the purge candidate query ({@link AgreementRepository#findStaleDraftCandidates})
+   * as a pre-filter; change both.
+   */
+  boolean isDeletableDraft(boolean hasSigningRequest, boolean hasPaymentOrder) {
+    return !hasSigningRequest
+        && !hasPaymentOrder
+        && paymentState == PaymentState.UNPAID
+        && closureState == ClosureState.OPEN;
+  }
+
+  /**
    * Replace the capture state <b>wholesale</b> (set on create, replaced on edit -- like the party
    * list). A null/empty {@code data} with null/empty {@code activeSections} collapses to a null
    * capture state, so an API client that sends only the fixed fields persists no capture state and
@@ -496,6 +558,10 @@ class Agreement implements Persistable<UUID> {
 
   Instant createdAt() {
     return createdAt;
+  }
+
+  Instant lastEditedAt() {
+    return lastEditedAt;
   }
 
   /**
@@ -601,6 +667,6 @@ class Agreement implements Persistable<UUID> {
   @Override
   public String toString() {
     // Id only — no signer PII (the signer collection holds name/email).
-    return "Agreement{id=" + id + "}";
+    return "Agreement{id=" + AgreementIds.redact(id) + "}";
   }
 }

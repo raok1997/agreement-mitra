@@ -64,4 +64,18 @@ public interface DocumentProjectionApi {
    */
   DocumentProjectionResult generate(
       DocumentProjectionRequest request, java.util.Map<String, Object> systemValues);
+
+  /**
+   * As {@link #generate(DocumentProjectionRequest, java.util.Map)}, rendered at {@code priority}.
+   * Only the render that fulfils a paid agreement's e-stamp passes {@link
+   * in.agreementmitra.documents.RenderPriority#FULFILMENT}, which may take the reserved render
+   * slot; every other render is {@code STANDARD}.
+   *
+   * @throws in.agreementmitra.RenderCapacityException if no eligible render slot frees within the
+   *     bounded wait
+   */
+  DocumentProjectionResult generate(
+      DocumentProjectionRequest request,
+      java.util.Map<String, Object> systemValues,
+      in.agreementmitra.documents.RenderPriority priority);
 }

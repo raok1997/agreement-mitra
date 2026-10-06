@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.payment;
 
+import in.agreementmitra.AgreementIds;
 import java.util.UUID;
 
 /**
@@ -18,4 +19,10 @@ import java.util.UUID;
  *
  * @param agreementId the agreement whose payment was confirmed
  */
-public record PaymentConfirmedEvent(UUID agreementId) {}
+public record PaymentConfirmedEvent(UUID agreementId) {
+
+  @Override
+  public String toString() {
+    return "PaymentConfirmedEvent{agreementId=" + AgreementIds.redact(agreementId) + "}";
+  }
+}

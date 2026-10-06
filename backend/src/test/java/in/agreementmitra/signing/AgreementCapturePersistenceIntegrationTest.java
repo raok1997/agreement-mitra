@@ -13,6 +13,8 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestPdfs;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -72,13 +74,12 @@ class AgreementCapturePersistenceIntegrationTest {
     UUID identityId =
         identityService.findOrCreate(
             "google", subject, subject + "@example.com", true, "T " + subject);
-    String handoff = handoffService.issue(identityId);
-    return sessionService.exchange(handoff).value();
+    return StaffSessions.forIdentity(handoffService, sessionService, identityId);
   }
 
   private static HttpHeaders bearer(String session) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(session);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
     return headers;
   }
 
@@ -175,8 +176,13 @@ class AgreementCapturePersistenceIntegrationTest {
         new HttpEntity<>(bearer(session)),
         AgreementResponse.class);
     when(documentProjection.generate(any())).thenReturn(fakeResult());
+    // Claimed, so generate is owner-scoped: the owner's session is required.
     assertThat(
-            rest.postForEntity("/api/agreements/{id}/document", null, String.class, id)
+            rest.exchange(
+                    "/api/agreements/" + id + "/document",
+                    HttpMethod.POST,
+                    new HttpEntity<>(bearer(session)),
+                    String.class)
                 .getStatusCode())
         .isEqualTo(HttpStatus.OK);
     assertThat(

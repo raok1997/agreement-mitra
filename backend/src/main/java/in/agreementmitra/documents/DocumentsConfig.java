@@ -1,6 +1,10 @@
 package in.agreementmitra.documents;
 
+import com.zaxxer.hikari.HikariDataSource;
 import java.net.http.HttpClient;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,5 +30,35 @@ class DocumentsConfig {
     JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
     factory.setReadTimeout(properties.requestTimeout());
     return builder.baseUrl(properties.url()).requestFactory(factory).build();
+  }
+
+  /**
+   * Startup check (anonymous-surface-abuse-controls D6): every admitted render and every waiter can
+   * hold a database connection -- the render paths run inside a transaction -- so render slots plus
+   * the waiting room must leave connections free, or a render flood could still stall every
+   * DB-backed endpoint. Skipped when the pool size cannot be read.
+   */
+  @Bean
+  InitializingBean renderConnectionHeadroomCheck(
+      GotenbergProperties properties, ObjectProvider<DataSource> dataSource) {
+    return () -> {
+      if (dataSource.getIfAvailable() instanceof HikariDataSource hikari) {
+        checkConnectionHeadroom(properties, hikari.getMaximumPoolSize());
+      }
+    };
+  }
+
+  static void checkConnectionHeadroom(GotenbergProperties properties, int poolSize) {
+    int pinnable = properties.maxConcurrentRenders() + properties.maxWaiters();
+    if (pinnable >= poolSize) {
+      throw new IllegalStateException(
+          "gotenberg.max-concurrent-renders ("
+              + properties.maxConcurrentRenders()
+              + ") plus gotenberg.max-waiters ("
+              + properties.maxWaiters()
+              + ") must be fewer than the database pool size ("
+              + poolSize
+              + "), or a render flood can hold every connection");
+    }
   }
 }

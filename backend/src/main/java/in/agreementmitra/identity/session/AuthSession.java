@@ -15,9 +15,9 @@ import org.springframework.data.domain.Persistable;
 /**
  * An opaque, server-side, revocable, expiring session bound to an identity. The high-entropy
  * session value is returned to the client exactly once (at exchange) and NEVER persisted -- only
- * its SHA-256 (keyed) hash is stored here, so a database leak cannot reconstruct a usable bearer
- * value. A presented {@code Authorization: Bearer} value is authenticated by re-hashing and looking
- * up a live, unexpired row.
+ * its SHA-256 (keyed) hash is stored here, so a database leak cannot reconstruct a usable session
+ * value. The value presented in the HttpOnly session cookie is authenticated by re-hashing and
+ * looking up a live, unexpired row.
  *
  * <p>Provider-agnostic shared infra: a future mobile-OTP login mints the identical session. {@code
  * toString()} is id-only -- never the value hash or identity.

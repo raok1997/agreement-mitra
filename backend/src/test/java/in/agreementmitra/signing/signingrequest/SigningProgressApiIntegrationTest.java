@@ -14,6 +14,8 @@ import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -82,6 +84,7 @@ class SigningProgressApiIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -177,9 +180,7 @@ class SigningProgressApiIntegrationTest {
                         + "\",\"invitees\":[{\"inviteeId\":\"INV-1\",\"signUrl\":\"https://sign/OWNERSECRET\","
                         + "\"expiryDate\":\"2026-01-01\"},{\"inviteeId\":\"INV-2\","
                         + "\"signUrl\":\"https://sign/TENANTSECRET\",\"expiryDate\":\"2026-01-02\"}]}}")));
-    assertThat(
-            rest.postForEntity("/api/signing/" + id + "/request", null, String.class)
-                .getStatusCode())
+    assertThat(SigningRequests.post(rest, context, id).getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
     return id;
   }
@@ -229,7 +230,7 @@ class SigningProgressApiIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     assertThat(
             rest.exchange(
                     "/api/staff/estamp",
@@ -243,7 +244,7 @@ class SigningProgressApiIntegrationTest {
   private ResponseEntity<String> progress(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
     if (token != null) {
-      headers.setBearerAuth(token);
+      headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     }
     return rest.exchange(
         "/api/signing/" + agreementId + "/progress",
@@ -254,7 +255,7 @@ class SigningProgressApiIntegrationTest {
 
   private void claim(UUID agreementId, String token) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(token);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(token));
     assertThat(
             rest.exchange(
                     "/api/agreements/" + agreementId + "/claim",

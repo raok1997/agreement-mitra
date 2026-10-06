@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { AgreementView, Role } from "../api/client";
-import { auth } from "../api/authStore";
+import { isSignedIn, reconcile } from "../api/authStore";
 import {
   getPaymentProgress,
   payForAgreement,
@@ -17,13 +17,21 @@ import {
   type SigningProgress,
 } from "../api/signingProgress";
 import { usePolling, type PollVerdict } from "../composables/usePolling";
+import { busyMessage, ServiceBusyError } from "../api/http";
 import {
   getStampQuote,
   selectionFor,
+  StampQuoteHttpError,
   type StampSelection,
 } from "../api/stampQuote";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
+import { hasProblemType, PROBLEM } from "../api/problems";
+import {
+  AGREEMENT_UNAVAILABLE_MESSAGE,
+  customerMessage,
+  JURISDICTION_UNSUPPORTED_MESSAGE,
+} from "./refusalMessages";
 
 // The landing behind the emailed link. It answers "where has my agreement got to?" from three
 // server reads and nothing else: the agreement (already loaded by the shell, which owns the
@@ -48,7 +56,7 @@ const payment = ref<PaymentProgress | null>(null);
 const progress = ref<SigningProgress | null>(null);
 const loadError = ref<string | null>(null);
 const unavailable = ref(false);
-const signedIn = computed(() => !!auth.session);
+const signedIn = isSignedIn;
 
 // --- milestone rules (design D2). Sets, never enum order. -------------------------------------
 
@@ -168,9 +176,19 @@ function isUnavailable(reason: unknown): boolean {
   );
 }
 
+// Set when the first load was refused for load and polling was started to recover from it.
+let recoveringFromBusy = false;
+
 async function readOnce(): Promise<PollVerdict> {
   const verdict = await readLatest();
   if (verdict !== null) latestVerdict = verdict;
+  if (recoveringFromBusy && verdict !== null) {
+    // The first successful read after a busy first load: it is the real first load. Clear the
+    // retry message and apply the same keep-watching rule load() applies.
+    recoveringFromBusy = false;
+    loadError.value = null;
+    if (verdict !== "stop" && !somethingCanHappen()) return "stop";
+  }
   return verdict ?? "continue";
 }
 
@@ -196,6 +214,15 @@ async function readLatest(): Promise<PollVerdict | null> {
   ) {
     unavailable.value = true;
     return "stop";
+  }
+  // A load refusal wins over any other rejection: it carries the Retry-After the poll must honour.
+  for (const settled of [pay, prog]) {
+    if (
+      settled.status === "rejected" &&
+      settled.reason instanceof ServiceBusyError
+    ) {
+      throw settled.reason;
+    }
   }
   if (pay.status === "rejected") throw pay.reason;
   if (prog.status === "rejected") throw prog.reason;
@@ -234,9 +261,16 @@ onMounted(async () => {
   loadError.value = null;
   try {
     await load();
-  } catch {
+  } catch (e) {
     loadError.value =
+      busyMessage(e) ??
       "Could not load the agreement's status. Please try again.";
+    // Refused for load, not broken: keep watching so the page recovers on its own once the
+    // server is ready, instead of telling the customer to retry and then never doing so.
+    if (e instanceof ServiceBusyError) {
+      recoveringFromBusy = true;
+      polling.start();
+    }
   }
 });
 
@@ -261,10 +295,24 @@ async function pay(): Promise<void> {
       return;
     }
     await payWith(selectionFor(quote, frozen));
-  } catch {
+  } catch (e) {
+    // The stamp quote's error carries only a status; on this route a 404 is "unknown or not yours".
     payError.value =
-      "Payment cannot be started yet. Contact support quoting your reference.";
+      e instanceof StampQuoteHttpError && e.status === 404
+        ? notAvailableToThisSession()
+        : (busyMessage(e) ??
+          "Payment cannot be started yet. Contact support quoting your reference.");
   }
+}
+
+/**
+ * A payment call refused as not found: this session is not (or no longer) the owner's. Signing in
+ * is the remedy, not support. A 404 does not trip the client's 401/403 hook, so re-check the
+ * session here, or a header still showing an ended session would contradict the message.
+ */
+function notAvailableToThisSession(): string {
+  void reconcile();
+  return AGREEMENT_UNAVAILABLE_MESSAGE;
 }
 
 async function onStampChosen(selection: StampSelection): Promise<void> {
@@ -281,9 +329,15 @@ async function payWith(selection: StampSelection): Promise<void> {
       description: `Agreement ${props.agreement.trackingNumber}`,
       selection,
     });
-  } catch {
-    payError.value =
-      "Payment cannot be started yet. Contact support quoting your reference.";
+  } catch (e) {
+    payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
+      ? JURISDICTION_UNSUPPORTED_MESSAGE
+      : hasProblemType(e, PROBLEM.notFound)
+        ? notAvailableToThisSession()
+        : customerMessage(
+            e,
+            "Payment cannot be started yet. Contact support quoting your reference.",
+          );
   } finally {
     paying.value = false;
   }

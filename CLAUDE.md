@@ -30,6 +30,51 @@ ROADMAP: *does it tell you something true about the system today that the archiv
 cannot?* Narrative about how the system currently behaves stays; "we finished X" does
 not.
 
+## Handling what a change uncovers — resolve where it is cheapest
+
+A review or an implementation will uncover real issues. They must be **addressed, not
+suppressed** — but most of the cost of an issue is in *deferring* it: a register row
+has to be written, read and understood by the user, and later reloaded into context,
+proposed, reviewed and applied. A three-line fix done now, while the context is loaded,
+is almost always cheaper. So triage every finding by **what it needs**, not by whether
+it is in scope:
+
+| The finding needs… | Do this |
+|---|---|
+| Nothing but a small change, context already loaded | **Fix it now.** If it is outside the CR, make it a separate change set with its own suggested commit — the CR stays clean and no backlog item is created |
+| A decision from someone outside (counsel, product) | Add it to **that person's existing list** — one counsel row per subject, not one row per question |
+| The same work as an existing register row | **Append a sentence** to that row |
+| Nothing, because the premise does not hold | Drop it with one line in the wrap-up |
+
+A **new** register row only when none of these fit, and it carries a recommended action
+so the user approves or rejects instead of analysing from scratch.
+
+**Fix the cause, not each symptom.** The most common cause of repeat findings is **the
+same fact in two places** — they drift, and every drift is a new finding. Before fixing
+a finding, ask whether it is one: two helpers computing the same count, a legal
+threshold in both a rules file and hand-typed clause text, a version pinned in the test
+harness but floating in compose. Remove the duplication, or put the rule at the boundary
+both copies share, and the whole class goes away instead of one instance.
+
+**Verify the premise before building the fix.** Is it actually a defect? A finding framed
+as a bug can be a misreading; a proposal that already descoped something usually did so
+for a reason.
+
+Worked example — `derived-tenancy-term-and-registration-warning` (since renamed `derived-tenancy-term`) (2026-10-04). A review
+flagged the capture warning as over-warning Karnataka. Three fix rounds made the threshold
+state-aware — a second copy of the rules engine in the frontend — then all of it was
+reverted on one fact: KA and TG both exempt a term below twelve months, the national line
+already. Five register rows were added along the way, every one a duplicate of an existing
+row or an issue cheap enough to fix on the spot. Final state: the overflow was fixed once at
+the input boundary (`PlausibleDates`) instead of in each date helper, the MinIO drift was
+fixed by one pin, the legal questions were appended to the existing counsel rows, and the
+CR's net register effect was one row *removed*.
+
+**`and` in a change name is a scope smell.** Two features in one CR means one of them is
+riding along without its own proposal, review or decision, and unrelated work is never
+co-shipped. That CR's `and` was a capture-time registration warning that duplicated the
+authoritative stamp-quote notice; it was split out.
+
 ## Architecture (decided — do not relitigate without a proposal)
 
 - **Backend**: Java 21 + Spring Boot 3.x, structured as a **modular monolith**
@@ -78,6 +123,9 @@ not.
   completion. A scheduled reconciliation job is the fallback for missed hooks.
 - Tests: every module change must keep `ModularityTests` green (it verifies
   module boundaries). Write a slice/integration test for new endpoints.
+- **GET handlers must be side-effect-free.** The session cookie is `SameSite=Lax`, which a
+  cross-site top-level GET navigation still carries; CSRF tokens guard only unsafe methods. A GET
+  that changes state is a CSRF hole.
 - Frontend: composition API + `<script setup>`; Tailwind utilities for layout
   (responsive is a CSS concern, not a JS one); keep API calls in `src/api/`.
 
@@ -168,8 +216,10 @@ the cost is invisible to whoever is only watching for the green tick.
   from the backend's
   exclude-build-tooling scope. To accept a finding, add an `[[IgnoredVulns]]` entry
   to `frontend/osv-scanner.toml` with a `reason` AND an `ignoreUntil` expiry —
-  justified and time-boxed, never permanent or wildcard. The baseline is currently
-  **empty** (graph is clean). It **is** coupled to the build: `npm run build` chains
+  justified and time-boxed, never permanent or wildcard. The baseline holds **one**
+  entry: `braces` 3.0.3 (dev-only via tailwindcss, no fixed release; expires
+  2026-11-04). `ignoreUntil` is an **unquoted** TOML date (`2026-11-04`) — a quoted
+  string fails to parse and breaks the gate. It **is** coupled to the build: `npm run build` chains
   `security:scan && test && vue-tsc -b && vite build`, so a passing build implies a
   passing scan (note `build` does **not** run eslint — `npm run lint` is separate).
   Still **not wired into CI** (local-only today, so a clean local run is not proof any
@@ -189,12 +239,14 @@ the cost is invisible to whoever is only watching for the green tick.
     not postcss.
 - **Not yet covered (follow-up CRs):** CI that runs these gates automatically
   (today they run only on local `./gradlew` / `npm run security:scan`). The backend
-  `osv-scanner.toml` suppression baseline is currently **empty** — CR-8 remediated
-  the Spring Boot 3.4.2 CVEs by bumping to 3.5.15, and CR-9 cleared the residual
-  tool-classpath findings via the scan-scope policy above.
+  `osv-scanner.toml` suppression baseline holds **one** entry: `spring-webmvc`
+  6.2.19 GHSA-pc63-qcmh-9cmg (XsltView, unused here; no OSS 6.2.x fix, only 7.0.9 /
+  Boot 4; expires 2026-12-06). CR-8 remediated the Spring Boot 3.4.2 CVEs by bumping
+  to 3.5.15, and CR-9 cleared the residual tool-classpath findings via the
+  scan-scope policy above.
 - **Boot 3.5.15 is NOT clean on its own.** As of 2026-09-05 four of its BOM-managed
   versions carry open advisories and are **overridden** in `build.gradle.kts`:
-  `tomcat` 10.1.59, `postgresql` 42.7.12, `jackson-bom` 2.21.5, `log4j2` 2.25.5
+  `tomcat` 10.1.59, `postgresql` 42.7.12, `jackson-bom` 2.21.7 (bumped 2026-10-04), `log4j2` 2.25.5
   (a Boot bump could not fix these — 3.5.16 manages the identical versions). Those
   `extra[...]` overrides are load-bearing: **on the next Boot upgrade, drop one only
   after confirming the new BOM manages that artifact at or above the pinned version**,
@@ -213,6 +265,12 @@ Backend (from `backend/`):
 - `./start_local.sh` — run the API against the compose infra without remembering env
   vars: supplies the compose MinIO creds (defaults only; a real env wins) + the `local`
   profile, then `bootRun`. Run `docker compose up -d` first.
+- `AUTH_COOKIE_SECURE=false` — drop `Secure` and the `__Host-` prefix from the session and
+  CSRF cookies, for plain-http testing from a LAN IP (`http://192.168.x.x:5173`) or Safari.
+  **Required on a LAN IP even for anonymous drafting**: the browser drops `Secure` cookies there,
+  so every POST fails CSRF. `http://localhost` works with the default `true`. Clear site cookies
+  when switching modes (a stale cookie of the other name lingers). Startup refuses `false` while a
+  Google OAuth URI is https.
 - `./gradlew test` — run tests (includes module-boundary verification)
 - `./gradlew check` — tests + JaCoCo coverage gate
 - `./gradlew spotlessApply` — format Java

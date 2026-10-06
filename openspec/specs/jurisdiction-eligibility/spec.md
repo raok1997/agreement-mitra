@@ -12,9 +12,7 @@ Established by `jurisdiction-checkout-gating` as a configured allowlist, which w
 design**. `state-stamp-duty-quoting` replaced it with the stamp duty rules: a jurisdiction is eligible
 when it has a rule in effect that may be charged (counsel-reviewed, or unreviewed rules explicitly
 allowed) and the agreement is quoted with a plannable stamp option. There is no allowlist anymore.
-
 ## Requirements
-
 ### Requirement: An ineligible jurisdiction is refused with its own distinct error
 
 A refusal SHALL be reported as a `409 Conflict` carrying a **distinct** error kind reserved
@@ -107,18 +105,44 @@ eligible jurisdiction would deter a customer who could in fact be served.
 
 ### Requirement: The published terms state which jurisdictions can be stamped
 
-The customer-facing terms of service SHALL state which jurisdictions are available for
-stamping and eSign and which are available to draft and download only, so the published
-promise matches what the product does.
+The customer-facing terms of service SHALL name the jurisdictions whose agreements can be
+drafted. They SHALL state that stamping and eSign are available only for a jurisdiction whose
+duty the product can calculate and whose stamps it can obtain. They SHALL key the no-payment
+promise to the server's eligibility decision, which is derived from the duty rules and enforced at
+finalise, checkout, e-stamp intake and eSign. They SHALL describe the "Draft and download only"
+marking as how that decision is normally shown before a template is filled in, not as the
+decision itself, because the marking fails open when its lookup fails. They SHALL refer to the
+status board on the home page only as a summary, and SHALL say that for the customer's own
+agreement, what the service tells them applies.
+
+The terms SHALL NOT carry their own list of the jurisdictions that are live for stamping today.
+Such a list would be a third copy of a fact the server and the board already hold, and it would
+drift at every change.
+
+The terms SHALL promise that no payment is taken for an agreement in a state the service cannot
+stamp, and SHALL NOT mention a template the picker does not offer.
 
 The generated terms document SHALL be regenerated from the same single source, so the two
 faces of the text cannot diverge.
 
 #### Scenario: The terms carry a supported-jurisdictions clause
 
-- **WHEN** the terms of service are read
-- **THEN** they state which jurisdictions can be stamped and eSigned, and which are
-  draft-and-download only
+- **GIVEN** the terms-of-service clause with id `jurisdictions`
+- **WHEN** its body is read
+- **THEN** it contains "Telangana", "Karnataka" and "residential"
+- **AND** it contains "We will not take payment for an agreement in a state we cannot stamp", "Draft and download only" (the marking's displayed name) and "status board on our home page"
+
+#### Scenario: The terms do not restate the live list
+
+- **GIVEN** the terms-of-service clauses with ids `what-the-service-does` and `jurisdictions`
+- **WHEN** their bodies are searched case-sensitively for "Today that is" and for each exact status-board label in `RELEASE_STATE_LABEL`
+- **THEN** none is found
+
+#### Scenario: The terms do not mention a template the picker hides
+
+- **GIVEN** the terms-of-service clause with id `jurisdictions`
+- **WHEN** its body is searched for "national template"
+- **THEN** it is not found
 
 #### Scenario: The generated document matches its source
 
@@ -236,3 +260,51 @@ without reading rule files.
 - **WHEN** the application starts
 - **THEN** the startup log records each loaded rule, whether it is reviewed, and whether unreviewed
   rules are allowed
+
+### Requirement: Chargeability is decided per duty rule, not per state
+
+The system SHALL decide whether an agreement may be charged from the duty rule that quotes it — the rule for the agreement's state **and usage** — so a chargeable rule for one usage SHALL NOT make another usage in the same state chargeable.
+
+The eligible-jurisdiction list served to the picker is per state (a state is listed when any of its
+rules is chargeable); it is disclosure only. Order placement and checkout SHALL evaluate the
+agreement's own rule, and so SHALL e-stamp intake and eSign initiation for an agreement that is not
+already paid with a frozen stamp quote (a paid agreement passes on its frozen quote, per "Paid
+fulfilment requires a chargeable, quotable duty rule"). A state listed as eligible can therefore still
+refuse an agreement whose usage has no chargeable rule.
+
+#### Scenario: A reviewed residential rule does not admit commercial in the same state
+
+- **GIVEN** unreviewed rules are not allowed by configuration
+- **AND** a state's residential rule carries a counsel review matching its content hash
+- **AND** that state's commercial rule carries no counsel review
+- **WHEN** the residential and commercial rules are checked for chargeability
+- **THEN** the residential rule is chargeable and the commercial rule is not
+- **AND** the state is in the eligible-jurisdiction list
+
+#### Scenario: A commercial order is refused when unreviewed rules are disallowed
+
+- **GIVEN** unreviewed rules are not allowed by configuration
+- **AND** a TG commercial agreement drafted through the API
+- **WHEN** its stamp quote is requested
+- **THEN** the quote reports that the rule is not chargeable
+- **AND WHEN** its order is placed, and when checkout is requested for it
+- **THEN** each is refused with `409 JURISDICTION_UNSUPPORTED`
+
+### Requirement: Commercial is withheld from paid fulfilment for the residential-only release
+
+Every shipped stamp duty rule whose usage is commercial SHALL NOT be reviewed — it carries no counsel review matching its content hash — while commercial templates are withheld from the picker, so that with unreviewed rules disallowed no new commercial order is admitted to paid fulfilment.
+
+This governs orders placed after unreviewed rules are disallowed. A commercial agreement already paid
+with a frozen stamp quote before then passes fulfilment on that quote; the release removes any such
+order operationally rather than through this rule.
+
+Adding a matching counsel review to a commercial rule is the act that brings commercial back. It SHALL
+fail a test that names the picker rule and FAQ wording to lift alongside it, so the review and the
+un-hiding land together rather than leaving a payable usage that no customer can select.
+
+#### Scenario: Shipped commercial rules are unreviewed
+
+- **WHEN** the shipped stamp duty rules are loaded, test fixtures excluded
+- **THEN** the states holding a commercial rule are exactly TG and KA
+- **AND** neither commercial rule is reviewed
+

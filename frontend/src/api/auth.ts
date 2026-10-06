@@ -1,5 +1,8 @@
 // Auth API calls for the optional Google login. Kept here with the other API modules; the reactive
-// session lives in authStore.ts. Anonymous drafting uses none of this.
+// sign-in state lives in authStore.ts. Anonymous drafting uses none of this. The session itself is an
+// HttpOnly cookie the browser sends on its own -- no call here ever sees or sends its value.
+
+import { apiFetch } from "./http";
 
 const BASE = "/api";
 
@@ -20,9 +23,8 @@ export interface MeView {
   role: IdentityRole;
 }
 
-/** Response of a successful session exchange: the opaque session value (once) plus the summary. */
+/** Response of a successful session exchange: the summary only (the session is set as a cookie). */
 export interface SessionView {
-  session: string;
   me: MeView;
 }
 
@@ -42,9 +44,9 @@ export function googleStartUrl(): string {
   return `${BASE}/auth/google/start`;
 }
 
-/** Exchange the single-use handoff (from the callback URL) for an opaque session. */
+/** Exchange the single-use handoff (from the callback URL); the server sets the session cookie. */
 export async function exchangeHandoff(handoff: string): Promise<SessionView> {
-  const res = await fetch(`${BASE}/auth/session/exchange`, {
+  const res = await apiFetch(`${BASE}/auth/session/exchange`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ handoff }),
@@ -53,19 +55,18 @@ export async function exchangeHandoff(handoff: string): Promise<SessionView> {
   return res.json();
 }
 
-/** Fetch the current identity summary for a session value. Throws AuthHttpError(401) if invalid. */
-export async function fetchMe(session: string): Promise<MeView> {
-  const res = await fetch(`${BASE}/auth/me`, {
-    headers: { Authorization: `Bearer ${session}` },
-  });
+/** Fetch the identity summary for the browser's session cookie. Throws AuthHttpError if none. */
+export async function fetchMe(): Promise<MeView> {
+  const res = await apiFetch(`${BASE}/auth/me`);
   if (!res.ok) throw new AuthHttpError(res.status);
   return res.json();
 }
 
-/** Revoke the session server-side. Best-effort; the caller clears local state regardless. */
-export async function logout(session: string): Promise<void> {
-  await fetch(`${BASE}/auth/logout`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${session}` },
-  });
+/**
+ * Revoke the session and expire its cookie server-side (only the server can clear an HttpOnly
+ * cookie). Throws on anything but 204, so the caller can keep showing the user as signed in.
+ */
+export async function logout(): Promise<void> {
+  const res = await apiFetch(`${BASE}/auth/logout`, { method: "POST" });
+  if (res.status !== 204) throw new AuthHttpError(res.status);
 }

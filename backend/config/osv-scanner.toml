@@ -54,6 +54,27 @@
 #   Those overrides are load-bearing: do NOT drop them on the next Boot upgrade
 #   without first confirming the new BOM manages each artifact at or above these
 #   versions, or the fixes silently regress.
+# - 2026-10-04 (dependency-advisories-2026-10, direct change, no CR): 9 new
+#   advisories (1 Critical) against the unchanged lockfile, REMEDIATED BY UPGRADE —
+#   zero suppressions added, baseline still EMPTY:
+#     jackson-bom  2.21.5 → 2.21.7   GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89 (core),
+#                                    GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54,
+#                                    GHSA-q4xh-88c3-wmh7, GHSA-gx83-3vf8-gh7j,
+#                                    GHSA-wjgm-6hv5-3cvf (databind)
+#     bcprov-jdk18on 1.84 → 1.85     GHSA-9pwp-9qqc-pr26 (9.3), GHSA-qp49-qgx5-5m26
+#                                    (8.7) — a direct shipping `implementation` dep.
+# - 2026-10-06 (direct change, no CR): ONE suppression added — the first since
+#   CR-9 emptied the baseline. GHSA-pc63-qcmh-9cmg is fixed only in Spring
+#   Framework 7.0.9; the 6.2.x line has no open-source fix (6.2.19 is both
+#   last_affected and the newest 6.2.x on Maven Central), and 7.x needs Boot 4 —
+#   outside the accepted version line. Not reachable: nothing in src/main uses
+#   XsltView. Remediate by upgrade (a 6.2.x OSS patch, or the Boot 4 move) — do
+#   not renew the expiry on the same version.
 #
-# (No [[IgnoredVulns]] entries — the baseline is empty. Add one only for a genuine,
-#  in-scope, currently-unremediable finding, with a reason and a short expiry.)
+# Add an entry only for a genuine, in-scope, currently-unremediable finding, with a
+# reason and a short expiry.
+
+[[IgnoredVulns]]
+id = "GHSA-pc63-qcmh-9cmg"
+ignoreUntil = 2026-12-06
+reason = "CVE-2026-47884 (CVSS 9.8), XsltView improper path limitation in spring-webmvc 6.2.19. No open-source 6.2.x fix exists (fixed only in 7.0.9, which requires Spring Boot 4). Not reachable: the app uses no XsltView. Remediate by upgrade when a fix lands on the accepted line."

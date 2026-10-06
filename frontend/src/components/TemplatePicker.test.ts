@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import TemplatePicker from "./TemplatePicker.vue";
+import TemplatePicker, { isOffered } from "./TemplatePicker.vue";
 import * as catalog from "../api/templateCatalog";
 import * as jurisdictions from "../api/jurisdictions";
 import type { TemplateSummary } from "../api/templateCatalog";
@@ -69,12 +69,12 @@ describe("TemplatePicker", () => {
     const w = mount(TemplatePicker);
     await flushPromises();
 
-    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(true);
-    expect(w.find('[data-testid="draft-only-note-in-res"]').text()).toContain(
+    expect(w.find('[data-testid="draft-only-ka-res"]').exists()).toBe(true);
+    expect(w.find('[data-testid="draft-only-note-ka-res"]').text()).toContain(
       "Stamping and eSign are not yet available",
     );
     // The wording must not imply the template is unusable: it can still be drafted.
-    expect(w.find('[data-testid="select-in-res"]').text()).toBe(
+    expect(w.find('[data-testid="select-ka-res"]').text()).toBe(
       "Draft this template",
     );
   });
@@ -97,7 +97,7 @@ describe("TemplatePicker", () => {
     const w = mount(TemplatePicker);
     await flushPromises();
 
-    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(false);
+    expect(w.find('[data-testid="draft-only-ka-res"]').exists()).toBe(false);
     expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
   });
 
@@ -108,23 +108,70 @@ describe("TemplatePicker", () => {
     await flushPromises();
 
     expect(w.find('[data-testid="draft-only-tg-res"]').exists()).toBe(false);
-    expect(w.find('[data-testid="draft-only-in-res"]').exists()).toBe(true);
+    expect(w.find('[data-testid="draft-only-ka-res"]').exists()).toBe(true);
   });
 
-  it("lists published templates from the catalog", async () => {
+  it("lists the offered templates from the catalog", async () => {
     const wrapper = await mountReady();
     expect(mockedList).toHaveBeenCalledOnce();
-    for (const id of ["in-res", "tg-res", "tg-com", "ka-res"]) {
+    for (const id of ["tg-res", "ka-res"]) {
       expect(wrapper.find(`[data-testid="template-card-${id}"]`).exists()).toBe(
         true,
       );
     }
   });
 
-  it("every published template is selectable and none shows Coming soon (constraint lifted)", async () => {
+  it("hides the national (IN) templates", async () => {
     const wrapper = await mountReady();
-    // generate-as-draft is dimension-aware now, so IN + TG (and any other published pair) all select.
-    for (const id of ["in-res", "tg-res", "tg-com", "ka-res"]) {
+    expect(wrapper.find('[data-testid="template-card-in-res"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.find('[data-testid="state-row-IN"]').exists()).toBe(false);
+    const stateOptions = wrapper
+      .findAll('[data-testid="filter-state"] option')
+      .map((o) => o.text());
+    expect(stateOptions).not.toContain("IN");
+  });
+
+  // Coupled to the backend tripwire ShippedCommercialRulesUnreviewedTest: commercial comes back only
+  // when its duty rules carry a counsel review, and that test fails until this one is relaxed too.
+  it("hides commercial templates", async () => {
+    const wrapper = await mountReady();
+    expect(wrapper.find('[data-testid="template-card-tg-com"]').exists()).toBe(
+      false,
+    );
+    const typeOptions = wrapper
+      .findAll('[data-testid="filter-type"] option')
+      .map((o) => o.text());
+    expect(typeOptions).not.toContain("commercial");
+    await wrapper.find('[data-testid="picker-search"]').setValue("commercial");
+    await flushPromises();
+    expect(wrapper.findAll('[data-testid^="template-card-"]')).toHaveLength(0);
+  });
+
+  it("hides the type filter when it would offer a single type", async () => {
+    const wrapper = await mountReady();
+    expect(wrapper.find('[data-testid="filter-type"]').exists()).toBe(false);
+  });
+
+  it("groups templates into one row per state, sorted by state", async () => {
+    const wrapper = await mountReady();
+    const rowsRendered = wrapper.findAll('[data-testid^="state-row-"]');
+    expect(rowsRendered.map((r) => r.attributes("data-testid"))).toEqual([
+      "state-row-KA",
+      "state-row-TG",
+    ]);
+    const tg = wrapper.find('[data-testid="state-row-TG"]');
+    expect(tg.find('[data-testid="template-card-tg-res"]').exists()).toBe(true);
+    expect(tg.find('[data-testid="template-card-ka-res"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("every offered template is selectable and none shows Coming soon (constraint lifted)", async () => {
+    const wrapper = await mountReady();
+    // generate-as-draft is dimension-aware now, so every listed published pair selects.
+    for (const id of ["tg-res", "ka-res"]) {
       expect(
         wrapper.find(`[data-testid="select-${id}"]`).attributes("disabled"),
       ).toBeUndefined();
@@ -134,11 +181,11 @@ describe("TemplatePicker", () => {
     }
   });
 
-  it("emits select with the chosen (state, type) for the default template", async () => {
+  it("emits select with the chosen (state, type)", async () => {
     const wrapper = await mountReady();
-    await wrapper.find('[data-testid="select-in-res"]').trigger("click");
+    await wrapper.find('[data-testid="select-ka-res"]').trigger("click");
     expect(wrapper.emitted("select")?.[0]).toEqual([
-      { state: "IN", type: "residential" },
+      { state: "KA", type: "residential" },
     ]);
   });
 
@@ -152,9 +199,9 @@ describe("TemplatePicker", () => {
 
   it("filters by search query over name/description", async () => {
     const wrapper = await mountReady();
-    await wrapper.find('[data-testid="picker-search"]').setValue("commercial");
+    await wrapper.find('[data-testid="picker-search"]').setValue("karnataka");
     await flushPromises();
-    expect(wrapper.find('[data-testid="template-card-tg-com"]').exists()).toBe(
+    expect(wrapper.find('[data-testid="template-card-ka-res"]').exists()).toBe(
       true,
     );
     expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(
@@ -174,9 +221,63 @@ describe("TemplatePicker", () => {
     );
   });
 
+  it("labels the state filter with state names, sorted by name", async () => {
+    const wrapper = await mountReady();
+    const options = wrapper.findAll('[data-testid="filter-state"] option');
+    expect(options.map((o) => o.text())).toEqual([
+      "All states",
+      "Karnataka",
+      "Telangana",
+    ]);
+    expect(options.map((o) => o.attributes("value"))).toEqual(["", "KA", "TG"]);
+  });
+
+  it("matches the state name in search even when the template text omits it", async () => {
+    mockedList.mockResolvedValue(
+      rows().map((r) => ({ ...r, description: null })),
+    );
+    const wrapper = await mountReady();
+    await wrapper.find('[data-testid="picker-search"]').setValue("telangana");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="template-card-tg-res"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="template-card-ka-res"]').exists()).toBe(
+      false,
+    );
+  });
+
   it("surfaces a load failure", async () => {
     mockedList.mockRejectedValue(new Error("Failed to load templates (500)."));
     const wrapper = await mountReady();
     expect(wrapper.find('[data-testid="picker-error"]').exists()).toBe(true);
+  });
+});
+
+describe("isOffered", () => {
+  const t = (state: string, type: string): TemplateSummary => ({
+    id: "x",
+    name: "x",
+    description: null,
+    type,
+    state,
+    language: "en",
+    version: 1,
+  });
+
+  it("offers a state residential template", () => {
+    expect(isOffered(t("TG", "residential"))).toBe(true);
+  });
+
+  it("does not offer national, commercial or unknown-type templates", () => {
+    expect(isOffered(t("IN", "residential"))).toBe(false);
+    expect(isOffered(t("TG", "commercial"))).toBe(false);
+    expect(isOffered(t("TG", "leave-and-license"))).toBe(false);
+  });
+
+  it("normalises casing and whitespace", () => {
+    expect(isOffered(t(" ka ", " Residential "))).toBe(true);
+    expect(isOffered(t(" in ", "residential"))).toBe(false);
+    expect(isOffered(t("TG", " COMMERCIAL "))).toBe(false);
   });
 });

@@ -55,6 +55,10 @@ class Signer {
   @Column(nullable = false)
   private Role role;
 
+  /** 0-based position in the order the parties were entered; the aggregate reads by it. */
+  @Column(name = "entry_position", nullable = false)
+  private int entryPosition;
+
   protected Signer() {
     // JPA
   }
@@ -62,6 +66,7 @@ class Signer {
   private Signer(
       UUID id,
       Agreement agreement,
+      int entryPosition,
       String name,
       String firstName,
       String lastName,
@@ -72,6 +77,7 @@ class Signer {
       Role role) {
     this.id = id;
     this.agreement = agreement;
+    this.entryPosition = entryPosition;
     this.name = name;
     this.firstName = firstName;
     this.lastName = lastName;
@@ -84,6 +90,7 @@ class Signer {
 
   static Signer create(
       Agreement agreement,
+      int entryPosition,
       String name,
       String firstName,
       String lastName,
@@ -95,6 +102,7 @@ class Signer {
     return new Signer(
         UUID.randomUUID(),
         agreement,
+        entryPosition,
         name,
         firstName,
         lastName,
@@ -139,6 +147,10 @@ class Signer {
 
   Role role() {
     return role;
+  }
+
+  int entryPosition() {
+    return entryPosition;
   }
 
   /**

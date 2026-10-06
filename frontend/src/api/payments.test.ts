@@ -15,6 +15,12 @@ import {
   startCheckout,
 } from "./payments";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 const AGREEMENT_ID = "1a111111-2b22-3c33-4d44-5e5555555555";
 
 const SESSION = {
@@ -323,9 +329,76 @@ describe("paying for an agreement", () => {
 
 describe("amount display", () => {
   it("formats integer minor units without floating-point arithmetic", () => {
-    expect(formatMinorUnits(49900, "INR")).toBe("INR 499.00");
-    expect(formatMinorUnits(1, "INR")).toBe("INR 0.01");
-    expect(formatMinorUnits(100000, "INR")).toBe("INR 1000.00");
-    expect(formatMinorUnits(120050, "INR")).toBe("INR 1200.50");
+    expect(formatMinorUnits(49900, "INR")).toBe("₹499.00");
+    expect(formatMinorUnits(1, "INR")).toBe("₹0.01");
+    expect(formatMinorUnits(100000, "INR")).toBe("₹1,000.00");
+    expect(formatMinorUnits(120050, "INR")).toBe("₹1,200.50");
+    expect(formatMinorUnits(12000050, "INR")).toBe("₹1,20,000.50");
+    expect(formatMinorUnits(-50, "INR")).toBe("-₹0.50");
+    expect(formatMinorUnits(49900, "USD")).toBe("USD 499.00");
+  });
+});
+
+// The checkout re-gate refuses with the same problem type as finalise, so the payment error must
+// carry it too (D2). Literal server URNs.
+describe("payments api: every refusal carries its problem type", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const result = {
+    razorpay_order_id: "order_TEST1",
+    razorpay_payment_id: "pay_TEST1",
+    razorpay_signature: "sig",
+  };
+  const calls: [string, () => Promise<unknown>][] = [
+    ["startCheckout", () => startCheckout(AGREEMENT_ID)],
+    ["getPaymentProgress", () => getPaymentProgress(AGREEMENT_ID)],
+    ["reportCheckoutResult", () => reportCheckoutResult(AGREEMENT_ID, result)],
+  ];
+
+  it.each(calls)(
+    "%s keeps the status and exact type of a 409",
+    async (_, call) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                type: "urn:agreementmitra:problem:jurisdiction-unsupported",
+              }),
+              {
+                status: 409,
+                headers: { "Content-Type": "application/problem+json" },
+              },
+            ),
+          ),
+        ),
+      );
+
+      const failure = await call().catch((e) => e);
+
+      expect(failure).toBeInstanceOf(PaymentHttpError);
+      expect(failure.status).toBe(409);
+      expect(failure.problemType).toBe(
+        "urn:agreementmitra:problem:jurisdiction-unsupported",
+      );
+    },
+  );
+
+  it("degrades to a null type for a non-JSON body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("<html>bad gateway</html>", { status: 502 }),
+        ),
+    );
+
+    const failure = await startCheckout(AGREEMENT_ID).catch((e) => e);
+
+    expect(failure).toBeInstanceOf(PaymentHttpError);
+    expect(failure.status).toBe(502);
+    expect(failure.problemType).toBeNull();
   });
 });

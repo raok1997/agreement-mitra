@@ -4,88 +4,116 @@
 // search traffic sees (the Hyderabad SEO play in docs/GO-TO-MARKET-HYDERABAD.md),
 // so it must render instantly and never depend on the backend being up.
 //
-// Copy discipline: the signing vertical still runs on a STUBBED eSign provider
-// (docs/ROADMAP.md "Where we are"), so nothing here promises live Aadhaar eSign
-// as a bookable service. The draft builder is real and free, and that is what the
-// primary CTA sells. The status section states the rest plainly.
+// Copy discipline (openspec landing-page spec):
+//   - each recurring message has ONE owning section: no login -> hero; stamp duty in
+//     the price and free to draft -> #price;
+//   - the #status board (src/content/releaseStatus.ts) is the only statement of what
+//     is live -- nothing else here asserts or denies availability;
+//   - every price, guarantee figure and contact detail comes from src/content/promises.ts,
+//     which is pinned to the terms and the backend fee config by test;
+//   - no "legally valid" or "reviewed by counsel" claim, and no raw-HTML binding.
+// The FAQ is mirrored as FAQPage JSON-LD in index.html; LandingPage.test.ts holds them equal.
+//
+// Layout (openspec landing-page-progressive-disclosure): main holds four sections -- hero, the
+// #price band, #how, and the "Before you decide" panel, whose tabs are the #guarantees, #status
+// and #faq panels. Every panel stays in the DOM (`hidden`, never v-if), and a panel element carries
+// no display utility class, because one would beat Tailwind's [hidden] rule and show all three.
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import wordmark from "../assets/logo-wordmark.svg";
+import SiteFooter from "../components/SiteFooter.vue";
+import { OPERATING_ENTITY } from "../content/operatingEntity";
+import { PANEL_IDS, panelForHash, type PanelId } from "./landingPanels";
+import {
+  CONTACT_EMAIL,
+  GUARANTEES,
+  PRICE,
+  SUPPORT_HOURS,
+  formatRupees,
+} from "../content/promises";
+import { RELEASE_STATE_LABEL, RELEASE_STATUS } from "../content/releaseStatus";
 
 const emit = defineEmits<{ (e: "start"): void }>();
 
-const CONTACT_EMAIL = "support@agreementmitra.com";
+const total = formatRupees(PRICE.totalRupees);
+const includedStamp = formatRupees(PRICE.includedStampRupees);
+const refund = formatRupees(GUARANTEES.certificateRefundRupees);
+const retryCharge = formatRupees(GUARANTEES.signerRetryChargeRupees);
+const perDay = formatRupees(GUARANTEES.delayCreditPerDayRupees);
+const cap = formatRupees(GUARANTEES.delayCreditCapRupees);
 
+// Icons are Heroicons-outline-style 24px stroke paths, inlined so four glyphs add no dependency.
 const steps = [
   {
     n: "1",
     title: "Answer a short form",
-    body: "Parties, property, rent, deposit, dates. No account, no OTP, no app download to get started.",
+    body: "Parties, property, rent, deposit and dates.",
+    icon: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
   },
   {
     n: "2",
     title: "Watch the agreement build itself",
-    body: "A live preview of the actual document updates as you type, so you never pay to find out what you are getting.",
+    body: "The actual document updates as you type, so you know exactly what you are getting.",
+    icon: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   },
   {
     n: "3",
-    title: "Add e-stamp duty",
-    body: "The stamp value for your state and rent is computed and shown in the total before you pay. No surprise line items.",
+    title: "Pay, and we stamp it",
+    body: "We buy the stamp and attach it to your agreement.",
+    icon: "M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z",
   },
   {
     n: "4",
     title: "Sign with Aadhaar OTP",
-    body: "Both parties sign remotely from their phones. The signed PDF and a tamper-evident audit trail land in your inbox.",
+    body: "Both parties sign from their phones. The signed PDF and its audit trail come to your inbox.",
+    icon: "M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3M9.75 11.25l1.5 1.5 3-3",
   },
 ];
 
-const pillars = [
-  {
-    title: "Priced in the open",
-    body: "Stamp duty is a pass-through cost that most portals bury until checkout. We compute it and show the all-in total up front, itemised. If the number changes, you see why.",
-  },
-  {
-    title: "No login to start",
-    body: "You should not have to hand over a phone number to find out what a rental agreement costs. Draft anonymously; sign in only if you want to save and come back to it.",
-  },
-  {
-    title: "Correct for your state, in your language",
-    body: "Rental law is state law. We are building a rules engine that generates jurisdiction-correct clauses instead of one national fill-in-the-blank PDF, with Indic-script rendering built in from day one.",
-  },
+const inclusions = [
+  `a stamp of up to ${includedStamp}`,
+  "buying and attaching the stamp",
+  "Aadhaar eSign",
 ];
 
-// Honest status board. Keep this in sync with docs/ROADMAP.md -- it is the one
-// place on the site that makes a claim about what a visitor can actually do today.
-const status = [
-  { label: "Guided agreement builder", state: "live" as const },
-  { label: "Live document preview", state: "live" as const },
-  { label: "Download a draft PDF", state: "live" as const },
-  { label: "Save and resume with Google", state: "live" as const },
-  { label: "E-stamp duty on the real exchange", state: "soon" as const },
-  { label: "Aadhaar OTP eSign", state: "soon" as const },
-  { label: "Telugu and Hindi agreements", state: "planned" as const },
+const guarantees = [
+  {
+    title: `We fix a wrong stamp, and refund ${refund}.`,
+    body: `If a stamp we buy for you is rejected or wrongly denominated because we got it wrong, we put it right at our cost and refund you ${refund}.`,
+    qualifier:
+      "Only when the mistake is ours. Reduced by any discount you received.",
+    section: 8,
+  },
+  {
+    title: "Signing failed? We re-send it at no charge.",
+    body: "If a signing request fails or expires, we send a fresh one.",
+    qualifier: `If it keeps failing at the signer's end, we may ask ${retryCharge} before restarting. Where we can't tell whose failure it was, we treat it as ours.`,
+    section: 11,
+  },
+  {
+    title: "Late through our fault? We pay you back.",
+    body: `We aim to stamp your agreement within ${GUARANTEES.stampTargetWorkingDaysText} working day of payment; an order paid outside business hours counts from the next working day. If we are more than ${GUARANTEES.delayGraceWorkingDaysText} working days late through something that was ours, we refund ${perDay} for each further working day, up to ${cap}.`,
+    qualifier:
+      "Not while we wait on details from you or a signer we can't reach, while SHCIL or eSign is down or no licensed vendor can supply the stamp, or on a public holiday. Reduced by any discount you received.",
+    section: 14,
+  },
 ];
-
-const statusCopy: Record<string, string> = {
-  live: "Live now",
-  soon: "In integration",
-  planned: "Planned",
-};
 
 const faqs = [
   {
     q: "Why are most rental agreements in India for 11 months?",
-    a: "Under the Registration Act, 1908, a lease of twelve months or more must be registered with the sub-registrar. An eleven-month term stays below that threshold, which is why it became the default for residential tenancies. It is a registration question, not a validity question: an eleven-month agreement is still a binding contract, it simply does not need to be registered.",
+    a: "Because the Registration Act, 1908 requires a lease for a term longer than a year to be registered with the sub-registrar, and an 11-month term stays under that national line. States can add their own rules, and some may require registration for shorter leases. Before you pay, we show whether your agreement may need registering for its state and term. Registration is a separate step from stamping and is not part of our service.",
   },
   {
     q: "Is an Aadhaar OTP signature legally valid?",
-    a: "Yes. Aadhaar eSign is an electronic signature recognised under the Information Technology Act, 2000, and is issued through a licensed eSign Service Provider working with a Certifying Authority. The signed PDF carries a digital signature certificate plus an audit trail recording who signed, when, and from where.",
+    a: "Aadhaar eSign is an electronic signature recognised under the Information Technology Act, 2000, issued through a licensed eSign Service Provider working with a Certifying Authority. The signed PDF carries a digital signature certificate and an audit trail recording who signed, when, and from where.",
   },
   {
-    q: "What does stamp duty cost?",
-    a: "It depends on your state and on the rent and deposit in your agreement, because stamp duty is levied by the state government and the slabs differ. We compute it for your specific agreement and show it as its own line in the total before you pay, rather than folding it into a single opaque price.",
+    q: "What does it cost?",
+    a: `${total} in total when the stamp on your agreement is ${includedStamp} or less. Where your stamp duty is more than ${includedStamp}, you see the stamp we can buy, the duty and the exact total before you pay, and there is never a second bill. Stamp duty is set by your state from the rent, deposit and term, and we cannot change it.`,
   },
   {
     q: "Does a stamped agreement mean it is registered?",
-    a: "No, and the difference matters. Stamping pays the state duty on the document. Registration is a separate act of recording the lease with the sub-registrar, and it is what the twelve-month rule is about. A stamped, eSigned eleven-month agreement is not a registered lease.",
+    a: "No. Stamping pays the state's duty on the document. Registration is a separate act of recording the lease with the sub-registrar. A stamped, eSigned agreement is not a registered lease.",
   },
   {
     q: "Do I need an account?",
@@ -93,17 +121,129 @@ const faqs = [
   },
   {
     q: "Which cities do you serve?",
-    a: "You can build, preview and download an agreement for Telangana or Karnataka today, residential or commercial, with the stamp duty computed for your own rent and deposit. Stamping and eSign are live for Telangana first; Karnataka follows once its duty figures clear legal review and we can buy its certificates. There is also a general India template you can draft from anywhere. If your state is not covered yet, write to us and we will tell you where you sit in the queue.",
+    a: "You can draft residential rental agreements for Telangana and Karnataka. Where we can also stamp and eSign is on the status board on our home page. If your state is not listed, write to us.",
+  },
+  {
+    q: "What happens if something goes wrong?",
+    a: `The guarantees on our home page cover the main things that can go wrong on our side: a wrong stamp, a failed signature and a late delivery. For anything else, write to ${CONTACT_EMAIL}. We answer ${SUPPORT_HOURS}.`,
   },
 ];
+
+// One heading style for every visible section, a clear step below the h1 (design D2 type scale).
+const SECTION_HEADING =
+  "text-xl font-bold tracking-tight text-ink-900 md:text-2xl";
+
+const TAB_LABELS: Record<PanelId, string> = {
+  guarantees: "If something goes wrong",
+  status: "What's live",
+  faq: "Questions",
+};
+
+const active = ref<PanelId>("guarantees");
+const decideEl = ref<HTMLElement | null>(null);
+const tabEls: Partial<Record<PanelId, HTMLElement>> = {};
+
+function setTabEl(id: PanelId, el: unknown): void {
+  if (el instanceof HTMLElement) tabEls[id] = el;
+  else delete tabEls[id];
+}
 
 function start(): void {
   emit("start");
 }
+
+// replaceState, never a push: App.vue routes on popstate, and a tab switch is not a page.
+function setHash(id: PanelId): void {
+  history.replaceState(history.state, "", `#${id}`);
+}
+
+function selectTab(id: PanelId): void {
+  active.value = id;
+  setHash(id);
+}
+
+function onTabKeydown(event: KeyboardEvent): void {
+  // Alt+Arrow is browser Back/Forward on Windows and Linux; a modified key is not ours.
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const last = PANEL_IDS.length - 1;
+  const current = PANEL_IDS.indexOf(active.value);
+  let next: number;
+  switch (event.key) {
+    case "ArrowRight":
+      next = current === last ? 0 : current + 1;
+      break;
+    case "ArrowLeft":
+      next = current === 0 ? last : current - 1;
+      break;
+    case "Home":
+      next = 0;
+      break;
+    case "End":
+      next = last;
+      break;
+    default:
+      return;
+  }
+  event.preventDefault();
+  const id = PANEL_IDS[next];
+  selectTab(id);
+  tabEls[id]?.focus();
+}
+
+async function openPanel(id: PanelId): Promise<void> {
+  active.value = id;
+  await nextTick();
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  // Optional-called: jsdom has no scrollIntoView. It returns void, so there is nothing to catch.
+  decideEl.value?.scrollIntoView?.({
+    block: "start",
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
+}
+
+// The browser would scroll to a still-hidden panel before Vue un-hides it, so a plain primary click
+// on a panel link is taken over. Anything a visitor means for a new tab is left alone.
+function onPageClick(event: MouseEvent): void {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  )
+    return;
+  const anchor =
+    event.target instanceof Element ? event.target.closest("a") : null;
+  if (!anchor || anchor.hasAttribute("download")) return;
+  const target = anchor.getAttribute("target");
+  if (target && target !== "_self") return;
+  const id = panelForHash(anchor.getAttribute("href") ?? "");
+  if (!id) return;
+  event.preventDefault();
+  setHash(id);
+  void openPanel(id);
+}
+
+function onHashChange(): void {
+  const id = panelForHash(location.hash);
+  if (id) void openPanel(id);
+}
+
+onMounted(() => {
+  onHashChange();
+  window.addEventListener("hashchange", onHashChange);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("hashchange", onHashChange);
+});
 </script>
 
 <template>
-  <div class="min-h-screen bg-white text-ink-800">
+  <div class="min-h-screen bg-white text-ink-800" @click="onPageClick">
     <!-- Nav -->
     <header
       class="sticky top-0 z-20 border-b border-ink-200 bg-white/90 backdrop-blur"
@@ -123,8 +263,9 @@ function start(): void {
         </a>
         <div class="hidden items-center gap-7 text-sm text-ink-600 md:flex">
           <a class="hover:text-brand-700" href="#how">How it works</a>
-          <a class="hover:text-brand-700" href="#why">Why us</a>
-          <a class="hover:text-brand-700" href="#status">What is live</a>
+          <a class="hover:text-brand-700" href="#price">Price</a>
+          <a class="hover:text-brand-700" href="#guarantees">Guarantees</a>
+          <a class="hover:text-brand-700" href="#status">Status</a>
           <a class="hover:text-brand-700" href="#faq">FAQ</a>
         </div>
         <button
@@ -133,107 +274,129 @@ function start(): void {
           data-testid="nav-start"
           @click="start"
         >
-          Start free
+          Build my agreement
         </button>
       </nav>
     </header>
 
     <main>
       <!-- Hero -->
-      <section
-        class="relative overflow-hidden border-b border-ink-200 bg-ink-50"
-      >
+      <section class="relative overflow-hidden bg-white" data-testid="hero">
         <div
           class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent-200/40 blur-3xl"
           aria-hidden="true"
         />
-        <div class="relative mx-auto max-w-6xl px-4 py-20 md:py-28">
-          <div class="max-w-2xl">
-            <p
-              class="inline-flex items-center gap-2 rounded-full border border-accent-300 bg-accent-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-accent-700"
-            >
-              <span
-                class="h-1.5 w-1.5 rounded-full bg-accent-500"
-                aria-hidden="true"
-              />
-              Early access &middot; Hyderabad
-            </p>
+        <div class="relative mx-auto max-w-6xl px-4 py-10 md:py-12">
+          <div class="max-w-3xl">
             <h1
-              class="mt-5 text-4xl font-bold leading-tight tracking-tight text-ink-900 md:text-5xl"
+              class="text-3xl font-bold leading-[1.15] tracking-tight text-ink-900 md:text-[2.75rem]"
             >
               Rental agreements, with nothing hidden until checkout.
             </h1>
-            <p class="mt-5 text-lg leading-relaxed text-ink-600">
-              Build a proper Indian rental agreement in a few minutes. See the
-              document as it is written, see the stamp duty as it is calculated,
-              and sign remotely with Aadhaar OTP. Free to draft. No login to
-              begin.
+            <p
+              class="mt-4 max-w-2xl text-base leading-relaxed text-ink-600 md:text-lg"
+            >
+              Build a proper Indian rental agreement in a few minutes and read
+              the real document as it is written. No login to begin.
             </p>
-            <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <button
-                type="button"
-                class="rounded-lg bg-accent-500 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
-                data-testid="hero-start"
-                @click="start"
-              >
-                Build my agreement
-              </button>
-              <a
-                class="rounded-lg border border-ink-300 bg-white px-6 py-3 text-center text-base font-semibold text-ink-700 transition hover:bg-ink-50"
-                href="#how"
-              >
-                See how it works
-              </a>
+            <button
+              type="button"
+              class="mt-6 rounded-lg bg-accent-500 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
+              data-testid="hero-start"
+              @click="start"
+            >
+              Build my agreement
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Price -->
+      <section
+        id="price"
+        class="scroll-mt-20 border-y border-ink-200 bg-ink-50"
+      >
+        <h2 class="sr-only">What it costs</h2>
+        <div
+          class="mx-auto grid max-w-6xl gap-3 px-4 py-5 md:grid-cols-2 md:items-center md:gap-10"
+        >
+          <div>
+            <p class="text-lg font-bold text-ink-900 md:text-xl">
+              {{ total }} when your stamp is {{ includedStamp }} or less
+            </p>
+            <div class="mt-1.5 text-sm text-ink-600">
+              <span class="mr-1.5 font-semibold text-ink-800">Included:</span>
+              <ul class="inline">
+                <li
+                  v-for="item in inclusions"
+                  :key="item"
+                  class="inline before:mx-1.5 before:text-ink-400 before:content-['·'] first:before:content-none"
+                >
+                  {{ item }}
+                </li>
+              </ul>
             </div>
-            <p class="mt-4 text-sm text-ink-500">
-              Free to draft and preview. You are not asked to pay to see the
-              document.
+          </div>
+          <div class="space-y-1 text-sm leading-relaxed text-ink-600">
+            <p>
+              Where your stamp duty is more than {{ includedStamp }}, you see the
+              stamp we can buy, the duty and the exact total before you pay. There
+              is never a second bill.
+            </p>
+            <p>Drafting, previewing and downloading a draft are free.</p>
+            <p class="text-ink-500">
+              Available where we stamp and eSign. See
+              <a class="font-medium text-brand-700 underline" href="#status"
+                >Status</a
+              >.
             </p>
           </div>
         </div>
       </section>
 
-      <!-- Trust strip -->
-      <section class="border-b border-ink-200 bg-white">
-        <ul
-          class="mx-auto grid max-w-6xl grid-cols-2 gap-px bg-ink-200 px-4 py-0 md:grid-cols-4"
-        >
-          <li
-            v-for="item in [
-              'Aadhaar OTP eSign',
-              'State-wise stamp duty',
-              'Tamper-evident audit trail',
-              'No account needed to draft',
-            ]"
-            :key="item"
-            class="bg-white px-4 py-6 text-center text-sm font-medium text-ink-600"
-          >
-            {{ item }}
-          </li>
-        </ul>
-      </section>
-
       <!-- How it works -->
-      <section id="how" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
-        <h2 class="text-3xl font-bold tracking-tight text-ink-900">
-          How it works
-        </h2>
-        <p class="mt-3 max-w-2xl text-ink-600">
-          Four steps, and you can see the document at every one of them.
+      <section
+        id="how"
+        class="mx-auto max-w-6xl scroll-mt-20 px-4 py-8 md:py-10"
+      >
+        <h2 :class="SECTION_HEADING">How it works</h2>
+        <p class="mt-1 text-sm text-ink-600 md:text-base">
+          Four steps, and you can read the document at every one of them.
         </p>
-        <ol class="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <li
-            v-for="step in steps"
-            :key="step.n"
-            class="rounded-xl border border-ink-200 bg-white p-6 shadow-sm"
-          >
-            <span
-              class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-sm font-bold text-brand-700"
-              aria-hidden="true"
-            >
-              {{ step.n }}
-            </span>
-            <h3 class="mt-4 font-semibold text-ink-900">{{ step.title }}</h3>
+        <ol class="mt-6 grid gap-6 sm:grid-cols-2 md:grid-cols-4">
+          <li v-for="step in steps" :key="step.n">
+            <!-- Fixed row height, so a title that wraps does not push its body out of line. -->
+            <div class="flex items-center gap-3 md:min-h-12">
+              <div
+                class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700"
+              >
+                <svg
+                  aria-hidden="true"
+                  class="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    :d="step.icon"
+                  />
+                </svg>
+                <span
+                  class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white"
+                  aria-hidden="true"
+                >
+                  {{ step.n }}
+                </span>
+              </div>
+              <h3
+                class="text-sm font-semibold leading-snug text-ink-900 md:text-base"
+              >
+                {{ step.title }}
+              </h3>
+            </div>
             <p class="mt-2 text-sm leading-relaxed text-ink-600">
               {{ step.body }}
             </p>
@@ -241,157 +404,182 @@ function start(): void {
         </ol>
       </section>
 
-      <!-- Why us -->
-      <section id="why" class="scroll-mt-20 border-y border-ink-200 bg-ink-50">
-        <div class="mx-auto max-w-6xl px-4 py-20">
-          <h2 class="text-3xl font-bold tracking-tight text-ink-900">
-            Why bother building another one of these
+      <!-- Before you decide: guarantees, the status board and the FAQ as tabs -->
+      <section
+        id="decide"
+        ref="decideEl"
+        class="scroll-mt-20 border-t border-ink-200 bg-ink-50"
+        data-testid="decide"
+      >
+        <div class="mx-auto max-w-6xl px-4 py-8 md:py-10">
+          <h2 id="decide-heading" :class="SECTION_HEADING">
+            Before you decide
           </h2>
-          <p class="mt-3 max-w-2xl text-ink-600">
-            The form-to-PDF part of this market is solved and cheap. These are
-            the three things we think are still broken.
-          </p>
-          <div class="mt-10 grid gap-6 md:grid-cols-3">
-            <article
-              v-for="pillar in pillars"
-              :key="pillar.title"
-              class="rounded-xl border border-ink-200 bg-white p-7 shadow-sm"
-            >
-              <h3 class="text-lg font-semibold text-ink-900">
-                {{ pillar.title }}
-              </h3>
-              <p class="mt-3 text-sm leading-relaxed text-ink-600">
-                {{ pillar.body }}
-              </p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <!-- Honest status board -->
-      <section id="status" class="mx-auto max-w-3xl scroll-mt-20 px-4 py-20">
-        <h2 class="text-3xl font-bold tracking-tight text-ink-900">
-          What is live today
-        </h2>
-        <p class="mt-3 text-ink-600">
-          We are in early access, so here is the unvarnished state of things.
-          The builder works right now. The paid rails are still being wired to
-          their providers, and we would rather say so here than after you have
-          filled in a form.
-        </p>
-        <ul
-          class="mt-8 divide-y divide-ink-200 rounded-xl border border-ink-200 bg-white"
-        >
-          <li
-            v-for="row in status"
-            :key="row.label"
-            class="flex items-center justify-between gap-4 px-5 py-4"
+          <div
+            role="tablist"
+            aria-labelledby="decide-heading"
+            class="mt-4 flex gap-1 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_rgb(var(--am-ink-200))]"
+            @keydown="onTabKeydown"
           >
-            <span class="text-sm font-medium text-ink-800">{{
-              row.label
-            }}</span>
-            <span
-              class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
-              :class="{
-                'bg-success-50 text-success-700': row.state === 'live',
-                'bg-accent-50 text-accent-700': row.state === 'soon',
-                'bg-ink-100 text-ink-600': row.state === 'planned',
-              }"
+            <button
+              v-for="id in PANEL_IDS"
+              :id="`tab-${id}`"
+              :key="id"
+              :ref="(el) => setTabEl(id, el)"
+              type="button"
+              role="tab"
+              :aria-controls="id"
+              :aria-selected="active === id"
+              :tabindex="active === id ? 0 : -1"
+              class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold transition md:px-4"
+              :class="
+                active === id
+                  ? 'border-brand-600 text-brand-700'
+                  : 'border-transparent text-ink-600 hover:text-ink-900'
+              "
+              @click="selectTab(id)"
             >
-              {{ statusCopy[row.state] }}
-            </span>
-          </li>
-        </ul>
-      </section>
-
-      <!-- FAQ -->
-      <section id="faq" class="scroll-mt-20 border-t border-ink-200 bg-ink-50">
-        <div class="mx-auto max-w-3xl px-4 py-20">
-          <h2 class="text-3xl font-bold tracking-tight text-ink-900">
-            Questions people actually ask
-          </h2>
-          <div class="mt-10 space-y-4">
-            <details
-              v-for="faq in faqs"
-              :key="faq.q"
-              class="group rounded-xl border border-ink-200 bg-white px-6 py-5 [&[open]]:shadow-sm"
-            >
-              <summary
-                class="cursor-pointer list-none font-semibold text-ink-900 marker:content-none"
-                data-testid="faq-q"
-              >
-                {{ faq.q }}
-              </summary>
-              <p
-                class="mt-3 text-sm leading-relaxed text-ink-600"
-                data-testid="faq-a"
-              >
-                {{ faq.a }}
-              </p>
-            </details>
+              {{ TAB_LABELS[id] }}
+            </button>
           </div>
-          <p class="mt-8 text-xs leading-relaxed text-ink-500">
-            The answers above are general information about how rental
-            agreements and stamping work in India. They are not legal advice,
-            and they are not a substitute for a lawyer on your specific tenancy.
-          </p>
-        </div>
-      </section>
 
-      <!-- Closing CTA -->
-      <section class="border-t border-ink-200 bg-brand-800">
-        <div class="mx-auto max-w-3xl px-4 py-20 text-center">
-          <h2 class="text-3xl font-bold tracking-tight text-white">
-            Draft one and see for yourself.
-          </h2>
-          <p class="mx-auto mt-4 max-w-xl text-brand-100">
-            It is free, it takes a few minutes, and you will have a preview of
-            the real document before anyone asks you for a rupee.
-          </p>
-          <button
-            type="button"
-            class="mt-8 rounded-lg bg-accent-500 px-7 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-accent-600"
-            data-testid="cta-start"
-            @click="start"
+          <!-- Panel elements carry no display utility: see the header comment. -->
+          <div
+            id="guarantees"
+            role="tabpanel"
+            aria-labelledby="tab-guarantees"
+            :hidden="active !== 'guarantees'"
+            class="scroll-mt-36 pt-4"
           >
-            Build my agreement
-          </button>
-          <p class="mt-6 text-sm text-brand-200">
-            Questions, or want us in your city next?
-            <a
-              class="font-semibold text-white underline"
-              :href="`mailto:${CONTACT_EMAIL}`"
-            >
-              {{ CONTACT_EMAIL }}
-            </a>
-          </p>
+            <p class="max-w-2xl text-sm text-ink-600">
+              These come from our terms of service, which are still a draft.
+            </p>
+            <div class="mt-3 space-y-2">
+              <details
+                v-for="g in guarantees"
+                :key="g.section"
+                class="group rounded-xl border border-ink-200 bg-white px-4 py-3 [&[open]]:shadow-sm"
+                data-testid="guarantee"
+              >
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-ink-900 marker:content-none [&::-webkit-details-marker]:hidden"
+                >
+                  {{ g.title }}
+                  <svg
+                    aria-hidden="true"
+                    class="h-5 w-5 shrink-0 text-ink-400 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                    />
+                  </svg>
+                </summary>
+                <p class="mt-3 text-sm leading-relaxed text-ink-600">
+                  {{ g.body }}
+                </p>
+                <p class="mt-2 text-xs leading-relaxed text-ink-500">
+                  {{ g.qualifier }}
+                </p>
+                <a
+                  class="mt-3 inline-block text-sm font-medium text-brand-700 underline"
+                  href="/terms"
+                >
+                  Terms, section {{ g.section }}
+                </a>
+              </details>
+            </div>
+          </div>
+
+          <!-- Status board: the only statement of what is live (src/content/releaseStatus.ts) -->
+          <div
+            id="status"
+            role="tabpanel"
+            aria-labelledby="tab-status"
+            :hidden="active !== 'status'"
+            tabindex="0"
+            class="scroll-mt-36 pt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            <p class="text-sm text-ink-600">
+              We update this board the day anything changes.
+            </p>
+            <ul class="mt-3 grid gap-2 md:grid-cols-2">
+              <li
+                v-for="row in RELEASE_STATUS"
+                :key="row.label"
+                class="flex items-center justify-between gap-3 rounded-lg border border-ink-200 bg-white px-4 py-2"
+              >
+                <span class="text-sm font-medium text-ink-800">{{
+                  row.label
+                }}</span>
+                <span
+                  class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                  :class="{
+                    'bg-success-50 text-success-700': row.state === 'live',
+                    'bg-accent-50 text-accent-700': row.state === 'soon',
+                    'bg-ink-100 text-ink-600': row.state === 'planned',
+                  }"
+                >
+                  {{ RELEASE_STATE_LABEL[row.state] }}
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div
+            id="faq"
+            role="tabpanel"
+            aria-labelledby="tab-faq"
+            :hidden="active !== 'faq'"
+            class="scroll-mt-36 pt-4"
+          >
+            <div class="grid items-start gap-2 lg:grid-cols-2">
+              <details
+                v-for="faq in faqs"
+                :key="faq.q"
+                class="group rounded-xl border border-ink-200 bg-white px-4 py-3 [&[open]]:shadow-sm"
+              >
+                <summary
+                  class="flex cursor-pointer list-none items-start justify-between gap-3 font-semibold text-ink-900 marker:content-none [&::-webkit-details-marker]:hidden"
+                  data-testid="faq-q"
+                >
+                  {{ faq.q }}
+                  <svg
+                    aria-hidden="true"
+                    class="mt-0.5 h-5 w-5 shrink-0 text-ink-400 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                    />
+                  </svg>
+                </summary>
+                <p
+                  class="mt-3 text-sm leading-relaxed text-ink-600"
+                  data-testid="faq-a"
+                >
+                  {{ faq.a }}
+                </p>
+              </details>
+            </div>
+            <p class="mt-4 text-xs leading-relaxed text-ink-500">
+              General information, not legal advice.
+            </p>
+          </div>
         </div>
       </section>
     </main>
 
-    <footer class="border-t border-ink-200 bg-white">
-      <div
-        class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-sm text-ink-500 md:flex-row md:items-center md:justify-between"
-      >
-        <p>
-          &copy; 2026 AgreementMitra. Online rental agreements for India,
-          starting in Hyderabad.
-        </p>
-        <div class="flex items-center gap-4">
-          <a
-            class="font-medium text-ink-600 hover:text-brand-700"
-            href="/terms"
-          >
-            Terms of service
-          </a>
-          <a
-            class="font-medium text-ink-600 hover:text-brand-700"
-            :href="`mailto:${CONTACT_EMAIL}`"
-          >
-            {{ CONTACT_EMAIL }}
-          </a>
-        </div>
-      </div>
-    </footer>
+    <SiteFooter :entity="OPERATING_ENTITY" />
   </div>
 </template>

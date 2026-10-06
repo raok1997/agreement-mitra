@@ -336,7 +336,43 @@ about what we hold, because the answer may turn on it:
 We need to know what we must disclose about this, whether the Digital Personal Data
 Protection Act, 2023 requires a separate privacy notice and a stated basis and retention
 period rather than terms of service alone, and whether our retention of the provider's audit
-trail carries obligations of its own.
+trail carries obligations of its own. The same question covers one further record: when a
+signed-in customer deletes an unpaid draft, we keep a record that it was deleted — the
+agreement's reference, the account it was saved to and the time, with no party details. We
+intend to keep it on the same three-year horizon as our other records and would like to know
+whether that is a permissible period for it. We now also delete, ourselves, every unpaid draft
+that has gone **90 days** without a change to its content, whether or not it was saved to an
+account, and keep the same record (terms §10, privacy policy §8): is 90 days a permissible
+period for keeping an abandoned unpaid draft's party details, or must it be shorter?
+
+**A draft privacy policy now exists** — the separate document `PRIVACY-POLICY.md` (Annexure C),
+published at `agreementmitra.com/privacy`. Terms §15 now only points to it, and deliberately
+does not say whether the policy forms part of the terms: **that is the question in this
+paragraph, and it is yours to answer.** We drafted only what we could check against the system
+as built; purposes and lawful basis, retention, your-rights, the grievance officer and
+cross-border transfer are marked as gaps for you. The checks behind each drafted statement:
+
+- *What we collect* — party and agreement details (`V2`, `V7`, `V13` migrations; the full
+  form answers are kept); sign-in name, email, verified-email flag and the provider's account
+  identifier (`V11`); the signed PDF and audit trail stored byte-for-byte as the provider
+  issues them (`ZoopEsignProvider`, `V4`); stamp-certificate scans and the certificate's
+  printed details (`V14`); payment records with no card, UPI or bank field (`V16`, `V17`);
+  the requesting IP address — full IPv4, IPv6 /64 — for abuse prevention, and a shortened form
+  in security logs (`ClientSourceResolver`, `SecurityEvents`).
+- *What we do not hold* — no Aadhaar number, VID or OTP field, column or log line exists. **One
+  qualification for you:** the provider's signature page on the signed PDF we store may show a
+  **masked** Aadhaar number (as we understand the eSign framework provides). The policy says
+  so; the bolded statement above, and terms §9, are worded as though no part of the number
+  ever reaches us. Please tell us whether either needs to change.
+- *Who receives it* — by role: eSign provider (it also emails each party its invitation), payment
+  gateway, the stamp-certificate issuing authority (via staff on its portal), email delivery
+  (including the draft PDF to every party **before** payment), sign-in provider, hosting and
+  storage, a content-delivery and network-security provider all traffic passes through, and the
+  web-font provider every visitor's browser contacts.
+- *Cookies and storage* — session, CSRF and a short-lived sign-in binding cookie only
+  (`SessionCookies`); the edge provider may set its own bot-detection cookie; the drafting form
+  keeps answers, including party details, in the browser's local storage, which signing out does
+  not clear.
 
 (c) **The service is deliberately available without an account.** A user can generate,
 pay for and sign an agreement without registering. We would like to know how acceptance of
@@ -355,6 +391,16 @@ it renders **on screen only** and is suppressed whenever the document is printed
 into a PDF, so it appears in neither the executed instrument nor a draft PDF the customer
 downloads. **The question we have left open is whether it should appear in the executed
 document after all**, and it is a one-line change for us either way.
+
+- **(d)(i) The wording itself.** The notice now reads: "The wording of this agreement is ours: we
+  wrote the template and we stand behind it. The facts you enter and the choices you make are
+  yours, so check them before you sign. We are not a law firm, no lawyer reviews your agreement
+  for your circumstances, and this is not legal advice; see the terms of service." We would like
+  your view on whether "we stand behind it" is an express representation about the template's
+  quality, and how it sits with our liability clause (terms §16, which is still blank for you to
+  complete). The same sentence appears in three places: the on-screen notice component, the
+  configured default under the document preview, and any environment override of that default.
+  It will not reach a paying customer until you have reviewed it.
 
 ---
 
@@ -615,13 +661,15 @@ the executed instrument needs to be drawn to the parties' attention.
 
 ---
 
-# Annexure C — Draft terms of service
+# Annexure C — Draft terms of service and privacy policy
 
-The draft accompanies this brief as the separate document `TERMS-OF-SERVICE.md`. The same
-text is published to customers at `agreementmitra.com/terms`, marked on its face as a draft
-pending your review.
+The drafts accompany this brief as the separate documents `TERMS-OF-SERVICE.md` and
+`PRIVACY-POLICY.md`. The same texts are published to customers at `agreementmitra.com/terms`
+and `agreementmitra.com/privacy`, each marked on its face as a draft pending your review. The
+refunds page (`/refunds`) shows terms §11 itself and the contact page carries no policy text,
+so neither has a document of its own.
 
-It is a separate document rather than being set out inline so that what you review is
+Each is a separate document rather than being set out inline so that what you review is
 word-for-word what the customer reads, with no intermediate transcription that could fall out
 of step. Annexures A and B are reproduced inline because the template wording they carry has
 no equivalent published face.

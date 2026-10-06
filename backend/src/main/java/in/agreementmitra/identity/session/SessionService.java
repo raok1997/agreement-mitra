@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
  * can inject it; still Modulith-internal.
  *
  * <p>The session value is 256 bits of strong randomness, returned to the caller exactly once at
- * {@link #exchange(String)} and persisted only as a keyed hash. Authentication re-hashes a
+ * {@link #exchange(String, String)} and persisted only as a keyed hash. Authentication re-hashes a
  * presented bearer value and looks up a live row; logout deletes it. No value is ever logged.
  */
 @Service
@@ -54,29 +54,29 @@ public class SessionService {
   /**
    * Consume a single-use handoff and mint an opaque session for the bound identity. Returns the
    * session value (once) plus the identity summary. Throws {@link InvalidLoginException} if the
-   * handoff is unknown, reused, or expired -- minting nothing.
+   * handoff is unknown, reused, expired, or bound to a browser other than the one presenting {@code
+   * bindingNonce} -- minting nothing. The nonce rule lives in {@link HandoffService#consume}.
    */
   @Transactional
-  public SessionIssued exchange(String handoff) {
-    UUID identityId = handoffService.consume(handoff);
+  public SessionIssued exchange(String handoff, String bindingNonce) {
+    UUID identityId = handoffService.consume(handoff, bindingNonce);
     IdentitySummary summary =
         identityService
             .summary(identityId)
             .orElseThrow(() -> new InvalidLoginException("identity missing for handoff"));
 
     String value = secretTokens.newToken();
-    sessions.save(
-        AuthSession.create(
-            identityId, hasher.hash(value), Instant.now().plus(properties.sessionTtl())));
+    Instant expiresAt = Instant.now().plus(properties.sessionTtl());
+    sessions.save(AuthSession.create(identityId, hasher.hash(value), expiresAt));
 
     log.debug("Session minted for identity {}", identityId);
-    return new SessionIssued(value, summary);
+    return new SessionIssued(value, summary, expiresAt);
   }
 
   /**
-   * Authenticate a presented bearer value: re-hash it, resolve a live unexpired session, touch its
-   * last-seen, and return the owning identity id. Returns empty when the value is absent, unknown,
-   * or expired -- leaving the request unauthenticated. Never logs the value.
+   * Authenticate a presented session cookie value: re-hash it, resolve a live unexpired session,
+   * touch its last-seen, and return the owning identity id. Returns empty when the value is absent,
+   * unknown, or expired -- leaving the request unauthenticated. Never logs the value.
    */
   @Transactional
   public Optional<UUID> authenticate(String bearerValue) {
@@ -104,6 +104,9 @@ public class SessionService {
     sessions.deleteByValueHash(hasher.hash(bearerValue));
   }
 
-  /** The freshly-minted session value (returned once) plus the caller's identity summary. */
-  public record SessionIssued(String value, IdentitySummary me) {}
+  /**
+   * The freshly-minted session value (returned once), the caller's identity summary, and the
+   * absolute expiry persisted on the row -- the single source for the session cookie's Max-Age.
+   */
+  public record SessionIssued(String value, IdentitySummary me, Instant expiresAt) {}
 }

@@ -54,7 +54,7 @@ steps, and neither depends on the site being deployed.
    terms of service (`frontend/src/views/LandingPage.vue`, `frontend/index.html`,
    `frontend/src/content/termsOfService.ts` -> clause 19). If you change it,
    change it in all three; a test asserts the page only ever links one address,
-   and the terms doc is regenerated with `npm run terms:doc`.
+   and the terms doc is regenerated with `npm run legal:doc`.
 5. Once the domain is verified, add aliases rather than burning user seats. On the
    free plan each **user** is one of your five, but **aliases are free and
    unlimited**. Suggested: `hello@`, `legal@`, `noreply@`, and `dmarc@` all as
@@ -120,6 +120,15 @@ The repo already contains everything Pages needs: `frontend/public/_redirects`
 | Build command | `npm ci && npm run build:only` |
 | Build output directory | `dist` |
 | Environment variable | `NODE_VERSION` = `20.19.0` |
+| Environment variable | `VITE_OPERATOR_LLPIN` = the LLPIN (`AAA-0000`), blank until issued |
+| Environment variable | `VITE_OPERATOR_REGISTERED_OFFICE` = the registered office, blank until confirmed |
+
+The two `VITE_OPERATOR_*` values are **public** — baked into the bundle every visitor downloads —
+and must match `deploy/env/web-build.env` (the `caddy` image) and, for the LLPIN, `backend.env`.
+Blank renders "LLPIN: being issued" and omits the office. A malformed value **fails the build**
+(the check in `vite.config.ts`); the office allows only ASCII letters, digits, spaces and
+`, . - / # ( ) & '`. No `VITE_*` variable may ever hold a credential. Changing a value
+needs a redeploy (**Retry deployment**), since it is baked in at build time.
 
 Then **Custom domains** -> add `agreementmitra.com` and `www.agreementmitra.com`.
 

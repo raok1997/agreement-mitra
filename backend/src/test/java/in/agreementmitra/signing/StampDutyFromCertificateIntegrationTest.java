@@ -8,6 +8,7 @@ import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -221,7 +222,7 @@ class StampDutyFromCertificateIntegrationTest {
     form.add("purchasedBy", "AgreementMitra Operations");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     return rest.exchange(
         "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
   }

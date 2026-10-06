@@ -122,6 +122,10 @@
   `GET /api/agreements`, with "resume"/"review" affordances). **Do not gate drafting** --
   only "My Agreements" and "Save" require a session; unauthenticated drafting is the default
   path. Tailwind utilities for layout.
+- [ ] 7.3 Update the privacy policy (`frontend/src/content/privacyPolicy.ts`, from
+  `legal-policy-pages`): add the mobile number to `what-we-collect` and the SMS-OTP provider
+  to `who-receives-it`, extend `PRIVACY_COLLECTED_CATEGORIES` / `PRIVACY_RECIPIENT_ROLES` to
+  match (by role, no vendor name), and regenerate with `npm run legal:doc`.
 
 ## 8. Tests -- unit (no Spring context)
 

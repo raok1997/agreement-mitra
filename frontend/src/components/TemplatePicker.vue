@@ -1,6 +1,25 @@
+<script lang="ts">
+import type { TemplateSummary } from "../api/templateCatalog";
+
+/**
+ * v1 is residential only (2026-10-05): the picker offers state-specific residential templates and
+ * nothing else. An allow-list, so a type added to the catalog later is not offered by accident.
+ * National ("IN") and commercial templates stay published server-side and draftable through the
+ * API; this is presentation only, and the server's per-rule eligibility gate is authoritative.
+ * Commercial comes back when its duty rules carry a counsel review, which fails the backend
+ * tripwire ShippedCommercialRulesUnreviewedTest -- lift the type check here in the same commit.
+ */
+export function isOffered(t: TemplateSummary): boolean {
+  return (
+    t.state.trim().toUpperCase() !== "IN" &&
+    t.type.trim().toLowerCase() === "residential"
+  );
+}
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { listTemplates, type TemplateSummary } from "../api/templateCatalog";
+import { listTemplates } from "../api/templateCatalog";
 import { fetchEligibleOrNone } from "../api/jurisdictions";
 
 // The State x Type picker: the entry step of the capture flow. Lists PUBLISHED catalog entries
@@ -15,6 +34,15 @@ import { fetchEligibleOrNone } from "../api/jurisdictions";
 const emit = defineEmits<{
   (e: "select", dimensions: { state: string; type: string }): void;
 }>();
+
+const STATE_NAMES: Record<string, string> = {
+  KA: "Karnataka",
+  TG: "Telangana",
+};
+
+function stateName(code: string): string {
+  return STATE_NAMES[code.trim().toUpperCase()] ?? code;
+}
 
 const rows = ref<TemplateSummary[]>([]);
 // null = "we could not find out", which marks NOTHING rather than marking everything draft-only.
@@ -31,8 +59,11 @@ const stateFilter = ref("");
 const types = computed(() =>
   [...new Set(rows.value.map((r) => r.type))].sort(),
 );
+const byName = (a: string, b: string) =>
+  stateName(a).localeCompare(stateName(b));
+
 const states = computed(() =>
-  [...new Set(rows.value.map((r) => r.state))].sort(),
+  [...new Set(rows.value.map((r) => r.state))].sort(byName),
 );
 
 const filtered = computed(() => {
@@ -41,9 +72,22 @@ const filtered = computed(() => {
     if (typeFilter.value && r.type !== typeFilter.value) return false;
     if (stateFilter.value && r.state !== stateFilter.value) return false;
     if (!q) return true;
-    const hay = `${r.name} ${r.description ?? ""}`.toLowerCase();
+    const hay =
+      `${r.name} ${r.description ?? ""} ${stateName(r.state)}`.toLowerCase();
     return hay.includes(q);
   });
+});
+
+const byState = computed(() => {
+  const groups = new Map<string, TemplateSummary[]>();
+  for (const r of filtered.value) {
+    const group = groups.get(r.state) ?? [];
+    group.push(r);
+    groups.set(r.state, group);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => byName(a, b))
+    .map(([state, templates]) => ({ state, templates }));
 });
 
 /**
@@ -73,7 +117,7 @@ async function load(): Promise<void> {
       listTemplates(),
       fetchEligibleOrNone(),
     ]);
-    rows.value = templates;
+    rows.value = templates.filter(isOffered);
     eligibleStates.value = eligible;
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Could not load templates.";
@@ -92,8 +136,7 @@ onMounted(load);
     <div>
       <h2 class="text-base font-semibold text-slate-800">Choose a template</h2>
       <p class="text-sm text-slate-500">
-        Pick the agreement type for your state. More states and types are on the
-        way.
+        Pick the rental agreement for your state. More states are on the way.
       </p>
     </div>
 
@@ -103,7 +146,8 @@ onMounted(load);
         v-model="query"
         type="search"
         placeholder="Search templates"
-        class="rounded border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
+        class="rounded border border-slate-300 px-3 py-2 text-sm"
+        :class="types.length > 1 ? 'sm:col-span-2' : 'sm:col-span-3'"
         data-testid="picker-search"
       />
       <select
@@ -112,9 +156,12 @@ onMounted(load);
         data-testid="filter-state"
       >
         <option value="">All states</option>
-        <option v-for="s in states" :key="s" :value="s">{{ s }}</option>
+        <option v-for="s in states" :key="s" :value="s">
+          {{ stateName(s) }}
+        </option>
       </select>
       <select
+        v-if="types.length > 1"
         v-model="typeFilter"
         class="rounded border border-slate-300 px-3 py-2 text-sm"
         data-testid="filter-type"
@@ -154,53 +201,75 @@ onMounted(load);
       No templates match your search.
     </p>
 
-    <div
-      v-else
-      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
-      data-testid="picker-list"
-    >
-      <div
-        v-for="r in filtered"
-        :key="r.id"
-        class="flex flex-col gap-2 rounded-md border border-slate-200 p-4"
-        :data-testid="`template-card-${r.id}`"
+    <div v-else class="flex flex-col gap-4" data-testid="picker-list">
+      <section
+        v-for="g in byState"
+        :key="g.state"
+        class="flex flex-col gap-2"
+        :data-testid="`state-row-${g.state}`"
       >
-        <div class="flex items-start justify-between gap-2">
-          <h3 class="text-sm font-semibold text-slate-800">{{ r.name }}</h3>
-        </div>
-        <p v-if="r.description" class="text-xs text-slate-500">
-          {{ r.description }}
-        </p>
-        <div class="flex flex-wrap gap-1 text-xs text-slate-500">
-          <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.state }}</span>
-          <span class="rounded bg-slate-100 px-2 py-0.5">{{ r.type }}</span>
-          <span class="rounded bg-slate-100 px-2 py-0.5">v{{ r.version }}</span>
-          <span
-            v-if="isDraftOnly(r)"
-            class="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
-            :data-testid="`draft-only-${r.id}`"
+        <h3
+          class="flex items-baseline gap-2 text-sm font-semibold text-slate-800"
+        >
+          {{ stateName(g.state) }}
+          <span class="text-xs font-normal text-slate-400">{{ g.state }}</span>
+        </h3>
+        <div class="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+          <article
+            v-for="r in g.templates"
+            :key="r.id"
+            class="flex w-72 shrink-0 flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+            :data-testid="`template-card-${r.id}`"
           >
-            Draft &amp; download only
-          </span>
+            <div class="flex items-center justify-between gap-2">
+              <span
+                class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600"
+                >{{ r.type }}</span
+              >
+              <span class="text-xs text-slate-400">v{{ r.version }}</span>
+            </div>
+            <h4 class="mt-3 text-sm font-semibold leading-snug text-slate-900">
+              {{ r.name }}
+            </h4>
+            <p v-if="r.description" class="mt-1 text-xs text-slate-500">
+              {{ r.description }}
+            </p>
+            <div
+              v-if="isDraftOnly(r)"
+              class="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-800"
+            >
+              <span class="font-medium" :data-testid="`draft-only-${r.id}`"
+                >Draft &amp; download only</span
+              >
+              <p
+                class="mt-0.5 text-amber-700"
+                :data-testid="`draft-only-note-${r.id}`"
+              >
+                You can fill this in, preview it and download it. Stamping and
+                eSign are not yet available for this jurisdiction, so it cannot
+                be paid for or signed here.
+              </p>
+            </div>
+            <div class="mt-auto pt-4">
+              <button
+                type="button"
+                class="w-full rounded-md px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+                :class="
+                  isDraftOnly(r)
+                    ? 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                    : 'bg-slate-900 text-white hover:bg-slate-700'
+                "
+                :data-testid="`select-${r.id}`"
+                @click="choose(r)"
+              >
+                {{
+                  isDraftOnly(r) ? "Draft this template" : "Use this template"
+                }}
+              </button>
+            </div>
+          </article>
         </div>
-        <p
-          v-if="isDraftOnly(r)"
-          class="text-xs text-amber-700"
-          :data-testid="`draft-only-note-${r.id}`"
-        >
-          You can fill this in, preview it and download it. Stamping and eSign
-          are not yet available for this jurisdiction, so it cannot be paid for
-          or signed here.
-        </p>
-        <button
-          type="button"
-          class="mt-1 rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-          :data-testid="`select-${r.id}`"
-          @click="choose(r)"
-        >
-          {{ isDraftOnly(r) ? "Draft this template" : "Use this template" }}
-        </button>
-      </div>
+      </section>
     </div>
   </div>
 </template>

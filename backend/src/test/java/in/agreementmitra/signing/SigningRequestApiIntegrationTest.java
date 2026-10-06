@@ -3,16 +3,17 @@ package in.agreementmitra.signing;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
-import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.LeegalityWireMock;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SigningRequests;
+import in.agreementmitra.support.StampUploads;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +33,6 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -53,21 +53,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class SigningRequestApiIntegrationTest {
 
-  private static final String AUTH_TOKEN = "it-auth-token";
-  private static final String WEBHOOK_MAC_KEY = "it-mac-key-value";
+  private static final String WEBHOOK_MAC_KEY = LeegalityWireMock.WEBHOOK_MAC_KEY;
 
-  private static final WireMockServer WIREMOCK = new WireMockServer(options().dynamicPort());
-
-  static {
-    WIREMOCK.start();
-  }
+  private static final WireMockServer WIREMOCK = LeegalityWireMock.start();
 
   @DynamicPropertySource
   static void leegalityProperties(DynamicPropertyRegistry registry) {
-    registry.add("esign.leegality.base-url", () -> WIREMOCK.baseUrl() + "/api/");
-    registry.add("esign.leegality.auth-token", () -> AUTH_TOKEN);
-    registry.add("esign.leegality.webhook-secret", () -> WEBHOOK_MAC_KEY);
-    registry.add("esign.leegality.profile-id", () -> "it-profile");
+    LeegalityWireMock.register(registry, WIREMOCK);
   }
 
   @AfterAll
@@ -76,6 +68,7 @@ class SigningRequestApiIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -151,35 +144,7 @@ class SigningRequestApiIntegrationTest {
 
   /** Perform the staff e-stamp upload over HTTP, exactly as an operator would. */
   private void uploadStamp(UUID agreementId) {
-    String reference =
-        jdbc.queryForObject(
-            "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, agreementId);
-    String certificate =
-        "IN-KA" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
-    var form = new org.springframework.util.LinkedMultiValueMap<String, Object>();
-    form.add(
-        "scan",
-        new org.springframework.core.io.ByteArrayResource(
-            in.agreementmitra.support.TestImages.certificateScan()) {
-          @Override
-          public String getFilename() {
-            return "certificate.png";
-          }
-        });
-    form.add("agreementReference", reference);
-    form.add("certificateNumber", certificate);
-    form.add("issueDate", "2026-01-15");
-    form.add(
-        "dutyAmount",
-        "10000.00"); // covers the recomputed stamp duty of any fixture (state-stamp-duty-quoting)
-    form.add("jurisdiction", "KA");
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
-    ResponseEntity<String> resp =
-        rest.exchange(
-            "/api/staff/estamp", HttpMethod.POST, new HttpEntity<>(form, headers), String.class);
-    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    StampUploads.upload(rest, jdbc, staffToken, agreementId);
   }
 
   /** A persisted agreement with NO draft yet — used to exercise the draft-required 409. */
@@ -253,14 +218,7 @@ class SigningRequestApiIntegrationTest {
   }
 
   private void stubCreate(String documentId) {
-    WIREMOCK.stubFor(
-        post(urlEqualTo("/api/v3.0/sign/request"))
-            .willReturn(
-                okJson(
-                    "{\"status\":\"SUCCESS\",\"data\":{\"documentId\":\""
-                        + documentId
-                        + "\",\"invitees\":[{\"signUrl\":\"https://sign/1\",\"expiryDate\":\"2026-01-01\"},"
-                        + "{\"signUrl\":\"https://sign/2\",\"expiryDate\":\"2026-01-02\"}]}}")));
+    LeegalityWireMock.stubCreate(WIREMOCK, documentId);
   }
 
   private void stubDetails(String documentId, String status) {
@@ -287,8 +245,7 @@ class SigningRequestApiIntegrationTest {
 
   private UUID createSigningRequest(UUID agreementId, String documentId) {
     stubCreate(documentId);
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(
@@ -339,8 +296,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createAgreement();
     stubCreate("DOC-CREATE-1");
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     assertThat(resp.getBody()).contains("DOC-CREATE-1").contains("https://sign/1");
@@ -372,8 +328,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createAgreement();
     stubCreate("DOC-STAMP-1");
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 
     // The stamp DATA came from the staff upload: a real certificate number and dutyPaid = true.
@@ -409,8 +364,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createDraftedAgreement(); // draft uploaded, no e-stamp yet
     long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(resp.getHeaders().getContentType())
@@ -464,7 +418,7 @@ class SigningRequestApiIntegrationTest {
   void stampInfoIsNotExposedOnTheAgreementResponse() {
     UUID agreementId = createAgreement();
     stubCreate("DOC-STAMP-2");
-    rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    SigningRequests.post(rest, context, agreementId);
 
     ResponseEntity<String> get = rest.getForEntity("/api/agreements/" + agreementId, String.class);
 
@@ -481,8 +435,7 @@ class SigningRequestApiIntegrationTest {
     UUID missing = UUID.randomUUID();
     long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + missing + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, missing);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     assertThat(resp.getHeaders().getContentType())
@@ -494,8 +447,7 @@ class SigningRequestApiIntegrationTest {
 
   @Test
   void nonUuidAgreementIdReturns400() {
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/not-a-uuid/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, "not-a-uuid");
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     assertThat(resp.getHeaders().getContentType())
         .matches(ct -> ct.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
@@ -506,8 +458,7 @@ class SigningRequestApiIntegrationTest {
     UUID agreementId = createBareAgreement();
     long before = jdbc.queryForObject("SELECT COUNT(*) FROM signing_request", Long.class);
 
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(resp.getHeaders().getContentType())
@@ -522,8 +473,12 @@ class SigningRequestApiIntegrationTest {
   @Test
   void oversizedBodyIsRejectedWith413() {
     UUID agreementId = createAgreement();
-    String huge = "x".repeat(2 * 1024 * 1024); // 2 MiB > 1 MiB limit
-    HttpHeaders headers = new HttpHeaders();
+    // 1.5 MiB: over the 1 MiB guard, under Tomcat's 2 MB maxSwallowSize (past which it resets the
+    // connection instead of answering). Sent as STAFF, the route's only caller; the guard runs
+    // ahead
+    // of the security chain, so the 413 comes before authorization either way.
+    String huge = "x".repeat(1536 * 1024);
+    HttpHeaders headers = SigningRequests.staffHeaders(context);
     headers.setContentType(MediaType.APPLICATION_JSON);
 
     ResponseEntity<String> resp =

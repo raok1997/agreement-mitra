@@ -35,12 +35,18 @@ passed `openspec validate --strict`. Removed in `d8bc395`; the baseline is clean
 - **Beta scope.** Production is founding-team only, no real customers, as of 2026-09-07.
   This bounds exposure to roughly nil — and it expires. Several judgements below hold only
   while it does.
-- **Honest marketing.** Verified 2026-09-07: the live landing copy leads on transparency
-  ("nothing hidden until checkout"), says "early access… the unvarnished state of things",
-  and marks each feature Live / In integration / Planned. **There is no correctness claim to
-  walk back.** Keep it that way: "reviewed by Indian counsel" only becomes sayable after
-  counsel has actually reviewed. Correctness stays *product strategy*
-  (`docs/PRODUCT-FEATURE-SET.md`), not a claim in copy.
+- **Honest marketing.** The home page (`frontend/src/views/LandingPage.vue`, openspec
+  `landing-page`) states the price — "₹499 when your stamp duty is ₹100 or less", never "all-in"
+  — and three guarantees that restate ToS §8, §11 and §14 with their qualifiers. Every figure
+  comes from `src/content/promises.ts`, which a test pins to the ToS clause bodies and the
+  backend fee defaults. **Only the `#status` board says what is live** (`src/content/releaseStatus.ts`);
+  a test rejects liveness wording anywhere else on the page, and another refuses a "live"
+  stamping row while that state's rule files carry `counselReview: null`. Forbidden in copy,
+  and tested: "100%", "legally guaranteed", "guaranteed valid", "legally valid agreement",
+  "court-approved", "government-approved", "reviewed by counsel / a lawyer", "lawyer-reviewed".
+  "Reviewed by Indian counsel" only becomes sayable after `template-counsel-signoff-gate` records
+  the review. Correctness stays *product strategy* (`docs/PRODUCT-FEATURE-SET.md`), not a claim
+  in copy.
 
 ## What does not protect us yet
 
@@ -80,7 +86,12 @@ lands, CI becomes the authoritative invoker and the task itself does not change.
 gate does not cover — it guards template content hashes, and the terms are a separate text with
 its own source. Whatever the gate grows into should cover both.
 
-_Status: not started._
+_Status: deferred past v1 (2026-10-05)._ The first release relies on the manual "Template
+sign-off checklist" in `docs/ROADMAP.md` instead: counsel reviews the rendered PDFs at a recorded
+git commit, and the release checks no template edit landed since. The placement above turned out
+not to work as written — agreements pin a hash of the assembled template model, not of the YAML
+files, so a raw-file hash would never match. The register row `template-counsel-signoff-gate`
+holds the revised design for when it is built.
 
 ### 1a. Implementing the pricing rule (and the National-template hazard under it)
 
@@ -174,11 +185,14 @@ Steps 0-2 have landed for Telangana through `state-stamp-duty-quoting` (with the
   no longer asked for it, a submitted value is discarded, and the stamped instrument states the
   attached certificate's duty amount instead.
 
-Step 3 is **partly** done: intake refuses a certificate below the paid-for stamp value (or, without a
-frozen quote, below the recomputed duty). The refund/absorb half -- when the certificate costs less
-or more than what was charged -- is still open and must land before the first external customer.
+Step 3 is **effectively** done: intake refuses a certificate below the paid-for stamp value (or,
+without a frozen quote, below the recomputed duty), and the price is the frozen chosen stamp value
+rather than an estimate -- so a difference in the customer's favour cannot reach intake and there is
+nothing to refund. A certificate costing **more** is absorbed (no second bill is ever raised); only
+recording that overspend is open, as a low-priority register row
+(`stamp-certificate-price-reconciliation`) that does not block the first external customer.
 
-_Status: steps 0-2 implemented for TG (pending counsel review of the figures); step 3 partial._
+_Status: steps 0-2 implemented for TG (pending counsel review of the figures); step 3 effectively done (overspend recording deferred)._
 
 ### 2. Put the disclaimer where the product is, and write terms of service
 
@@ -190,6 +204,15 @@ step before payment, and the payment confirmation. It also renders under the on-
 document preview, as a screen-only sibling of the provenance line, configured as
 `documents.footer.screen-notice` in `application.yml` so the `documents` module still holds
 no legal copy of its own. Every instance links to `/terms`.
+
+The wording (2026-10-05, `landing-page-release-copy`) leads with what we stand behind: "The
+wording of this agreement is ours: we wrote the template and we stand behind it. The facts you
+enter and the choices you make are yours, so check them before you sign. We are not a law firm, no
+lawyer reviews your agreement for your circumstances, and this is not legal advice." A test holds
+the screen-notice default equal to the component text. **Release condition:** "we stand behind it"
+is a quality statement and does not ship to real customers until counsel has reviewed it against
+ToS §16 (brief Q6(d); ROADMAP release Counsel line). Setting `DOCUMENT_FOOTER_SCREEN_NOTICE` in an
+environment overrides the default and forks the "one wording" — keep any override identical.
 
 It is **not** printed inside the executed deed, and not in a downloaded draft PDF either: the
 mechanism is print-suppression, and unlike the provenance line the notice has no per-page
@@ -265,7 +288,7 @@ so it scales with rent just as badly and costs INR 399 more in every case).
 
 **One text, two faces.** The terms live in `frontend/src/content/termsOfService.ts`. The page
 at `/terms` renders from it and `docs/TERMS-OF-SERVICE.md` — the copy counsel reads, and
-Annexure C of the brief — is *generated* from it (`npm run terms:doc`), with a test that
+Annexure C of the brief — is *generated* from it (`npm run legal:doc`), with a test that
 fails the build when the two drift. Two hand-kept copies of a legal text is the same class of
 defect as the Telangana clause above, and it was avoidable here.
 
@@ -294,7 +317,7 @@ Full scheduling is in `docs/ROADMAP.md`. Legal-posture work specifically:
 1. ~~Disclaimer + ToS draft (item 2)~~ — done 2026-09-07, brief Q6 updated with it
 2. **Send the brief.** The one remaining AWAITING PRODUCT INPUT clause is blocked on its
    answer, not on us
-3. Approval gate (item 1) — own CR, placement already decided above
+3. Approval gate (item 1) — manual checklist for v1 (`docs/ROADMAP.md`); automated gate after v1
 4. Revisit CI (CR-7) once items 1 and 2 land — two more gates whose whole value is being
    unmissable, and its own revisit trigger is approaching
 

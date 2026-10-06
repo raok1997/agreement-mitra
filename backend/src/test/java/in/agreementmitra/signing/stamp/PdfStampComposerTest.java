@@ -86,6 +86,27 @@ class PdfStampComposerTest {
   }
 
   @Test
+  void tallScanStaysAboveTheSignatureBand() {
+    // A portrait A4 scan at 300 dpi: fitted to the old full-page box it reached down to ~40pt,
+    // into the 26-66pt band where every signer's strip is drawn on this page.
+    float[] placed = PdfStampComposer.placeScan(2480f, 3508f);
+    assertThat(placed[1]).isGreaterThanOrEqualTo(PdfStampComposer.SIGNATURE_BAND_TOP_PT);
+    assertThat(placed[1] + placed[3]).isLessThanOrEqualTo(PDRectangle.A4.getHeight() - 28f);
+    assertThat(placed[2] / placed[3]).isCloseTo(2480f / 3508f, within(0.001f));
+  }
+
+  @Test
+  void smallScanIsCentredAboveTheSignatureBand() {
+    float[] placed = PdfStampComposer.placeScan(120f, 90f);
+    assertThat(placed[2]).isEqualTo(120f);
+    assertThat(placed[3]).isEqualTo(90f);
+    assertThat(placed[0] + placed[2] / 2f).isCloseTo(PDRectangle.A4.getWidth() / 2f, within(0.01f));
+    float bandToTopMargin = PDRectangle.A4.getHeight() - 28f;
+    assertThat(placed[1] + placed[3] / 2f)
+        .isCloseTo((PdfStampComposer.SIGNATURE_BAND_TOP_PT + bandToTopMargin) / 2f, within(0.01f));
+  }
+
+  @Test
   void fitNeverUpscalesBeyondNativeResolution() {
     // A small scan inside a big box stays at its native size rather than being blown up.
     float[] drawn = PdfStampComposer.fitWithoutUpscaling(120f, 90f, 500f, 700f);

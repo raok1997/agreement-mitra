@@ -6,6 +6,12 @@ import {
   type TemplateSummary,
 } from "./templateCatalog";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 describe("template-catalog api client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -20,7 +26,9 @@ describe("template-catalog api client", () => {
 
     await listTemplates();
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/templates");
+    expect(fetchMock).toHaveBeenCalledWith("/api/templates", {
+      credentials: "same-origin",
+    });
   });
 
   it("passes state, type, and q as query params", async () => {
@@ -33,6 +41,7 @@ describe("template-catalog api client", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/templates?state=TG&type=residential&q=rent",
+      { credentials: "same-origin" },
     );
   });
 
@@ -50,7 +59,9 @@ describe("template-catalog api client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getTemplate("abc")).resolves.toEqual(detail);
-    expect(fetchMock).toHaveBeenCalledWith("/api/templates/abc");
+    expect(fetchMock).toHaveBeenCalledWith("/api/templates/abc", {
+      credentials: "same-origin",
+    });
   });
 
   it("rejects on a 404 (unknown or non-published id)", async () => {

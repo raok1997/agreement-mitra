@@ -15,8 +15,9 @@ import org.springframework.data.domain.Persistable;
 /**
  * The single-use, short-lived server state for one in-flight Google login. Stores only the SHA-256
  * hash of the random OAuth {@code state} (never the raw value) plus the PKCE {@code code_verifier}
- * replayed at token exchange. Consumed atomically at callback ({@code consumedAt} set); a reused or
- * unknown state resolves to no row and the callback is refused.
+ * replayed at token exchange, and the hash of the login-binding nonce held in the starting
+ * browser's cookie (login-browser-binding D2). Consumed atomically at callback ({@code consumedAt}
+ * set); a reused or unknown state resolves to no row and the callback is refused.
  *
  * <p>The {@code code_verifier} is a short-lived per-login secret (deleted-by-consume;
  * encrypt-at-rest is a flagged, not-required sandbox follow-up). {@code toString()} is id-only.
@@ -45,6 +46,9 @@ class OauthLoginState implements Persistable<UUID> {
   @Column(name = "consumed_at")
   private Instant consumedAt;
 
+  @Column(name = "browser_binding_hash")
+  private String browserBindingHash;
+
   @Transient private boolean isNew = true;
 
   protected OauthLoginState() {
@@ -57,19 +61,31 @@ class OauthLoginState implements Persistable<UUID> {
       String codeVerifier,
       String redirectUri,
       Instant createdAt,
-      Instant expiresAt) {
+      Instant expiresAt,
+      String browserBindingHash) {
     this.id = id;
     this.stateHash = stateHash;
     this.codeVerifier = codeVerifier;
     this.redirectUri = redirectUri;
     this.createdAt = createdAt;
     this.expiresAt = expiresAt;
+    this.browserBindingHash = browserBindingHash;
   }
 
   static OauthLoginState create(
-      String stateHash, String codeVerifier, String redirectUri, Instant expiresAt) {
+      String stateHash,
+      String codeVerifier,
+      String redirectUri,
+      Instant expiresAt,
+      String browserBindingHash) {
     return new OauthLoginState(
-        UUID.randomUUID(), stateHash, codeVerifier, redirectUri, Instant.now(), expiresAt);
+        UUID.randomUUID(),
+        stateHash,
+        codeVerifier,
+        redirectUri,
+        Instant.now(),
+        expiresAt,
+        browserBindingHash);
   }
 
   @Override
@@ -83,6 +99,10 @@ class OauthLoginState implements Persistable<UUID> {
 
   String redirectUri() {
     return redirectUri;
+  }
+
+  String browserBindingHash() {
+    return browserBindingHash;
   }
 
   @Override
@@ -111,7 +131,7 @@ class OauthLoginState implements Persistable<UUID> {
 
   @Override
   public String toString() {
-    // Id only -- never the state hash or PKCE verifier.
+    // Id only -- never the state hash, binding hash or PKCE verifier.
     return "OauthLoginState{id=" + id + "}";
   }
 }

@@ -1,5 +1,6 @@
 package in.agreementmitra.signing;
 
+import in.agreementmitra.AgreementIds;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -74,7 +75,7 @@ public record SigningCompletionView(
     return "SigningCompletionView{signingRequestId="
         + signingRequestId
         + ", agreementId="
-        + agreementId
+        + AgreementIds.redact(agreementId)
         + ", status="
         + status
         + ", parties="

@@ -2,18 +2,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AgreementHttpError,
   claimAgreement,
+  deleteAgreement,
+  finaliseAgreement,
   getAgreement,
   listMyAgreements,
   updateAgreement,
   updateAgreementContacts,
 } from "./agreements";
+import { hasProblemType, PROBLEM } from "./problems";
 import type { CreateAgreementInput } from "./client";
 
-// The authenticated agreement calls must attach the Bearer header (from the auth store). We stub the
-// store so a session is always present, then assert each verb hits the right URL/method with the
-// header -- and that a non-2xx surfaces an AgreementHttpError carrying the status.
-vi.mock("./authStore", () => ({
-  authHeader: () => ({ Authorization: "Bearer test-session" }),
+// The authenticated agreement calls ride the HttpOnly session cookie (same-origin credentials, never
+// an Authorization header) and send the CSRF header on unsafe verbs. The CSRF cookie is mocked so no
+// bootstrap GET enters the call sequence; a non-2xx surfaces an AgreementHttpError with the status.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
 }));
 
 function okJson(body: unknown) {
@@ -35,24 +39,21 @@ const editInput: CreateAgreementInput = {
 describe("agreements api", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("lists mine with the Bearer header", async () => {
+  it("lists mine with the session cookie and no Authorization header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson([{ id: "a1" }]));
     vi.stubGlobal("fetch", fetchMock);
 
     const rows = await listMyAgreements();
 
     expect(rows).toEqual([{ id: "a1" }]);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/agreements",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-session",
-        }),
-      }),
-    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/agreements");
+    expect(init.credentials).toBe("same-origin");
+    expect(JSON.stringify(init.headers ?? {})).not.toContain("Authorization");
   });
 
-  it("claims (saves) with a POST to /{id}/claim and the Bearer header", async () => {
+  it("claims (saves) with a POST to /{id}/claim and the CSRF header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({ id: "a1" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -61,12 +62,11 @@ describe("agreements api", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/agreements/a1/claim");
     expect(init.method).toBe("POST");
-    expect(init.headers).toMatchObject({
-      Authorization: "Bearer test-session",
-    });
+    expect(init.credentials).toBe("same-origin");
+    expect(init.headers).toMatchObject({ "X-XSRF-TOKEN": "csrf-token" });
   });
 
-  it("edits with a PUT carrying the body and the Bearer header", async () => {
+  it("edits with a PUT carrying the body and the CSRF header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({ id: "a1" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -76,12 +76,47 @@ describe("agreements api", () => {
     expect(url).toBe("/api/agreements/a1");
     expect(init.method).toBe("PUT");
     expect(init.headers).toMatchObject({
-      Authorization: "Bearer test-session",
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": "csrf-token",
     });
     expect(JSON.parse(init.body).propertyAddress).toBe("1 Road");
   });
 
-  it("reads one for edit with a GET and the Bearer header", async () => {
+  it("deletes with a DELETE and the CSRF header, resolving on an empty 204", async () => {
+    const json = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204, json });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteAgreement("a1")).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/agreements/a1");
+    expect(init.method).toBe("DELETE");
+    expect(init.headers).toMatchObject({ "X-XSRF-TOKEN": "csrf-token" });
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it("carries the problem type when a delete is refused as no longer a draft", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: () =>
+          Promise.resolve({
+            type: "urn:agreementmitra:problem:draft-not-deletable",
+          }),
+      }),
+    );
+
+    const failure = await deleteAgreement("a1").catch((e) => e);
+
+    expect(failure).toBeInstanceOf(AgreementHttpError);
+    expect(failure.status).toBe(409);
+    expect(hasProblemType(failure, PROBLEM.draftNotDeletable)).toBe(true);
+  });
+
+  it("reads one for edit with a GET over the session cookie", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({ id: "a1" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -89,11 +124,7 @@ describe("agreements api", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/agreements/a1",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-session",
-        }),
-      }),
+      expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 
@@ -132,7 +163,7 @@ describe("agreements api", () => {
     expect(failure.problemType).toBe(
       "urn:agreementmitra:problem:contacts-frozen",
     );
-    expect(failure.contactsFrozen).toBe(true);
+    expect(hasProblemType(failure, PROBLEM.contactsFrozen)).toBe(true);
   });
 
   it("does not mistake the terms freeze for the contacts freeze", async () => {
@@ -148,7 +179,7 @@ describe("agreements api", () => {
 
     const failure = await updateAgreementContacts("a1", []).catch((e) => e);
 
-    expect(failure.contactsFrozen).toBe(false);
+    expect(hasProblemType(failure, PROBLEM.contactsFrozen)).toBe(false);
   });
 
   it("degrades to a null problem type when the body is not problem+json", async () => {
@@ -164,6 +195,67 @@ describe("agreements api", () => {
     const failure = await updateAgreementContacts("a1", []).catch((e) => e);
 
     expect(failure.problemType).toBeNull();
-    expect(failure.contactsFrozen).toBe(false);
+    expect(hasProblemType(failure, PROBLEM.contactsFrozen)).toBe(false);
+  });
+});
+
+// Every call carries the problem type, not only the one that once opted in (D2). Literal server URNs.
+describe("agreements api: every refusal carries its problem type", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const calls: [string, () => Promise<unknown>][] = [
+    ["listMyAgreements", () => listMyAgreements()],
+    ["claimAgreement", () => claimAgreement("a1")],
+    ["getAgreement", () => getAgreement("a1")],
+    ["finaliseAgreement", () => finaliseAgreement("a1")],
+    ["updateAgreement", () => updateAgreement("a1", editInput)],
+    ["updateAgreementContacts", () => updateAgreementContacts("a1", [])],
+  ];
+
+  it.each(calls)(
+    "%s keeps the status and exact type of a 409",
+    async (_, call) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                type: "urn:agreementmitra:problem:jurisdiction-unsupported",
+              }),
+              {
+                status: 409,
+                headers: { "Content-Type": "application/problem+json" },
+              },
+            ),
+          ),
+        ),
+      );
+
+      const failure = await call().catch((e) => e);
+
+      expect(failure).toBeInstanceOf(AgreementHttpError);
+      expect(failure.status).toBe(409);
+      expect(failure.problemType).toBe(
+        "urn:agreementmitra:problem:jurisdiction-unsupported",
+      );
+    },
+  );
+
+  it("degrades to a null type for a non-JSON body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("<html>bad gateway</html>", { status: 502 }),
+        ),
+    );
+
+    const failure = await finaliseAgreement("a1").catch((e) => e);
+
+    expect(failure).toBeInstanceOf(AgreementHttpError);
+    expect(failure.status).toBe(502);
+    expect(failure.problemType).toBeNull();
   });
 });

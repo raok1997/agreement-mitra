@@ -16,6 +16,8 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -92,6 +94,7 @@ class SigningCompletionIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -219,7 +222,7 @@ class SigningCompletionIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     ResponseEntity<String> resp =
         rest.exchange(
             "/api/staff/estamp",
@@ -291,8 +294,7 @@ class SigningCompletionIntegrationTest {
 
   private UUID createSigningRequest(UUID agreementId, String documentId) {
     stubCreate(documentId);
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(

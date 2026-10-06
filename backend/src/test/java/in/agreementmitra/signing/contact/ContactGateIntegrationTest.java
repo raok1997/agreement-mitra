@@ -9,6 +9,9 @@ import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
+import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestPdfs;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +60,7 @@ class ContactGateIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -98,7 +102,7 @@ class ContactGateIntegrationTest {
   }
 
   /**
-   * Claim the agreement and return a live Bearer session for the identity that now owns it.
+   * Claim the agreement and return a live session for the identity that now owns it.
    *
    * <p>Needed because {@code PUT /api/agreements/*} is {@code .authenticated()} in {@link
    * in.agreementmitra.SecurityConfig}, unlike the contacts route this file otherwise exercises
@@ -110,12 +114,12 @@ class ContactGateIntegrationTest {
         identityService.findOrCreate(
             "google", subject, subject + "@example.com", true, "T " + subject);
     jdbc.update("UPDATE agreement SET owner_identity_id = ? WHERE id = ?", ownerId, agreementId);
-    return sessionService.exchange(handoffService.issue(ownerId)).value();
+    return StaffSessions.forIdentity(handoffService, sessionService, ownerId);
   }
 
   private static HttpHeaders bearer(String session) {
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(session);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(session));
     return headers;
   }
 
@@ -234,11 +238,10 @@ class ContactGateIntegrationTest {
                 new Party("Tara", "TENANT", null, "9876543210")));
     Payments.waive(jdbc, id);
 
-    ResponseEntity<String> requested =
-        rest.postForEntity("/api/signing/" + id + "/request", null, String.class);
+    ResponseEntity<String> requested = SigningRequests.post(rest, context, id);
 
-    // Exactly 409, not "some refusal": POST /api/signing/*/request is permitAll, so the request
-    // reaches the handler and the only thing that can refuse it here is the reachability gate. A
+    // Exactly 409, not "some refusal": the request is made with a STAFF session, so it reaches the
+    // handler and the only thing that can refuse it here is the reachability gate. A
     // looser assertion would pass on an auth rejection and prove nothing about reachability.
     assertThat(requested.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     // It is the reachability refusal specifically, not some other 409.

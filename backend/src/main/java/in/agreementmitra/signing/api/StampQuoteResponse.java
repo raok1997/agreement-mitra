@@ -34,8 +34,11 @@ public record StampQuoteResponse(
     options = options == null ? List.of() : List.copyOf(options);
   }
 
-  /** One breakdown step; {@code amount} is a plain rupee decimal string. */
-  public record Line(String kind, String label, String amount) {}
+  /**
+   * One breakdown step; {@code amount} is a plain rupee decimal string. {@code delta} says whether
+   * the amount changes the running duty -- set by the server so clients never mirror the kinds.
+   */
+  public record Line(String kind, String label, String amount, boolean delta) {}
 
   /** The rule a quote was computed under. {@code legalReference} is null on a frozen quote. */
   public record Rule(String id, String legalReference, boolean reviewed) {}

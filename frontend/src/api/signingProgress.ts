@@ -1,9 +1,9 @@
 // The status page's reads: per-party signing progress with the fulfilment stage, and the signed
-// document download. Both attach the Bearer session when there is one, because a claimed agreement
+// document download. Both ride the session cookie when there is one, because a claimed agreement
 // answers only its owner -- a link holder without a session sees an unowned agreement, and that is
 // the whole ownership rule, decided server-side. Components never call fetch directly.
 
-import { authHeader } from "./authStore";
+import { apiFetch } from "./http";
 import type { AgreementStatus } from "./agreements";
 
 const BASE = "/api";
@@ -61,9 +61,7 @@ export class SigningProgressHttpError extends Error {
 export async function getSigningProgress(
   agreementId: string,
 ): Promise<SigningProgress> {
-  const res = await fetch(`${BASE}/signing/${agreementId}/progress`, {
-    headers: { ...authHeader() },
-  });
+  const res = await apiFetch(`${BASE}/signing/${agreementId}/progress`);
   if (!res.ok) throw new SigningProgressHttpError(res.status);
   return res.json();
 }
@@ -85,9 +83,9 @@ export async function downloadSignedDocument(
   agreementId: string,
   filename = "signed-agreement.pdf",
 ): Promise<void> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/signed-document`, {
-    headers: { ...authHeader() },
-  });
+  const res = await apiFetch(
+    `${BASE}/agreements/${agreementId}/signed-document`,
+  );
   if (!res.ok) throw new SigningProgressHttpError(res.status);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

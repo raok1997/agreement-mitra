@@ -1,11 +1,16 @@
 package in.agreementmitra.signing.recovery;
 
+import in.agreementmitra.ClientSource;
+import in.agreementmitra.SecurityEvents;
+import in.agreementmitra.SlidingWindowRateLimiter;
+import in.agreementmitra.SlidingWindowRateLimiter.Decision;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.api.AgreementResponse;
 import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
@@ -26,19 +31,28 @@ public class RecoveryService {
 
   private static final Logger log = LoggerFactory.getLogger(RecoveryService.class);
 
+  /** The route label recovery's lockout events carry: the mapping, never a URI. */
+  private static final String ROUTE = "/api/agreements/recovery";
+
+  /** The limiter class recovery's budgets and lockouts are scoped to. */
+  private static final String LIMITER_CLASS = "recovery";
+
   private final AgreementService agreementService;
   private final RecoveryDeliveryService delivery;
-  private final RecoveryRateLimiter rateLimiter;
+  private final SlidingWindowRateLimiter rateLimiter;
+  private final SecurityEvents securityEvents;
   private final RecoveryAuditRepository audit;
 
   RecoveryService(
       AgreementService agreementService,
       RecoveryDeliveryService delivery,
-      RecoveryRateLimiter rateLimiter,
+      @Qualifier(RecoveryLimiterConfig.LIMITER) SlidingWindowRateLimiter rateLimiter,
+      SecurityEvents securityEvents,
       RecoveryAuditRepository audit) {
     this.agreementService = agreementService;
     this.delivery = delivery;
     this.rateLimiter = rateLimiter;
+    this.securityEvents = securityEvents;
     this.audit = audit;
   }
 
@@ -46,15 +60,17 @@ public class RecoveryService {
    * Act on a recovery request. Never throws, and never reports what happened.
    *
    * @param rawReference the reference as submitted
-   * @param requesterFingerprint a coarse identifier for the source, for rate limiting and forensics
+   * @param source the requester, as resolved from the trusted proxy chain, for rate limiting and
+   *     forensics
    */
-  public void requestRecovery(String rawReference, String requesterFingerprint) {
+  public void requestRecovery(String rawReference, ClientSource source) {
     Instant now = Instant.now();
     String reference =
         rawReference == null ? "" : rawReference.trim().toUpperCase(java.util.Locale.ROOT);
+    String requesterFingerprint = source.key();
 
     try {
-      if (!rateLimiter.tryAcquire(requesterFingerprint, reference, now)) {
+      if (!admitted(source, reference)) {
         record(reference, null, RecoveryOutcome.THROTTLED, 0, requesterFingerprint, now);
         return;
       }
@@ -78,6 +94,29 @@ public class RecoveryService {
       log.warn("Recovery request could not be completed");
       record(reference, null, RecoveryOutcome.NOT_CONFIGURED, 0, requesterFingerprint, now);
     }
+  }
+
+  /**
+   * A reference refusal still counts against the source, so tripping a reference refunds no source
+   * budget; a source refusal is not counted against the reference. A lockout is logged once, when
+   * it begins; the reference only as a keyed digest.
+   */
+  private boolean admitted(ClientSource source, String reference) {
+    Decision decision =
+        rateLimiter.tryAcquire(
+            LIMITER_CLASS,
+            source.key(),
+            RecoveryLimiterConfig.SOURCE,
+            reference,
+            RecoveryLimiterConfig.REFERENCE);
+    if (decision.sourceLockout() > 0) {
+      securityEvents.lockout(ROUTE, LIMITER_CLASS, source, decision.sourceLockout());
+    }
+    if (decision.resourceLockout() > 0) {
+      securityEvents.resourceLockout(
+          ROUTE, LIMITER_CLASS, source, reference, decision.resourceLockout());
+    }
+    return decision.allowed();
   }
 
   /**

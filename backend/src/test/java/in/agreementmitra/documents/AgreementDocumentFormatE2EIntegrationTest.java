@@ -1,5 +1,6 @@
 package in.agreementmitra.documents;
 
+import static in.agreementmitra.support.CsrfMockMvc.csrf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -8,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.PageFurniture;
@@ -17,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -26,8 +29,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -56,6 +63,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *   <li><b>M1</b> -- the execution date uses a submitted {@code agreementDate} verbatim, else the
  *       SYSDATE fallback fills the slot.
  *   <li><b>M1 parity</b> -- the PDF face renders from the same compiled document.
+ *   <li><b>capture-required-fields-drift</b> -- the party father's name and address are required in
+ *       the served form, reach the generated draft from the stored party record (not the capture
+ *       map), and a blank legacy party field fails generate and the id-bound preview with
+ *       field-level errors.
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -69,13 +80,20 @@ class AgreementDocumentFormatE2EIntegrationTest {
   private static final String PREVIEW = "/api/templates/document/preview";
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private TestRestTemplate rest;
+  @Autowired private JdbcTemplate jdbc;
+  @Autowired private BlobStore blobStore;
   private final ObjectMapper mapper = new ObjectMapper();
 
   /** A realistic Telangana working set (the aggregate-backed keys plus a few add-on fields). */
   private static Map<String, Object> telanganaData() {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("ownerName", "Asha Rao");
+    data.put("ownerFatherName", "Ravi Rao");
+    data.put("ownerAddress", "1 First Street, Hyderabad");
     data.put("tenantName", "Bhaskar Rao");
+    data.put("tenantFatherName", "Kiran Rao");
+    data.put("tenantAddress", "2 Second Street, Hyderabad");
     data.put("propertyAddress", "F1, Sri Sai Krishna Apartments, Kukatpally, Hyderabad");
     data.put("monthlyRent", "25000.00");
     data.put("securityDeposit", "100000.00");
@@ -99,6 +117,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
     return mockMvc
         .perform(
             post(PREVIEW)
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_HTML)
                 .content(previewBody(data, activeSections)))
@@ -106,6 +125,86 @@ class AgreementDocumentFormatE2EIntegrationTest {
         .andReturn()
         .getResponse()
         .getContentAsString();
+  }
+
+  // --- derived-tenancy-term: the API-level leg (tasks 5.6 / 5.7) -----------------------------
+  // These assert over the REAL production rental set, which reaches the HTTP surface only under
+  // the test+sandbox profiles this class activates (the catalog seeder plus the registry-backed
+  // LayerSource). The plain-profile integration tests resolve the FIXTURE set
+  // documents/template/examples/layers/, where durationMonths is still a required, bounded,
+  // user-sourced field -- so they can never witness the derived behaviour.
+
+  @Test
+  void formSchemaServesTheDerivedTermReadOnlyAndNotRequired() throws Exception {
+    String json =
+        mockMvc
+            .perform(get(FORM).param("state", "TG").param("type", "residential"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    JsonNode duration = null;
+    for (JsonNode section : mapper.readTree(json).get("sections")) {
+      for (JsonNode field : section.get("fields")) {
+        if ("durationMonths".equals(field.path("key").asText())) {
+          duration = field;
+        }
+      }
+    }
+
+    // Present (the client DISPLAYS it), read-only, and never required of the customer.
+    assertThat(duration).isNotNull();
+    assertThat(duration.path("readOnly").asBoolean()).isTrue();
+    assertThat(duration.path("required").asBoolean()).isFalse();
+    // No default: a default is what used to show 11 against a 24-month span.
+    assertThat(duration.hasNonNull("default")).isFalse();
+  }
+
+  @Test
+  void previewRendersTheTermDerivedFromTheDatesNotTheSubmittedDuration() throws Exception {
+    // The reported case, end to end over HTTP: a 24-month span submitted alongside a stale 11.
+    Map<String, Object> data = telanganaData();
+    data.put("startDate", "2026-01-08");
+    data.put("endDate", "2028-01-08");
+    data.put("durationMonths", 11);
+
+    String html = previewHtml(data, List.of());
+
+    assertThat(html).contains("term of 24 month(s)");
+    assertThat(html).doesNotContain("term of 11 month(s)");
+  }
+
+  @Test
+  void previewLeavesTheTermUnstatedRatherThanRenderingANegativeOne() throws Exception {
+    // A reversed range has no @EndAfterStart on the preview path, and durationMonths carries no
+    // `min` now that it is derived -- so without the guard this rendered "a term of -4 month(s)"
+    // into the document body.
+    Map<String, Object> data = telanganaData();
+    data.put("startDate", "2026-06-01");
+    data.put("endDate", "2026-01-01");
+    data.put("durationMonths", 11);
+
+    String html = previewHtml(data, List.of());
+
+    assertThat(html).doesNotContain("term of -4 month(s)");
+    assertThat(html).doesNotContain("term of 11 month(s)");
+  }
+
+  @Test
+  void previewStatesASubMonthTenancyAsZeroRatherThanAPlaceholder() throws Exception {
+    // A lawful 20-day tenancy is zero whole months. The term slot must carry a number, not the
+    // `[ Duration (months) ]` placeholder -- this document face is the one that gets signed.
+    Map<String, Object> data = telanganaData();
+    data.put("startDate", "2026-01-01");
+    data.put("endDate", "2026-01-20");
+    data.put("durationMonths", 11);
+
+    String html = previewHtml(data, List.of());
+
+    assertThat(html).contains("term of 0 month(s)");
+    assertThat(html).doesNotContain("[ Duration (months) ]");
+    assertThat(html).doesNotContain("term of 11 month(s)");
   }
 
   // --- M0 + M3 + M5: the capture form carries section semantics and drops document-only sections
@@ -270,6 +369,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(telanganaData(), List.of("Occupancy & Use"))))
@@ -300,6 +400,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     .content(previewBody(telanganaData(), List.of())))
@@ -319,8 +420,156 @@ class AgreementDocumentFormatE2EIntegrationTest {
     assertThat(text).doesNotContain("Place: ____");
   }
 
+  // --- capture-required-fields-drift: party father's name + address are required +
+  // aggregate-backed
+
+  // Distinct sentinels -- none is a substring of another or of the property address, so a match
+  // proves which source the recital took the value from.
+  private static final String OWNER_FATHER = "Zorawar Sentinelfather";
+  private static final String OWNER_ADDRESS = "77 Quillfeather Lane";
+  private static final String TENANT_FATHER = "Yashodhan Markerfather";
+  private static final String TENANT_ADDRESS = "88 Bramblewick Road";
+
+  @Test
+  void formSchemaMarksThePartyFatherNameAndAddressRequired() throws Exception {
+    String json =
+        mockMvc
+            .perform(get(FORM).param("state", "TG").param("type", "residential"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    JsonNode sections = mapper.readTree(json).get("sections");
+
+    assertThat(fieldRequired(section(sections, "Owner"), "ownerFatherName")).isTrue();
+    assertThat(fieldRequired(section(sections, "Owner"), "ownerAddress")).isTrue();
+    assertThat(fieldRequired(section(sections, "Tenant"), "tenantFatherName")).isTrue();
+    assertThat(fieldRequired(section(sections, "Tenant"), "tenantAddress")).isTrue();
+  }
+
+  @Test
+  void aNoCaptureAgreementGeneratesADraftCarryingThePartyDetailsFromItsSigners() throws Exception {
+    UUID id = createAgreement(null);
+
+    assertThat(generate(id).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    assertThat(draftText(id))
+        .contains(OWNER_FATHER)
+        .contains(OWNER_ADDRESS)
+        .contains(TENANT_FATHER)
+        .contains(TENANT_ADDRESS);
+  }
+
+  @Test
+  void aBlankLegacyPartyFieldFailsGenerateAndPreviewWithFieldErrorsAndNoEcho() throws Exception {
+    UUID id = createAgreement(null);
+    // The V7 backfill shape of a row persisted before structured party capture.
+    jdbc.update(
+        "UPDATE signer SET father_name = '', current_address = ''"
+            + " WHERE agreement_id = ? AND role = 'OWNER'",
+        id);
+
+    ResponseEntity<String> generated = generate(id);
+    assertThat(generated.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertRequiredOwnerPartyErrorsOnly(generated.getBody());
+
+    Map<String, Object> row =
+        jdbc.queryForMap(
+            "SELECT draft_pdf_key, template_content_hash, template_layer_versions,"
+                + " draft_execution_date FROM agreement WHERE id = ?",
+            id);
+    assertThat(row.values()).as("nothing stored or pinned").containsOnlyNulls();
+
+    ResponseEntity<String> preview =
+        rest.getForEntity("/api/agreements/{id}/preview", String.class, id);
+    assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertRequiredOwnerPartyErrorsOnly(preview.getBody());
+  }
+
+  @Test
+  void aCaptureMapCannotOverrideThePartyFatherNameFromTheSigner() throws Exception {
+    String mapValue = "Capturemap Overridefather";
+    UUID id = createAgreement(Map.of("ownerFatherName", mapValue));
+
+    assertThat(generate(id).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    assertThat(draftText(id)).contains(OWNER_FATHER).doesNotContain(mapValue);
+  }
+
+  private UUID createAgreement(Map<String, Object> captureData) throws Exception {
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("propertyAddress", "F1, Sri Sai Krishna Apartments, Kukatpally, Hyderabad");
+    body.put("monthlyRent", "16000.00");
+    body.put("securityDeposit", "32000.00");
+    body.put("startDate", "2026-07-01");
+    body.put("endDate", "2027-06-01");
+    body.put("state", "TG");
+    body.put("type", "residential");
+    body.put(
+        "signers",
+        List.of(
+            Map.of(
+                "firstName", "Bindu",
+                "lastName", "Kowthavarapu",
+                "fatherName", OWNER_FATHER,
+                "currentAddress", OWNER_ADDRESS,
+                "email", "owner@example.com",
+                "role", "OWNER"),
+            Map.of(
+                "firstName", "Venkata",
+                "lastName", "Padavala",
+                "fatherName", TENANT_FATHER,
+                "currentAddress", TENANT_ADDRESS,
+                "email", "tenant@example.com",
+                "role", "TENANT")));
+    if (captureData != null) {
+      body.put("captureData", captureData);
+    }
+    ResponseEntity<String> created = rest.postForEntity("/api/agreements", body, String.class);
+    assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    return UUID.fromString(mapper.readTree(created.getBody()).path("id").asText());
+  }
+
+  private ResponseEntity<String> generate(UUID id) {
+    return rest.postForEntity("/api/agreements/{id}/document", null, String.class, id);
+  }
+
+  /**
+   * The stored draft's text with whitespace runs collapsed (wrap points are layout, not content).
+   */
+  private String draftText(UUID id) throws IOException {
+    try (PDDocument document = Loader.loadPDF(blobStore.get("drafts/" + id + ".pdf"))) {
+      return new PDFTextStripper().getText(document).replaceAll("\\s+", " ");
+    }
+  }
+
+  private void assertRequiredOwnerPartyErrorsOnly(String body) throws Exception {
+    JsonNode errors = mapper.readTree(body).get("errors");
+    List<String> pairs = new ArrayList<>();
+    for (JsonNode e : errors) {
+      pairs.add(e.path("field").asText() + ":" + e.path("message").asText());
+    }
+    assertThat(pairs)
+        .containsExactlyInAnyOrder("ownerFatherName:required", "ownerAddress:required");
+    // Keys and rule tokens only -- never a party value.
+    assertThat(body)
+        .doesNotContain("Bindu")
+        .doesNotContain("Kowthavarapu")
+        .doesNotContain(TENANT_FATHER)
+        .doesNotContain(TENANT_ADDRESS);
+  }
+
   // --- helpers
   // ------------------------------------------------------------------------------------
+
+  private static boolean fieldRequired(JsonNode section, String key) {
+    for (JsonNode field : section.get("fields")) {
+      if (key.equals(field.path("key").asText())) {
+        return field.path("required").asBoolean();
+      }
+    }
+    throw new AssertionError("field not found in section: " + key);
+  }
 
   private static List<String> titles(JsonNode sections) {
     return java.util.stream.StreamSupport.stream(sections.spliterator(), false)
@@ -360,6 +609,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
         mockMvc
             .perform(
                 post(PREVIEW)
+                    .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_PDF)
                     // Enough content to run past one page, so the assertion covers a page whose

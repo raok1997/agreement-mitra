@@ -1,5 +1,6 @@
 package in.agreementmitra.signing;
 
+import in.agreementmitra.AgreementIds;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -27,4 +28,31 @@ import java.util.UUID;
  * @param confirmedAt when the confirmation was recorded
  */
 public record PaymentConfirmation(
-    UUID agreementId, BigDecimal amount, String currency, String reference, Instant confirmedAt) {}
+    UUID agreementId, BigDecimal amount, String currency, String reference, Instant confirmedAt) {
+
+  /** The agreement id redacted and the reference cut to its last four - never a usable value. */
+  @Override
+  public String toString() {
+    return "PaymentConfirmation{agreementId="
+        + AgreementIds.redact(agreementId)
+        + ", amount="
+        + amount
+        + ", currency="
+        + currency
+        + ", reference="
+        + lastFour(reference)
+        + ", confirmedAt="
+        + confirmedAt
+        + "}";
+  }
+
+  private static String lastFour(String value) {
+    if (value == null) {
+      return null;
+    }
+    if (value.length() <= 4) {
+      return "****";
+    }
+    return "****" + value.substring(value.length() - 4);
+  }
+}

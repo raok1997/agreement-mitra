@@ -4,7 +4,7 @@
 // with the total payable for it. The browser only chooses one of the offered options and, for an
 // option below the duty, acknowledges the warning. It never computes or sends an amount of its own.
 
-import { authHeader } from "./authStore";
+import { apiFetch } from "./http";
 
 const BASE = "/api";
 
@@ -13,6 +13,8 @@ export interface StampQuoteLine {
   label: string;
   /** A plain rupee decimal string from the server, e.g. "1300" or "0.4". */
   amount: string;
+  /** Whether the amount changes the running duty; set by the server, never inferred from kind. */
+  delta: boolean;
 }
 
 export interface StampQuoteOption {
@@ -57,9 +59,7 @@ export class StampQuoteHttpError extends Error {
 }
 
 export async function getStampQuote(agreementId: string): Promise<StampQuote> {
-  const res = await fetch(`${BASE}/agreements/${agreementId}/stamp-quote`, {
-    headers: { ...authHeader() },
-  });
+  const res = await apiFetch(`${BASE}/agreements/${agreementId}/stamp-quote`);
   if (!res.ok) throw new StampQuoteHttpError(res.status);
   return res.json();
 }

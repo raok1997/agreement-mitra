@@ -14,6 +14,8 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.signing.PaymentOrderQuery;
+import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SigningRequestQuery;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.CreateAgreementRequest;
@@ -47,6 +49,7 @@ class AgreementServiceTest {
   @Mock private AgreementRepository repository;
   @Mock private TemplateCatalogApi templateCatalog;
   @Mock private SigningRequestQuery signingRequestQuery;
+  @Mock private PaymentOrderQuery paymentOrderQuery;
 
   @InjectMocks private AgreementService service;
 
@@ -548,5 +551,72 @@ class AgreementServiceTest {
 
     // Three rows, one template: one lookup. A per-row call would be an N+1 against the catalog.
     verify(templateCatalog, times(1)).find(templateId.toString());
+  }
+
+  @Test
+  void namesOfSplitsByRoleInEntryPositionOrder() {
+    Agreement agreement =
+        Agreement.create(
+            "1 A St",
+            BigDecimal.TEN,
+            BigDecimal.ZERO,
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2026, 12, 1));
+    // Deliberately out of position order, as a list read in heap order would be.
+    List<Signer> signers =
+        List.of(
+            party(agreement, 3, "Tenant Two", Role.TENANT),
+            party(agreement, 1, "Owner Two", Role.OWNER),
+            party(agreement, 2, "Tenant One", Role.TENANT),
+            party(agreement, 0, "Owner One", Role.OWNER));
+
+    assertThat(AgreementService.namesOf(signers, Role.OWNER))
+        .containsExactly("Owner One", "Owner Two");
+    assertThat(AgreementService.namesOf(signers, Role.TENANT))
+        .containsExactly("Tenant One", "Tenant Two");
+  }
+
+  private static Signer party(Agreement agreement, int position, String name, Role role) {
+    return Signer.create(
+        agreement, position, name, name, "X", "Father", "1 A St", "a@example.com", "9", role);
+  }
+
+  // --- list summary: deletable -------------------------------------------------------------
+
+  private boolean deletableInList(Agreement agreement) {
+    UUID owner = UUID.randomUUID();
+    when(repository.findByOwnerIdentityIdOrderByLastEditedAtDescCreatedAtDescIdDesc(owner))
+        .thenReturn(List.of(agreement));
+    return service.listOwnedBy(owner).get(0).deletable();
+  }
+
+  @Test
+  void anUnpaidDraftWithNoOrderIsListedDeletable() {
+    Agreement agreement = anUnownedAgreement();
+    when(signingRequestQuery.currentStatusForAgreement(agreement.getId()))
+        .thenReturn(Optional.empty());
+    when(paymentOrderQuery.existsForAgreement(agreement.getId())).thenReturn(false);
+
+    assertThat(deletableInList(agreement)).isTrue();
+  }
+
+  @Test
+  void aDraftWithAPaymentOrderIsListedNotDeletable() {
+    Agreement agreement = anUnownedAgreement();
+    when(signingRequestQuery.currentStatusForAgreement(agreement.getId()))
+        .thenReturn(Optional.empty());
+    when(paymentOrderQuery.existsForAgreement(agreement.getId())).thenReturn(true);
+
+    assertThat(deletableInList(agreement)).isFalse();
+  }
+
+  @Test
+  void anInProgressAgreementIsNotDeletableAndNeverAsksForOrders() {
+    Agreement agreement = anUnownedAgreement();
+    when(signingRequestQuery.currentStatusForAgreement(agreement.getId()))
+        .thenReturn(Optional.of(SignatureStatus.SIGN_REQUESTED));
+
+    assertThat(deletableInList(agreement)).isFalse();
+    verifyNoInteractions(paymentOrderQuery);
   }
 }

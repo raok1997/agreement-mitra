@@ -73,12 +73,16 @@ extra["commons-lang3.version"] = "3.18.0"
 //                           databind, dataformat-*, datatype-*, module-*), not just the
 //                           flagged artifact — a split family is a runtime hazard OSV
 //                           would not flag.
+//                 2.21.5 → GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89 (core, 7.5),
+//                           GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54, GHSA-q4xh-88c3-wmh7
+//                           (databind, 7.5), GHSA-gx83-3vf8-gh7j (5.6), GHSA-wjgm-6hv5-3cvf
+//                           (5.3), fixed in 2.21.7 (2026-10-04).
 //   log4j2         2.24.3 → GHSA-qv9r-c865-cp47 (6.3), fixed in 2.25.5. Moves both
 //                           log4j-api and log4j-to-slf4j (only these two are on the graph;
 //                           log4j-core is not a dependency here).
 extra["tomcat.version"] = "10.1.59"
 extra["postgresql.version"] = "42.7.12"
-extra["jackson-bom.version"] = "2.21.5"
+extra["jackson-bom.version"] = "2.21.7"
 extra["log4j2.version"] = "2.25.5"
 
 dependencies {
@@ -107,6 +111,10 @@ dependencies {
     // spring.security.oauth2.client.registration.* props are set). A shipping dependency, so the
     // OSV/SpotBugs gate scopes it; version is Boot-BOM-managed.
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
+    // Size-capped, expiring storage for the abuse-control rate limiter
+    // (anonymous-surface-abuse-controls D3): `maximumSize` is the hard memory ceiling a hand-rolled
+    // map lacked. Boot-BOM managed; a shipping dependency, so the OSV gate scans it.
+    implementation("com.github.ben-manes.caffeine:caffeine")
     // Actuator: only `health` exposed (see application.yml management.*).
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
@@ -129,10 +137,11 @@ dependencies {
     // landed in 8.6.0). Not managed by Boot's BOM. Now on the SHIPPING classpath, so it is in the
     // OSV scan's shipping scope — kept at the fixed version.
     implementation("io.minio:minio:8.6.0")
-    // Force Bouncy Castle to the fixed 1.84 (minio 8.6.0 pulls vulnerable 1.81 —
-    // GHSA-c3fc-8qff-9hwx). A direct shipping dependency so the override applies to the shipped
+    // Force Bouncy Castle to the fixed 1.85 (minio 8.6.0 pulls vulnerable 1.81 —
+    // GHSA-c3fc-8qff-9hwx; 1.84 then carried GHSA-9pwp-9qqc-pr26 (9.3) and GHSA-qp49-qgx5-5m26
+    // (8.7), fixed in 1.85). A direct shipping dependency so the override applies to the shipped
     // graph, not just tests (remediated by upgrade per policy).
-    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
 
     // Outbound email (signed-delivery-and-closure CR): the ONE SMTP adapter behind the
     // vendor-neutral EmailSender seam - free Zoho Mail in development, Zoho ZeptoMail in

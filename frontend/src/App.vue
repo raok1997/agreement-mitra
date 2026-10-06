@@ -7,11 +7,14 @@ import TemplatePicker from "./components/TemplatePicker.vue";
 import AuthCallback from "./views/AuthCallback.vue";
 import LandingPage from "./views/LandingPage.vue";
 import TermsOfService from "./views/TermsOfService.vue";
+import PrivacyPolicy from "./views/PrivacyPolicy.vue";
+import RefundPolicy from "./views/RefundPolicy.vue";
+import ContactPage from "./views/ContactPage.vue";
 import StaffConsole from "./views/StaffConsole.vue";
 import AgreementStatus from "./views/AgreementStatus.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./views/linkCopy";
 import wordmark from "./assets/logo-wordmark.svg";
-import { auth, logout } from "./api/authStore";
+import { auth, init, isSignedIn, logout, whenReady } from "./api/authStore";
 import { googleStartUrl } from "./api/auth";
 import { getAgreement } from "./api/agreements";
 import type { AgreementView } from "./api/client";
@@ -37,11 +40,22 @@ const editError = ref<string | null>(null);
 //   "/terms"         -> the published terms of service, reachable without app chrome or a session
 //                       (the in-product disclaimer links here, and it must open for a reader who
 //                       has no account and is halfway through paying)
+//   "/privacy", "/refunds", "/contact"
+//                    -> the other policy pages, public and chrome-free like /terms
 //   "/auth/callback" -> the OAuth landing the backend 302s to, which exchanges the
 //                       handoff for a session and then drops the caller into the app
 // Anything else falls through to the app so deep links do not dead-end on the marketing page.
 type Route =
-  "landing" | "app" | "callback" | "staff" | "recover" | "openLink" | "terms";
+  | "landing"
+  | "app"
+  | "callback"
+  | "staff"
+  | "recover"
+  | "openLink"
+  | "terms"
+  | "privacy"
+  | "refunds"
+  | "contact";
 
 /** `/agreement/<uuid>` - the link emailed to the parties after payment. */
 const AGREEMENT_LINK =
@@ -51,6 +65,9 @@ function routeFor(pathname: string): Route {
   if (pathname === "/auth/callback") return "callback";
   if (pathname === "/staff") return "staff";
   if (pathname === "/terms") return "terms";
+  if (pathname === "/privacy") return "privacy";
+  if (pathname === "/refunds") return "refunds";
+  if (pathname === "/contact") return "contact";
   if (pathname === "/recover") return "recover";
   if (AGREEMENT_LINK.test(pathname)) return "openLink";
   if (pathname === "/" || pathname === "") return "landing";
@@ -91,6 +108,9 @@ function syncRoute(): void {
 let linkResolution = 0;
 onMounted(() => {
   window.addEventListener("popstate", syncRoute);
+  // The session is an HttpOnly cookie script cannot see, so "signed in" comes from /me. Children
+  // mounted first (the OAuth callback) may already have settled it; init() then skips /me.
+  void init();
   // A recovery link resolves on arrival: the customer clicked a link to their agreement, so it
   // should open, not present another step.
   if (route.value === "openLink") void openFromLink();
@@ -106,7 +126,12 @@ function navigate(path: string, mode: "push" | "replace" = "push"): void {
 // The landing page's CTAs all funnel here: enter the app at the template picker.
 function enterApp(): void {
   goToCreate();
-  navigate("/start");
+}
+
+// `mode` only picks a view inside the app route; from /staff (or any other route) the template
+// never reaches it, so a mode switch must also bring the address bar back to the app.
+function ensureAppRoute(): void {
+  if (route.value !== "app") navigate("/start");
 }
 
 function onSelect(dimensions: { state: string; type: string }): void {
@@ -121,10 +146,10 @@ function leaveCallback(): void {
   // started from inside the app.
   navigate("/start", "replace");
 }
-// The terms are reached from a link on whatever screen the reader was on, so "Back" means back --
-// the browser's own history, which is the only thing that knows where they came from. A directly
-// opened /terms has nowhere to return to, so it falls through to the marketing page.
-function leaveTerms(): void {
+// The policy pages are reached from a link on whatever screen the reader was on, so "Back" means
+// back -- the browser's own history, which is the only thing that knows where they came from. A
+// directly opened policy page has nowhere to return to, so it falls through to the marketing page.
+function leaveLegalPage(): void {
   if (window.history.length > 1) window.history.back();
   else navigate("/", "replace");
 }
@@ -132,26 +157,39 @@ function signIn(): void {
   // Full navigation: the backend redirects to Google, then back to /auth/callback.
   window.location.href = googleStartUrl();
 }
-function signOut(): void {
-  void logout();
+// Only the server can expire the HttpOnly cookie, so a failed logout must not look like success:
+// on a shared browser the next person would reload straight into this account.
+const signOutError = ref<string | null>(null);
+async function signOut(): Promise<void> {
+  signOutError.value = null;
+  try {
+    await logout();
+  } catch {
+    signOutError.value = "We couldn't sign you out — try again.";
+    return;
+  }
   goToCreate();
 }
 
-// Guard (D8): the authenticated views require a session; without one, send the user to login.
-function showMyAgreements(): void {
-  if (!auth.session) {
+// Guard (D8): the authenticated views require a session; without one, send the user to login. The
+// decision waits for the boot /me so a reload never bounces a signed-in user to Google.
+async function showMyAgreements(): Promise<void> {
+  await whenReady();
+  if (!isSignedIn.value) {
     signIn();
     return;
   }
   editTarget.value = null;
   editError.value = null;
   mode.value = "list";
+  ensureAppRoute();
 }
 
 function goToCreate(): void {
   mode.value = "create";
   selection.value = null;
   editTarget.value = null;
+  ensureAppRoute();
 }
 
 // --- recovery link landing ---------------------------------------------------------------------
@@ -197,20 +235,22 @@ async function openFromLink(): Promise<void> {
     // A claimed agreement and an unknown one look identical from here by design (the server returns
     // the same 404 so ownership cannot be probed), so the message has to cover both without
     // asserting either.
-    linkNeedsSignIn.value = !auth.session;
+    await whenReady();
+    if (resolution !== linkResolution) return;
+    linkNeedsSignIn.value = !isSignedIn.value;
     linkError.value = LINK_UNAVAILABLE_MESSAGE;
   }
 }
 
 /** From the link page: the signed-in customer's list, via the app route. */
 function openMyAgreementsFromLink(): void {
-  navigate("/start");
-  showMyAgreements();
+  void showMyAgreements();
 }
 
 // From the list: load the chosen agreement and reopen it in the capture form (edit mode).
 async function openForEdit(id: string): Promise<void> {
-  if (!auth.session) {
+  await whenReady();
+  if (!isSignedIn.value) {
     signIn();
     return;
   }
@@ -226,7 +266,7 @@ async function openForEdit(id: string): Promise<void> {
 
 function onSavedToAccount(): void {
   // A fresh agreement was just claimed, or an edit saved -- return to the list to see it.
-  showMyAgreements();
+  void showMyAgreements();
 }
 </script>
 
@@ -241,7 +281,7 @@ function onSavedToAccount(): void {
         <img :src="wordmark" alt="AgreementMitra" class="h-8" />
       </button>
       <button
-        v-if="auth.session"
+        v-if="isSignedIn"
         type="button"
         class="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
         data-testid="link-my-agreements"
@@ -273,7 +313,10 @@ function onSavedToAccount(): void {
   </section>
   <!-- The terms of service. Like the landing page it is public and chrome-free: it is linked from
        the in-product disclaimer, and a reader following that link is not necessarily signed in. -->
-  <TermsOfService v-else-if="route === 'terms'" @back="leaveTerms" />
+  <TermsOfService v-else-if="route === 'terms'" @back="leaveLegalPage" />
+  <PrivacyPolicy v-else-if="route === 'privacy'" @back="leaveLegalPage" />
+  <RefundPolicy v-else-if="route === 'refunds'" @back="leaveLegalPage" />
+  <ContactPage v-else-if="route === 'contact'" @back="leaveLegalPage" />
   <!-- "/" is the public marketing page: full-bleed, no app chrome, no API calls. -->
   <LandingPage v-else-if="route === 'landing'" @start="enterApp" />
 
@@ -291,7 +334,11 @@ function onSavedToAccount(): void {
           <span class="hidden text-sm text-ink-500 sm:inline"
             >Rental agreements made simple</span
           >
-          <span v-if="auth.session" class="flex items-center gap-2 text-sm">
+          <!-- No account controls until /me answers: no "Sign in" flash for a signed-in reload. -->
+          <span
+            v-if="auth.ready && isSignedIn"
+            class="flex items-center gap-2 text-sm"
+          >
             <button
               type="button"
               class="rounded border border-ink-200 px-2 py-1 text-ink-700 hover:bg-ink-50"
@@ -319,12 +366,19 @@ function onSavedToAccount(): void {
             >
               Sign out
             </button>
+            <span
+              v-if="signOutError"
+              class="text-red-600"
+              role="alert"
+              data-testid="sign-out-error"
+              >{{ signOutError }}</span
+            >
           </span>
           <!-- For the customer who paid, closed the tab, and has no account to sign in to. Sits
                beside sign-in because that is where someone looks when they want to get back to
                something. -->
           <button
-            v-if="!auth.session"
+            v-if="auth.ready && !isSignedIn"
             type="button"
             class="text-sm text-ink-700 underline"
             @click="navigate('/recover')"
@@ -332,7 +386,7 @@ function onSavedToAccount(): void {
             Find my agreement
           </button>
           <button
-            v-if="!auth.session"
+            v-if="auth.ready && !isSignedIn"
             type="button"
             class="rounded border border-ink-200 px-2 py-1 text-sm text-ink-700 hover:bg-ink-50"
             @click="signIn"
@@ -351,7 +405,14 @@ function onSavedToAccount(): void {
       v-else-if="route === 'staff'"
       class="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4"
     >
-      <StaffConsole v-if="isStaff" />
+      <p
+        v-if="!auth.ready"
+        class="py-8 text-sm text-ink-600"
+        data-testid="staff-loading"
+      >
+        Loading...
+      </p>
+      <StaffConsole v-else-if="isStaff" />
       <p v-else class="py-8 text-sm text-ink-600" data-testid="staff-forbidden">
         This console is for AgreementMitra staff.
       </p>

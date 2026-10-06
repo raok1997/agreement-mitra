@@ -11,7 +11,8 @@
 // the point of listing the work: it removes the transcription step entirely rather than relying on
 // the reference's check character to catch a slip.
 
-import { authHeader } from "./authStore";
+import { apiFetch } from "./http";
+import { problemTypeOf } from "./problems";
 
 const BASE = "/api";
 
@@ -115,26 +116,16 @@ export class StaffQueueHttpError extends Error {
     this.name = "StaffQueueHttpError";
   }
 
-  /** Whether the refusal was the payment gate rather than anything about the certificate. */
-  get paymentRequired(): boolean {
-    return !!this.problemType?.endsWith("payment-required");
-  }
-}
-
-/** Read the problem `type` from an RFC 9457 body, or null when the body is not that shape. */
-async function problemTypeOf(res: Response): Promise<string | null> {
-  try {
-    const body = await res.json();
-    return typeof body?.type === "string" ? body.type : null;
-  } catch {
-    return null;
+  /** The one way to build this error from a refusal: it always carries the problem type. */
+  static async from(res: Response): Promise<StaffQueueHttpError> {
+    return new this(res.status, await problemTypeOf(res));
   }
 }
 
 /** Orders awaiting a stamp, longest-waiting first. 401/403 for anyone without the STAFF role. */
 export async function listStampQueue(): Promise<StampQueueEntry[]> {
-  const res = await fetch(QUEUE, { headers: { ...authHeader() } });
-  if (!res.ok) throw new StaffQueueHttpError(res.status);
+  const res = await apiFetch(QUEUE);
+  if (!res.ok) throw await StaffQueueHttpError.from(res);
   return res.json();
 }
 
@@ -164,13 +155,12 @@ export async function uploadStampForEntry(
     form.append("initiateSigning", "true");
   }
   // No Content-Type header: the browser must set the multipart boundary itself.
-  const res = await fetch(INTAKE, {
+  const res = await apiFetch(INTAKE, {
     method: "POST",
-    headers: { ...authHeader() },
     body: form,
   });
   if (!res.ok) {
-    throw new StaffQueueHttpError(res.status, await problemTypeOf(res));
+    throw await StaffQueueHttpError.from(res);
   }
   return res.json();
 }

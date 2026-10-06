@@ -1,7 +1,10 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.ClientSourceResolver;
+import in.agreementmitra.SecurityEvents;
 import in.agreementmitra.signing.WebhookHeaders;
 import in.agreementmitra.signing.signingrequest.SigningRequestService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -32,16 +35,31 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/webhooks/esign")
 public class WebhookController {
 
-  private final SigningRequestService signingRequestService;
+  /** The route verification-failure events carry: this mapping, never a URI. */
+  private static final String ROUTE = "/api/webhooks/esign";
 
-  public WebhookController(SigningRequestService signingRequestService) {
+  private final SigningRequestService signingRequestService;
+  private final ClientSourceResolver sources;
+  private final SecurityEvents securityEvents;
+
+  public WebhookController(
+      SigningRequestService signingRequestService,
+      ClientSourceResolver sources,
+      SecurityEvents securityEvents) {
     this.signingRequestService = signingRequestService;
+    this.sources = sources;
+    this.securityEvents = securityEvents;
   }
 
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<Void> onSigningEvent(
-      @RequestBody String payload, @RequestHeader Map<String, String> headers) {
+      @RequestBody String payload,
+      @RequestHeader Map<String, String> headers,
+      HttpServletRequest request) {
     if (!signingRequestService.handleWebhook(payload, WebhookHeaders.of(headers))) {
+      // Redacted source + route pattern only; never the payload (anonymous-surface-abuse-controls
+      // D8).
+      securityEvents.webhookVerificationFailed(ROUTE, sources.resolve(request));
       return ResponseEntity.status(401).build();
     }
     return ResponseEntity.accepted().build();

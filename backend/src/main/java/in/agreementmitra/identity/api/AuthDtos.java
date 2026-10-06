@@ -3,7 +3,7 @@ package in.agreementmitra.identity.api;
 /**
  * Request/response records for the auth endpoints. Grouped in one file since each is a tiny DTO of
  * the identity module's public {@code api} surface. No secret or token ever appears here: the
- * session value is returned once on exchange, and the summary carries only display fields.
+ * session value travels only in the HttpOnly cookie, and the summary carries only display fields.
  */
 public final class AuthDtos {
 
@@ -21,7 +21,8 @@ public final class AuthDtos {
   public record MeResponse(String identityId, String displayName, String email, String role) {}
 
   /**
-   * Response of a successful exchange: the session value (returned once) plus the caller's summary.
+   * Response of a successful exchange: the caller's summary only. The session value is set as the
+   * HttpOnly cookie and never appears in a body.
    */
-  public record SessionResponse(String session, MeResponse me) {}
+  public record SessionResponse(MeResponse me) {}
 }

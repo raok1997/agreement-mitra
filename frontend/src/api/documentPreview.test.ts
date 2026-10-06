@@ -4,6 +4,12 @@ import {
   fetchDocumentPreviewPdf,
 } from "./documentPreview";
 
+// A CSRF cookie is present, so unsafe calls insert no bootstrap GET into the fetch sequence.
+vi.mock("./cookies", () => ({
+  readCookie: (name: string) =>
+    name === "__Host-XSRF-TOKEN" ? "csrf-token" : null,
+}));
+
 const URL = "/api/templates/document/preview";
 
 describe("document-preview api client", () => {

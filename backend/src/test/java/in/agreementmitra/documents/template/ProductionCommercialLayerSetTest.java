@@ -26,8 +26,8 @@ import org.junit.jupiter.api.Test;
  * with an explicit no-residential covenant, CAM, GST); (4) the Telangana overlay applies last
  * (statutory section, TG law/stamp clauses in, the generic national stamp clause out, Hyderabad
  * jurisdiction default); and (5) the PARITY CONTRACT holds -- a generate projection fed ONLY the
- * eight aggregate-backed field keys validates + compiles without a missing-required error, with the
- * same keys the residential base uses (relabelled for commercial).
+ * twelve aggregate-backed field keys validates + compiles without a missing-required error, with
+ * the same keys the residential base uses (relabelled for commercial).
  */
 class ProductionCommercialLayerSetTest {
 
@@ -80,17 +80,31 @@ class ProductionCommercialLayerSetTest {
   private static Map<String, Object> aggregateBackedData() {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("ownerName", "Acme Estates Pvt Ltd");
+    data.put("ownerFatherName", "Ravi Signatory");
+    data.put("ownerAddress", "1 Lessor Road, Hyderabad");
     data.put("tenantName", "Bright Software LLP");
+    data.put("tenantFatherName", "Kiran Signatory");
+    data.put("tenantAddress", "2 Lessee Road, Hyderabad");
     data.put("propertyAddress", "Unit 4, HITEC City, Hyderabad");
     data.put("monthlyRent", new BigDecimal("150000.00"));
     data.put("securityDeposit", new BigDecimal("900000.00"));
     // durationMonths is DERIVED -- see the matching note in ProductionRentalLayerSetTest. Left here
-    // disagreeing with the dates (they span 35 whole months, one day short of 36) so a regression
-    // that lets a submitted term reach the document renders "36 month(s)" instead of "35".
-    data.put("durationMonths", 36);
+    // disagreeing with the dates (they span 36 whole months, end date inclusive; 35 was the old
+    // end-exclusive count) so a regression to either renders "35 month(s)" instead of "36".
+    data.put("durationMonths", 35);
     data.put("startDate", "2026-09-01");
     data.put("endDate", "2029-08-31");
     return data;
+  }
+
+  @Test
+  void theBaseLayerPinsItsAuthoredVersion() {
+    // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
+    // different deeds must never report one authored version. v3 is the bump that made the party
+    // father's-name / address keys required. Pinned explicitly because every other assertion in
+    // this suite reads the version dynamically, which would let a revert through silently.
+    assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
+        .isEqualTo(3);
   }
 
   @Test
@@ -104,7 +118,7 @@ class ProductionCommercialLayerSetTest {
             .compile(
                 eff, SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.GENERATE));
 
-    assertThat(html).contains("a term of 35 month(s)").doesNotContain("a term of 36 month(s)");
+    assertThat(html).contains("a term of 36 month(s)").doesNotContain("a term of 35 month(s)");
   }
 
   @Test
@@ -112,11 +126,15 @@ class ProductionCommercialLayerSetTest {
     EffectiveTemplate eff = resolve("IN", "commercial");
 
     assertThat(sectionTitles(eff)).isEqualTo(BASE_SECTIONS);
-    // The parity contract: the same eight aggregate-backed keys the mapper supplies are declared.
+    // The parity contract: the same twelve aggregate-backed keys the mapper supplies are declared.
     assertThat(fieldKeys(eff))
         .contains(
             "ownerName",
+            "ownerFatherName",
+            "ownerAddress",
             "tenantName",
+            "tenantFatherName",
+            "tenantAddress",
             "propertyAddress",
             "monthlyRent",
             "securityDeposit",
@@ -135,14 +153,18 @@ class ProductionCommercialLayerSetTest {
 
   @Test
   void everyRequiredFieldIsAggregateBackedOrDefaultedSoGenerateParityHolds() {
-    // The parity contract: at generate the aggregate supplies only these eight keys; every OTHER
+    // The parity contract: at generate the aggregate supplies only these twelve keys; every OTHER
     // required field must carry a default (e.g. permittedUse, pinned required by type-commercial
     // but
     // defaulted to commercial), so a generated draft never trips a missing-required error.
     Set<String> aggregateKeys =
         Set.of(
             "ownerName",
+            "ownerFatherName",
+            "ownerAddress",
             "tenantName",
+            "tenantFatherName",
+            "tenantAddress",
             "propertyAddress",
             "monthlyRent",
             "securityDeposit",

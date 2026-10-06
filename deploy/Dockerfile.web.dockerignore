@@ -1,0 +1,17 @@
+# BuildKit per-Dockerfile ignore for deploy/Dockerfile.web, whose context is the
+# REPOSITORY ROOT. An allowlist: nothing reaches the context unless re-included
+# here, so keys, certs, .git, backend/ and deploy/env/*.env never do.
+*
+!frontend/
+!deploy/Caddyfile
+!deploy/env/web-build.env
+
+# The image runs `npm ci`: a host node_modules would be the wrong platform's
+# binaries and could overwrite the install. Local env files and build output
+# never go in either -- web-build.env is the one input.
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend/coverage
+frontend/.env*
+frontend/*.log

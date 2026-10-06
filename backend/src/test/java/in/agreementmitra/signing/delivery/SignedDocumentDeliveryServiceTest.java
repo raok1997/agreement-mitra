@@ -4,13 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import in.agreementmitra.AgreementIds;
+import in.agreementmitra.OperatingEntity;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.DeliveryArtifact;
+import in.agreementmitra.signing.DeliveryStatus;
 import in.agreementmitra.signing.EmailDeliveryException;
 import in.agreementmitra.signing.EmailMessage;
 import in.agreementmitra.signing.EmailSender;
@@ -20,12 +25,14 @@ import in.agreementmitra.signing.SigningCompletionView;
 import in.agreementmitra.signing.SigningRequestQuery;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.mail.AttachmentCeiling;
+import in.agreementmitra.support.LogCapture;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -54,6 +61,9 @@ class SignedDocumentDeliveryServiceTest {
 
   private static final String PDF_KEY = "signed/req.pdf";
   private static final byte[] SIGNED_PDF = "PDFBYTES".getBytes();
+
+  @RegisterExtension
+  final LogCapture logs = LogCapture.of(SignedDocumentDeliveryService.class, Level.INFO);
 
   @Mock private SigningRequestQuery signingRequestQuery;
   @Mock private AgreementService agreementService;
@@ -86,7 +96,8 @@ class SignedDocumentDeliveryServiceTest {
         blobStore,
         emailSender,
         attachmentCeiling,
-        properties);
+        properties,
+        new OperatingEntity(null, null));
   }
 
   private SigningCompletionView signedView(String invitedEmail, InviteeStatus inviteeStatus) {
@@ -288,6 +299,7 @@ class SignedDocumentDeliveryServiceTest {
   @Test
   void terminalSigningFailuresCloseAsAbandonedWithTheirOwnReason() {
     when(signingRequestQuery.completionViewFor("DOC")).thenReturn(java.util.Optional.empty());
+    when(agreementService.close(any(), any())).thenReturn(true);
 
     service()
         .fulfil(
@@ -312,6 +324,34 @@ class SignedDocumentDeliveryServiceTest {
 
     // ...and no email is sent for a signing that never produced a signed agreement.
     verify(emailSender, never()).send(any());
+
+    // The INFO closure line names the agreement only by its redacted id.
+    assertClosureLineRedacted("closed as abandoned");
+  }
+
+  @Test
+  void anAgreementDeliveredToEveryPartyClosesAsCompletedAndLogsOnlyTheRedactedId() {
+    SignedDocumentDelivery sent = mock(SignedDocumentDelivery.class);
+    when(sent.status()).thenReturn(DeliveryStatus.SENT);
+    when(persistence.exists(any(), any(), any())).thenReturn(true);
+    when(persistence.forSigningRequest(requestId)).thenReturn(List.of(sent));
+    when(agreementService.close(agreementId, ClosureReason.COMPLETED)).thenReturn(true);
+
+    service().fulfil(signedView("asha@example.com", InviteeStatus.SIGNED));
+
+    verify(agreementService).close(agreementId, ClosureReason.COMPLETED);
+    assertClosureLineRedacted("closed as completed");
+  }
+
+  private void assertClosureLineRedacted(String fragment) {
+    assertThat(logs.messages())
+        .filteredOn(m -> m.contains(fragment))
+        .isNotEmpty()
+        .allSatisfy(
+            m ->
+                assertThat(m)
+                    .contains(AgreementIds.redact(agreementId))
+                    .doesNotContain(agreementId.toString()));
   }
 
   @Test

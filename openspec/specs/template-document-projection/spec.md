@@ -297,18 +297,18 @@ SHALL NOT be treated as template-content-hash input (the effective-template iden
 ### Requirement: A commercial lease product line resolves from its own layer set
 
 The system SHALL serve a **Commercial Lease Agreement** product line at the dimensions `(state, type)
-= (IN, commercial)` and `(TG, commercial)`, resolved from a layer set separate from the residential
-one. The commercial base SHALL declare its own document header -- title `Commercial Lease Agreement`,
-its own subtitle, and its own execution line -- because the effective definition takes `meta` verbatim
-from the base and no patch operation edits `meta`; reusing the residential base would title a
-commercial document "Residential Tenancy".
+= (IN, commercial)`, `(TG, commercial)` and `(KA, commercial)`, resolved from a layer set separate
+from the residential one. The commercial base SHALL declare its own document header -- title
+`Commercial Lease Agreement`, its own subtitle, and its own execution line -- because the effective
+definition takes `meta` verbatim from the base and no patch operation edits `meta`; reusing the
+residential base would title a commercial document "Residential Tenancy".
 
 The commercial set SHALL carry commercial party roles (Lessor / Lessee, mapped onto the same
 aggregate name keys the residential set uses) and commercial-specific fields and clauses, and SHALL
-NOT carry the residential-only fields (BHK, furnishing, pets, occupants). The Telangana layers SHALL
-apply over the composed commercial structure along the engine's fixed precedence chain
-(`base -> type -> state -> state_type`), so `state-TG` layers over the base and type layer and
-`state_type-TG-commercial` applies above it -- exactly as for residential.
+NOT carry the residential-only fields (BHK, furnishing, pets, occupants). The Telangana and Karnataka
+layers SHALL apply over the composed commercial structure along the engine's fixed precedence chain
+(`base -> type -> state -> state_type`), so `state-TG` or `state-KA` layers over the base and type
+layer and the matching `state_type-<XX>-commercial` applies above it -- exactly as for residential.
 
 This SHALL require no engine change: the existing resolver, compiler, catalog, and projection API
 SHALL serve the new dimensions from added classpath content alone. The catalog SHALL remain the
@@ -327,6 +327,20 @@ dimension-validation authority -- an unpublished or unknown dimension SHALL `404
   `registrationChargesBorneBy`) and defaults `jurisdictionCity` to `Hyderabad`
 - **AND** the `Statutory (Telangana)` section is ordered after the covenant and annexure sections and
   before the `In Witness Whereof` execution block
+
+#### Scenario: Karnataka overlays the commercial structure
+
+- **WHEN** the `(KA, commercial)` template resolves
+- **THEN** the effective template carries the Karnataka fields (`stampDutyAmount`,
+  `registrationChargesBorneBy`) and defaults `jurisdictionCity` to `Bengaluru`
+- **AND** the `Statutory (Karnataka)` section is ordered after the covenant and annexure sections and
+  before the `In Witness Whereof` execution block
+
+#### Scenario: Karnataka is served as a commercial dimension
+
+- **WHEN** the commercial catalog is listed
+- **THEN** `(KA, commercial)` is present as a published dimension
+- **AND** it resolves from the shared commercial layer set, not a Karnataka-specific base
 
 #### Scenario: The execution block renders for the commercial line too
 
@@ -470,4 +484,88 @@ Specifically:
   generated PDF
 - **THEN** both show the same signature zone composition, so what a customer approves is
   what is sent for signature
+
+### Requirement: The Karnataka commercial statutory overlay is mandatory
+
+The Karnataka layers over the commercial set SHALL contribute a statutory section that always renders
+-- in the live preview and in every generated Karnataka commercial draft -- with no user action.
+
+This deliberately differs from the Telangana commercial overlay, which is opt-in. The Karnataka
+`state_type` layer supersedes and removes the national stamp-and-registration clause, so an opt-in
+Karnataka section would leave a default Karnataka commercial deed with no stamp or registration
+clause at all. The same reasoning already made the Telangana *residential* overlay mandatory; the
+Karnataka commercial set SHALL NOT repeat the defect the Telangana commercial set still carries.
+
+The overlay SHALL state the law governing the lease in Karnataka, the stamping and registration
+obligation before the jurisdictional Sub-Registrar, and who bears those charges; and the stamp duty
+amount SHALL remain system-sourced, filled from the attached certificate at stamp intake rather than
+typed by the customer.
+
+#### Scenario: The commercial statutory overlay renders without being added
+
+- **WHEN** a Karnataka commercial agreement is previewed with no optional sections active
+- **THEN** the Karnataka statutory section renders
+- **AND** exactly one stamp-and-registration clause renders, being the Karnataka clause
+
+#### Scenario: The commercial jurisdiction covenant names a court
+
+- **WHEN** a Karnataka commercial draft is generated without the optional dispute-resolution section
+- **THEN** the exclusive-jurisdiction covenant names the Karnataka default city
+
+### Requirement: The tenancy term is derived from the submitted dates on every render path
+
+The system SHALL compute the tenancy term in whole months from the submitted start and end dates and
+SHALL substitute that computed value for `durationMonths` in the data map it compiles, discarding any
+`durationMonths` present in the submitted data. This SHALL apply on **every** render path -- the
+stateless preview and the generated draft alike -- so that a preview and the document later signed
+state the same term.
+
+The term SHALL be the number of **complete** months between the start date and the end date, measured
+inclusive of the end date (the end date is the tenancy's last day, so 1 Sep to 31 Jul is eleven
+months), with a trailing partial month truncated. This is the same whole-month count
+the `agreement-management` capability requires the server to derive, so a rendered document and the
+agreement record can never report different terms.
+
+When either date is absent or unusable, the system SHALL leave `durationMonths` unset rather than
+substitute a guessed or defaulted term, and the document SHALL render the same way it renders any
+other unfilled field. A date whose year lies outside the representable range SHALL be treated as
+unusable rather than raising an error, so the submitted-data validator reports the date fault itself.
+
+The system SHALL likewise leave `durationMonths` unset when the computed term is **not positive** --
+a reversed range yields a negative count and an end date inside the start month yields zero, and
+neither is a term a deed can state. `durationMonths` carries no `validation: { min: 1 }` once it is
+derived (input bounds do not belong on a computed value), so nothing downstream would otherwise
+reject it and the document body would read "a term of -4 month(s)".
+
+This requirement is the data-map counterpart to single-compiler parity: parity of the compiler
+guarantees one renderer for a *given* data map, and this guarantees the preview path and the generate
+path present the *same* map for the term.
+
+#### Scenario: A non-positive term is left unstated
+
+- **WHEN** a preview is requested with a start date of 2026-06-01 and an end date of 2026-01-01
+- **THEN** `durationMonths` is left unset and the document does not state a negative term
+
+#### Scenario: A submitted duration that disagrees with the dates is discarded
+
+- **WHEN** a preview is requested with a start date of 2026-01-08, an end date of 2028-01-08, and a
+  submitted `durationMonths` of 11
+- **THEN** the rendered document states a term of 24 months, not 11
+
+#### Scenario: Preview and generated draft state the same term
+
+- **GIVEN** the same effective template, dates, and captured data
+- **WHEN** the document is rendered once through the stateless preview and once through the generated
+  draft
+- **THEN** both state the same term in months
+
+#### Scenario: A trailing partial month is truncated
+
+- **WHEN** a document is rendered for a tenancy from 2026-01-01 to 2026-12-01
+- **THEN** it states a term of 11 months
+
+#### Scenario: A missing date leaves the term unfilled
+
+- **WHEN** a preview is requested with a start date but no end date
+- **THEN** the rendered document does not state a term computed from a defaulted or guessed date
 

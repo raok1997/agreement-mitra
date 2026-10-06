@@ -15,14 +15,17 @@ import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.DocumentStatusView;
 import in.agreementmitra.signing.EsignProvider;
 import in.agreementmitra.signing.SignSession;
+import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SignedDocument;
 import in.agreementmitra.signing.WebhookHeaders;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.agreement.JurisdictionEligibility;
 import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.agreement.StampInfo;
+import in.agreementmitra.signing.api.AgreementDisplayStatus;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.AgreementResponse.SignerResponse;
+import in.agreementmitra.signing.api.FinaliseResponse;
 import in.agreementmitra.signing.api.SigningRequestResponse;
 import in.agreementmitra.signing.payment.PaymentGate;
 import java.math.BigDecimal;
@@ -492,5 +495,41 @@ class SigningRequestServiceTest {
 
     verify(blobStore, never()).put(any(), any(), any());
     verify(persistence, never()).storeArtifactKeys(any(), any(), any());
+  }
+
+  // --- finalise owner gate (draft-attach-owner-gate, design D2) ---
+
+  @Test
+  void aNonOwnersFinaliseIsNotFoundBeforeAnyOtherCheckOrWrite() {
+    UUID agreementId = UUID.randomUUID();
+    UUID stranger = UUID.randomUUID();
+    when(agreementService.findByIdForReader(agreementId, stranger)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service().finalise(agreementId, stranger))
+        .isInstanceOf(ResourceNotFoundException.class);
+
+    verify(agreementService, never()).requireOpen(any());
+    verify(agreementService, never()).draftPdfKey(any());
+    verify(jurisdiction, never()).require(any());
+    verify(persistence, never()).placeOrder(any());
+  }
+
+  @Test
+  void theOwnersFinalisePlacesTheOrderAndReturnsTheReferenceAndStatus() {
+    UUID agreementId = UUID.randomUUID();
+    UUID owner = UUID.randomUUID();
+    AgreementResponse agreement = agreementWithTwoSigners(agreementId);
+    when(agreementService.findByIdForReader(agreementId, owner)).thenReturn(Optional.of(agreement));
+    stubDraft(agreementId);
+    when(persistence.currentStatus(agreementId))
+        .thenReturn(Optional.of(SignatureStatus.PDF_GENERATED));
+
+    FinaliseResponse response = service().finalise(agreementId, owner);
+
+    verify(persistence).placeOrder(agreementId);
+    assertThat(response.agreementId()).isEqualTo(agreementId);
+    assertThat(response.trackingReference()).isEqualTo(agreement.trackingNumber());
+    assertThat(response.status())
+        .isEqualTo(AgreementDisplayStatus.from(Optional.of(SignatureStatus.PDF_GENERATED)).name());
   }
 }

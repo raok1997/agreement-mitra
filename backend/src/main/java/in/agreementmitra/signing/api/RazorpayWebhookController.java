@@ -1,6 +1,9 @@
 package in.agreementmitra.signing.api;
 
+import in.agreementmitra.ClientSourceResolver;
+import in.agreementmitra.SecurityEvents;
 import in.agreementmitra.signing.payment.RazorpayWebhookService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -38,17 +41,31 @@ public class RazorpayWebhookController {
   /** The header Razorpay presents its body signature in. */
   private static final String SIGNATURE_HEADER = "X-Razorpay-Signature";
 
-  private final RazorpayWebhookService webhookService;
+  /** The route verification-failure events carry: this mapping, never a URI. */
+  private static final String ROUTE = "/api/webhooks/razorpay";
 
-  public RazorpayWebhookController(RazorpayWebhookService webhookService) {
+  private final RazorpayWebhookService webhookService;
+  private final ClientSourceResolver sources;
+  private final SecurityEvents securityEvents;
+
+  public RazorpayWebhookController(
+      RazorpayWebhookService webhookService,
+      ClientSourceResolver sources,
+      SecurityEvents securityEvents) {
     this.webhookService = webhookService;
+    this.sources = sources;
+    this.securityEvents = securityEvents;
   }
 
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<Void> onPaymentEvent(
       @RequestBody String payload,
-      @RequestHeader(value = SIGNATURE_HEADER, required = false) String signature) {
+      @RequestHeader(value = SIGNATURE_HEADER, required = false) String signature,
+      HttpServletRequest request) {
     if (!webhookService.handle(payload, signature)) {
+      // Redacted source + route pattern only; never the payload (anonymous-surface-abuse-controls
+      // D8).
+      securityEvents.webhookVerificationFailed(ROUTE, sources.resolve(request));
       return ResponseEntity.status(401).build();
     }
     return ResponseEntity.accepted().build();

@@ -21,7 +21,8 @@ import org.springframework.http.ResponseEntity;
 /**
  * Unit test for the generate-as-draft orchestration -- no Spring context, no I/O. Proves the
  * controller renders first, then hands the rendered bytes to the existing draft-store path, then
- * pins the rendered template's identity, and returns the agreement id.
+ * pins the rendered template's identity, and returns the agreement id. The caller's identity is
+ * passed to every step, each of which re-checks the owner.
  */
 class AgreementControllerTest {
 
@@ -51,13 +52,14 @@ class AgreementControllerTest {
   @Test
   void generateDocumentRendersStoresThenPinsAndReturnsId() {
     UUID id = UUID.randomUUID();
+    UUID caller = UUID.randomUUID();
     byte[] pdf = "%PDF-1.4 rendered".getBytes(StandardCharsets.UTF_8);
     EffectiveTemplateIdentity identity =
         new EffectiveTemplateIdentity("tmpl-1", "sha256:abc123", Map.of("base", 3));
-    when(documentService.renderForDraft(id))
+    when(documentService.renderForDraft(id, caller))
         .thenReturn(new DocumentProjectionResult(pdf, identity, "2026-09-10"));
 
-    ResponseEntity<Map<String, UUID>> resp = controller.generateDocument(id);
+    ResponseEntity<Map<String, UUID>> resp = controller.generateDocument(id, caller);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(resp.getBody()).containsEntry("agreementId", id);
@@ -66,9 +68,9 @@ class AgreementControllerTest {
     // the draft printed), strictly in that
     // order.
     InOrder ordered = inOrder(documentService, draftService);
-    ordered.verify(documentService).renderForDraft(id);
-    ordered.verify(draftService).attachDraft(id, pdf);
-    ordered.verify(documentService).pinEffectiveTemplate(id, identity, "2026-09-10");
+    ordered.verify(documentService).renderForDraft(id, caller);
+    ordered.verify(draftService).attachDraft(id, caller, pdf);
+    ordered.verify(documentService).pinEffectiveTemplate(id, caller, identity, "2026-09-10");
     ordered.verifyNoMoreInteractions();
   }
 }

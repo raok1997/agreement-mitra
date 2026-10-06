@@ -17,6 +17,8 @@ import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.Payments;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
 import in.agreementmitra.support.TestImages;
 import in.agreementmitra.support.TestPdfs;
@@ -103,6 +105,7 @@ class ZoopSigningIntegrationTest {
   }
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private org.springframework.context.ApplicationContext context;
   @Autowired private JdbcTemplate jdbc;
 
   /**
@@ -235,7 +238,7 @@ class ZoopSigningIntegrationTest {
     form.add("jurisdiction", "KA");
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     assertThat(
             rest.exchange(
                     "/api/staff/estamp",
@@ -297,8 +300,7 @@ class ZoopSigningIntegrationTest {
   }
 
   private UUID requestSigning(UUID agreementId, String groupId) {
-    ResponseEntity<String> resp =
-        rest.postForEntity("/api/signing/" + agreementId + "/request", null, String.class);
+    ResponseEntity<String> resp = SigningRequests.post(rest, context, agreementId);
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     return UUID.fromString(
         jdbc.queryForObject(
@@ -503,7 +505,7 @@ class ZoopSigningIntegrationTest {
         post(urlEqualTo("/contract/esign/v5/send-esign-invitation")).willReturn(okJson("{}")));
 
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(staffToken);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     assertThat(
             rest.exchange(
                     "/api/staff/signing/" + agreementId + "/extend",

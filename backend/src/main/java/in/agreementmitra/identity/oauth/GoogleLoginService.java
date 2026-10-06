@@ -18,11 +18,13 @@ import org.springframework.web.util.UriComponentsBuilder;
  * never sees a Google token. Java-{@code public} so the {@code api} controller (a sibling package)
  * can inject it; still Modulith-internal.
  *
- * <p>{@link #start()} mints a single-use {@code state} + PKCE pair, persists them hashed, and
- * returns the Google authorization URL to 302 to. {@link #handleCallback(String, String)}
- * atomically consumes the state, exchanges the code, fully validates the ID token, find-or-creates
- * the identity, and mints a single-use handoff -- returning only the handoff (never a token, never
- * the session). No token, code, {@code state}, verifier, or unredacted email is ever logged.
+ * <p>{@link #start()} mints a single-use {@code state} + PKCE pair and a login-binding nonce,
+ * persists them hashed, and returns the Google authorization URL to 302 to plus the nonce for the
+ * browser's login cookie. {@link #handleCallback(String, String, String)} atomically consumes the
+ * state only for the browser holding that nonce, exchanges the code, fully validates the ID token,
+ * find-or-creates the identity, and mints a single-use handoff bound to the same nonce -- returning
+ * only the handoff (never a token, never the session). No token, code, {@code state}, verifier,
+ * nonce, or unredacted email is ever logged.
  */
 @Service
 public class GoogleLoginService {
@@ -60,9 +62,11 @@ public class GoogleLoginService {
   }
 
   /**
-   * Begin a login: persist a single-use login state (random {@code state} + PKCE verifier, stored
-   * only as hashes / a short-lived secret) and return the Google authorization URL. The raw {@code
-   * state} is embedded in the URL for Google to echo back; only its hash is stored.
+   * Begin a login: persist a single-use login state (random {@code state} + PKCE verifier +
+   * login-binding nonce, stored only as hashes / a short-lived secret) and return the Google
+   * authorization URL with the raw nonce. The raw {@code state} is embedded in the URL for Google
+   * to echo back; the raw nonce goes only into the browser's HttpOnly login cookie. Only hashes of
+   * both are stored.
    */
   @Transactional
   public StartRedirect start() {
@@ -71,14 +75,20 @@ public class GoogleLoginService {
     String state = secretTokens.newToken();
     String codeVerifier = secretTokens.newToken();
     String codeChallenge = secretTokens.pkceChallenge(codeVerifier);
+    String bindingNonce = secretTokens.newToken();
 
     loginStates.save(
         OauthLoginState.create(
             hasher.hash(state),
             codeVerifier,
             google.redirectUri(),
-            Instant.now().plus(properties.loginStateTtl())));
+            Instant.now().plus(properties.loginStateTtl()),
+            hasher.hash(bindingNonce)));
 
+    // No response_mode: Google's default (query) makes its redirect a cross-site top-level GET,
+    // which carries the SameSite=Lax login-binding cookie. form_post would be a cross-site POST
+    // that
+    // carries no Lax cookie, and every callback would then fail the binding check.
     String authorizationUri =
         UriComponentsBuilder.fromUriString(google.authorizationUri())
             .queryParam("response_type", "code")
@@ -89,31 +99,40 @@ public class GoogleLoginService {
             .queryParam("code_challenge", codeChallenge)
             .queryParam("code_challenge_method", "S256")
             .queryParam("access_type", "online")
+            // Always show Google's account chooser. Signing out ends OUR session, not the
+            // browser's Google session, so without this the next "Sign in with Google" on a shared
+            // computer silently re-enters the previous person's account.
+            .queryParam("prompt", "select_account")
             .build()
             .encode()
             .toUriString();
 
     log.debug("Login started; redirecting to Google authorization endpoint");
-    return new StartRedirect(authorizationUri);
+    return new StartRedirect(authorizationUri, bindingNonce);
   }
 
   /**
    * Complete the callback: verify the {@code state} against an unconsumed, unexpired login state
-   * (consumed atomically), exchange the {@code code} for tokens, validate the ID token, find-or-
-   * create the identity, and mint a single-use handoff. Throws {@link InvalidLoginException} on any
-   * failure -- materializing no handoff or session -- with no detail leaked.
+   * bound to this browser's login-binding nonce (consumed atomically), exchange the {@code code}
+   * for tokens, validate the ID token, find-or-create the identity, and mint a single-use handoff
+   * bound to the same nonce. Throws {@link InvalidLoginException} on any failure -- materializing
+   * no handoff or session -- with no detail leaked.
    */
   @Transactional
-  public HandoffIssued handleCallback(String code, String state) {
+  public HandoffIssued handleCallback(String code, String state, String bindingNonce) {
     requireConfigured(properties.google());
-    if (code == null || code.isBlank() || state == null || state.isBlank()) {
+    if (isBlank(code) || isBlank(state)) {
       throw new InvalidLoginException("callback missing code or state");
+    }
+    if (isBlank(bindingNonce)) {
+      throw new InvalidLoginException("login binding missing");
     }
     Instant now = Instant.now();
     String stateHash = hasher.hash(state);
-    if (loginStates.consume(stateHash, now) != 1) {
-      // Unknown, already consumed, or expired -- indistinguishable to the caller.
-      throw new InvalidLoginException("unknown, reused, or expired login state");
+    if (loginStates.consume(stateHash, hasher.hash(bindingNonce), now) != 1) {
+      // Unknown, already consumed, expired, or another browser's -- indistinguishable to the
+      // caller.
+      throw new InvalidLoginException("unknown, reused, expired, or unbound login state");
     }
     OauthLoginState loginState =
         loginStates
@@ -127,10 +146,12 @@ public class GoogleLoginService {
         identityService.findOrCreate(
             GOOGLE_PROVIDER, google.subject(), google.email(), true, google.name());
 
-    String handoff = handoffService.issue(identityId);
+    // The consume above proved hash(bindingNonce) equals the state row's binding, so the same raw
+    // nonce binds the handoff to the same browser (D3).
+    String handoff = handoffService.issue(identityId, bindingNonce);
 
     log.debug("Login callback completed; handoff minted for identity {}", identityId);
-    return new HandoffIssued(handoff, properties.google().spaCallbackUri());
+    return new HandoffIssued(handoff);
   }
 
   /**
@@ -148,11 +169,23 @@ public class GoogleLoginService {
     return s == null || s.isBlank();
   }
 
-  /** The Google authorization URL to 302 the browser to. */
-  public record StartRedirect(String authorizationUri) {}
-
   /**
-   * The one-time handoff to carry in the SPA redirect, and the SPA callback route to send it to.
+   * The Google authorization URL to 302 the browser to, and the raw login-binding nonce for the
+   * browser's HttpOnly login cookie. {@code toString()} omits both the nonce and the URL (which
+   * carries the raw {@code state}), so logging the record can never leak either.
    */
-  public record HandoffIssued(String handoff, String spaCallbackUri) {}
+  public record StartRedirect(String authorizationUri, String bindingNonce) {
+    @Override
+    public String toString() {
+      return "StartRedirect{}";
+    }
+  }
+
+  /** The one-time handoff to carry in the SPA redirect. {@code toString()} omits it. */
+  public record HandoffIssued(String handoff) {
+    @Override
+    public String toString() {
+      return "HandoffIssued{}";
+    }
+  }
 }

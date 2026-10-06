@@ -9,7 +9,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
@@ -17,6 +16,10 @@ import org.springframework.security.web.authentication.DelegatingAuthenticationE
 import org.springframework.security.web.authentication.Http403ForbiddenEntryPoint;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
@@ -26,8 +29,13 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  *
  * <p>The webhook is permitted here because the aggregator cannot present credentials - its real
  * authorization is the body-MAC (HMAC-SHA1) verification in the signing service, which runs before
- * any side effect. The signing create-request route is permitted but unauthenticated; ownership
- * authorization + rate-limiting on it are deferred to a follow-up change.
+ * any side effect. The signing create-request route is STAFF-only: signing starts server-side once
+ * the e-stamp is attached, so the route is a staff retry hatch rather than a customer path.
+ *
+ * <p><b>Rate limits</b> (anonymous-surface-abuse-controls): {@link CrossSiteRequestGuard} and then
+ * {@link RouteRateLimitFilter} run in this chain after {@code CsrfFilter}, refusing browser-marked
+ * cross-site requests uncounted and then classifying every route; the request-body ceiling runs as
+ * a servlet filter ahead of the chain.
  *
  * <p><b>Role-based authorization</b> (manual-estamp-upload CR): the staff surface under {@code
  * /api/staff/} requires the STAFF role, evaluated <em>here</em> - in the filter chain, BEFORE any
@@ -42,6 +50,16 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * DelegatingAuthenticationEntryPoint} returns <b>401</b> for an unauthenticated caller on {@code
  * /api/staff/**} only, and every other path keeps the pre-existing 403 behaviour byte-for-byte. An
  * authenticated caller lacking the role still gets 403 from the access-denied handler on any path.
+ *
+ * <p><b>CSRF</b> (cookie-session-auth CR). The session is an HttpOnly cookie the browser attaches
+ * automatically, so CSRF protection is ON for every unsafe method, anonymous or authenticated: a
+ * double-submit token ({@code __Host-XSRF-TOKEN} cookie echoed as {@code X-XSRF-TOKEN}), read from
+ * the header only and issued eagerly on any response. The token repository is identity's (it owns
+ * both browser-session cookies). Exactly two routes are exempt -- the HMAC-authenticated webhooks,
+ * matched by method and exact path. CSRF verification runs before authentication and authorization,
+ * so an unsafe request with no valid token gets the CSRF 403 ({@code
+ * urn:agreementmitra:problem:csrf}) before any 401 or role 403 is decided. There is deliberately no
+ * property, profile, or alternate chain that disables it -- tests supply tokens instead.
  */
 @Configuration
 class SecurityConfig {
@@ -92,19 +110,52 @@ class SecurityConfig {
 
   @Bean
   SecurityFilterChain securityFilterChain(
-      HttpSecurity http, ObjectProvider<SessionAuthenticationFilter> sessionAuthenticationFilter)
+      HttpSecurity http,
+      ObjectProvider<SessionAuthenticationFilter> sessionAuthenticationFilter,
+      ObjectProvider<CsrfTokenRepository> csrfTokenRepository,
+      ObjectProvider<CrossSiteRequestGuard> crossSiteRequestGuard,
+      ObjectProvider<RouteRateLimitFilter> routeRateLimitFilter)
       throws Exception {
-    http.csrf(AbstractHttpConfigurer::disable)
+    http.csrf(
+            c ->
+                c.csrfTokenRepository(
+                        csrfTokenRepository.getIfAvailable(SecurityConfig::fallbackCsrfRepository))
+                    .csrfTokenRequestHandler(new HeaderOnlyCsrfTokenRequestHandler())
+                    // Server-to-server webhooks carry no browser cookie and are authorized by
+                    // their own HMAC/key before any side effect. Exact method + path only: the
+                    // SPA-called payment callback and any near path stay protected.
+                    .ignoringRequestMatchers(
+                        PathPatternRequestMatcher.withDefaults()
+                            .matcher(HttpMethod.POST, "/api/webhooks/esign"),
+                        PathPatternRequestMatcher.withDefaults()
+                            .matcher(HttpMethod.POST, "/api/webhooks/razorpay")))
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .exceptionHandling(e -> e.authenticationEntryPoint(authenticationEntryPoint()));
-    // Opaque-session authentication (google-oauth-login CR): populates the SecurityContext from an
-    // `Authorization: Bearer` session value before authorization runs. Strictly additive -- a no-op
+        .exceptionHandling(
+            e ->
+                e.authenticationEntryPoint(authenticationEntryPoint())
+                    .accessDeniedHandler(new CsrfAwareAccessDeniedHandler()));
+    // Opaque-session authentication (google-oauth-login CR): populates the SecurityContext from the
+    // HttpOnly session cookie before authorization runs (cookie-session-auth: the cookie is the
+    // only transport; an Authorization header is ignored). Strictly additive -- a no-op
     // when no valid session is presented, so the deny-by-default posture is unchanged for every
     // existing route. Injected via ObjectProvider so a web slice / module slice that does NOT load
     // the identity module still builds this chain (the filter is simply absent there); the full
     // application context always has it.
     sessionAuthenticationFilter.ifAvailable(
         filter -> http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class));
+    // Route-class rate limits (anonymous-surface-abuse-controls D4): AFTER CsrfFilter, so a request
+    // refused for CSRF costs its source nothing, and BEFORE the session filter above, so a flood of
+    // junk session cookies is bounded before the lookup reaches Postgres.
+    // A request the browser marks cross-site is refused first and never counted, so a hostile page
+    // cannot spend a visitor's budget with embedded GETs (CSRF tokens guard only unsafe methods).
+    crossSiteRequestGuard.ifAvailable(guard -> http.addFilterAfter(guard, CsrfFilter.class));
+    routeRateLimitFilter.ifAvailable(
+        filter ->
+            http.addFilterAfter(
+                filter,
+                crossSiteRequestGuard.getIfAvailable() != null
+                    ? CrossSiteRequestGuard.class
+                    : CsrfFilter.class));
     return http.authorizeHttpRequests(
             auth ->
                 // Permit the error dispatch path. Spring Security 6 re-authorizes the internal
@@ -117,13 +168,14 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health")
                     .permitAll()
-                    // Aggregator can't bearer-auth; authorized at the app layer by the active
+                    // Aggregator can't present a session; authorized at the app layer by the active
                     // provider adapter - a body MAC over the document id (Leegality) or a
                     // per-transaction key in the `webhook-security-key` header (ZOOP v5) - which
                     // runs before any side effect.
                     .requestMatchers(HttpMethod.POST, "/api/webhooks/esign")
                     .permitAll()
-                    // Payment gateway can't bearer-auth either (razorpay-payment CR). Its real
+                    // Payment gateway can't present a session either (razorpay-payment CR). Its
+                    // real
                     // authorization is the HMAC-SHA256 signature over the RAW body, keyed by the
                     // WEBHOOK secret (never the API key secret), verified before any side effect.
                     // Rejected requests change nothing and a verified one is acknowledged
@@ -177,10 +229,11 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, DELIVERY_RESEND_PATH)
                     .hasRole(STAFF_ROLE)
                     // Exact create-request path only - NOT /api/signing/** - so future signing
-                    // sub-paths are denied by default. This route is unauthenticated today;
-                    // ownership authorization + rate-limiting are deferred to a follow-up change.
+                    // sub-paths are denied by default. STAFF-only (anonymous-surface-abuse-controls
+                    // D7): signing is initiated server-side once the e-stamp is attached, so this
+                    // is a staff retry hatch, not a customer path. CSRF still applies.
                     .requestMatchers(HttpMethod.POST, "/api/signing/*/request")
-                    .permitAll()
+                    .hasRole(STAFF_ROLE)
                     // Per-party signing progress (zoop-aadhaar-esign CR). Permitted here and
                     // owner-scoped in the handler, exactly like GET /api/agreements/* - the chain
                     // cannot see the row's owner, and a STAFF caller must also be able to read it.
@@ -200,9 +253,13 @@ class SecurityConfig {
                     .authenticated()
                     .requestMatchers(HttpMethod.PUT, "/api/agreements/*")
                     .authenticated()
+                    .requestMatchers(HttpMethod.DELETE, "/api/agreements/*")
+                    .authenticated()
                     // Sandbox agreement surface - scoped to the exact create + read-by-id paths
-                    // (NOT /api/agreements/**) so future sub-paths stay denied by default. These
-                    // are unauthenticated today; TEMPORARY - tighten when an auth mechanism lands.
+                    // (NOT /api/agreements/**) so future sub-paths stay denied by default.
+                    // Create is anonymous by design; the read is owner-scoped in the HANDLER (an
+                    // unclaimed agreement answers any id holder, a claimed one only its owner,
+                    // with the same 404 for "not yours" as for "unknown").
                     .requestMatchers(HttpMethod.POST, "/api/agreements")
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*")
@@ -222,21 +279,20 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, SIGNED_DOCUMENT_PATH)
                     .permitAll()
                     // Document preview (CR-3b) - scoped to the exact sub-path (NOT
-                    // /api/agreements/**). Anonymous like the rest of the agreement/draft surface;
-                    // TEMPORARY - tighten (ownership) when an auth mechanism lands. Renders on
-                    // demand and stores nothing.
+                    // /api/agreements/**). Permitted here and owner-scoped in the HANDLER, exactly
+                    // like GET /api/agreements/* (no-oracle 404, checked before any render).
+                    // Renders on demand and stores nothing.
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/preview")
                     .permitAll()
                     // Generate-as-draft (CR-3c) - render + store as the signable draft. Scoped to
-                    // the exact sub-path. Anonymous like the rest of the agreement/draft surface;
-                    // TEMPORARY - tighten (ownership) when an auth mechanism lands. Overwrite until
+                    // the exact sub-path. Permitted here and owner-scoped in the HANDLER, exactly
+                    // like GET /api/agreements/* (no-oracle 404, before the 409). Overwrite until
                     // signing, then locked (409) by the shared draft freeze rule.
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/document")
                     .permitAll()
                     // Finalise (place the order) - the end of the customer's involvement. Scoped to
-                    // the exact sub-path. Anonymous like the rest of the drafting surface;
-                    // TEMPORARY - tighten with them when ownership authorization lands, and move
-                    // behind payment confirmation when the payment gate arrives.
+                    // the exact sub-path. Permitted here and owner-scoped in the HANDLER, exactly
+                    // like GET /api/agreements/* (no-oracle 404, before any 409).
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/finalise")
                     .permitAll()
                     // Customer payment surface (razorpay-payment CR). Permitted here and
@@ -255,7 +311,8 @@ class SecurityConfig {
                     .permitAll()
                     // Pre-payment contact confirmation (post-payment-continuity CR, design D16).
                     // Anonymous like the rest of this surface and scoped to the exact sub-path. The
-                    // route accepts CONTACTS ONLY and refuses an owned or frozen agreement, so it
+                    // route accepts CONTACTS ONLY, serves an unowned agreement or its own owner,
+                    // and refuses a paid or closed one, so it
                     // is strictly weaker than PUT /api/agreements/* (which stays authenticated):
                     // a caller holding the id can redirect their own agreement's notifications,
                     // which the id already entitles them to, but cannot touch rent, dates, or the
@@ -275,8 +332,9 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/agreements/*/stamp-quote")
                     .permitAll()
                     // Draft upload - scoped to the exact sub-path (NOT /api/agreements/**) so the
-                    // posture stays fail-closed. Unauthenticated today; ownership authorization +
-                    // rate-limiting on upload/overwrite are deferred to the signing-auth change.
+                    // posture stays fail-closed. Permitted here and owner-scoped in the HANDLER,
+                    // like GET /api/agreements/* (no-oracle 404, before the not-a-PDF 400 and the
+                    // 409); rate limited as a capability write.
                     .requestMatchers(HttpMethod.POST, "/api/agreements/*/draft")
                     .permitAll()
                     // Form-projection schema (template-form-projection) - a public read of
@@ -292,8 +350,9 @@ class SecurityConfig {
                     // (NOT
                     // /api/templates/**) so the posture stays fail-closed. Anonymous like the rest
                     // of
-                    // the render surface; server-side schema validation caps the render, and
-                    // per-caller rate-limiting is an owed companion before this leaves sandbox.
+                    // the render surface; server-side schema validation caps the render, the
+                    // render route class bounds it per source, and render admission control
+                    // refuses rather than queues when every slot is busy.
                     .requestMatchers(HttpMethod.POST, "/api/templates/document/preview")
                     .permitAll()
                     // Template catalog (template-catalog) -- public reads of system-owned
@@ -323,18 +382,39 @@ class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/session/exchange")
                     .permitAll()
-                    // Identity surface behind a live session: the session-authentication filter
-                    // above sets the principal from a valid Bearer value; without one these are
-                    // denied. Exact paths only.
-                    .requestMatchers(HttpMethod.GET, "/api/auth/me")
-                    .authenticated()
+                    // CSRF bootstrap (cookie-session-auth): 204, no body; the eager CSRF handler
+                    // sets the token cookie. Side-effect-free.
+                    .requestMatchers(HttpMethod.GET, "/api/auth/csrf")
+                    .permitAll()
+                    // Logout is reachable without a live session so a stale HttpOnly cookie can
+                    // still be cleared (JS cannot). It stays CSRF-protected, so it cannot be used
+                    // for forced logout.
                     .requestMatchers(HttpMethod.POST, "/api/auth/logout")
+                    .permitAll()
+                    // Identity surface behind a live session: the session-authentication filter
+                    // above sets the principal from a valid session cookie; without one this is
+                    // denied. Exact path only.
+                    .requestMatchers(HttpMethod.GET, "/api/auth/me")
                     .authenticated()
                     .anyRequest()
                     .denyAll())
         // Keep Spring Security's default hardening response headers (nosniff, no-cache, etc.).
         .headers(Customizer.withDefaults())
         .build();
+  }
+
+  /**
+   * Used only when the identity module is absent (module slices), which have no session to protect.
+   * MUST match identity's {@code AuthWebConfig.csrfTokenRepository} bean in secure mode and the
+   * test {@code CsrfTestInterceptor}'s cookie name, so a slice that POSTs behaves like the full
+   * app.
+   */
+  private static CsrfTokenRepository fallbackCsrfRepository() {
+    CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+    repository.setCookieName("__Host-XSRF-TOKEN");
+    repository.setHeaderName("X-XSRF-TOKEN");
+    repository.setCookieCustomizer(cookie -> cookie.secure(true).sameSite("Lax").path("/"));
+    return repository;
   }
 
   /**

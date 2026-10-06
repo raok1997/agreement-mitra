@@ -3,6 +3,7 @@ package in.agreementmitra.documents.template;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.DocumentFooterProperties;
 import in.agreementmitra.documents.HtmlPdfRenderer;
+import in.agreementmitra.documents.RenderPriority;
 import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionApi;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
@@ -132,6 +133,14 @@ class DocumentProjectionService implements DocumentProjectionApi {
   @Override
   public DocumentProjectionResult generate(
       DocumentProjectionRequest request, Map<String, Object> systemValues) {
+    return generate(request, systemValues, RenderPriority.STANDARD);
+  }
+
+  @Override
+  public DocumentProjectionResult generate(
+      DocumentProjectionRequest request,
+      Map<String, Object> systemValues,
+      RenderPriority priority) {
     EffectiveTemplate effective = resolve(request.dimensions());
     // The tracking number (request.documentReference) + platform URL render as the screen-only body
     // provenance line (for the on-screen preview) AND as the per-page PDF footer furniture. Both
@@ -153,7 +162,7 @@ class DocumentProjectionService implements DocumentProjectionApi {
             reference,
             platformUrl,
             screenNotice);
-    byte[] pdf = htmlPdfRenderer.toPdf(html, reference);
+    byte[] pdf = htmlPdfRenderer.toPdf(html, reference, priority);
     return new DocumentProjectionResult(pdf, identityOf(effective), executionDate);
   }
 
@@ -261,7 +270,21 @@ class DocumentProjectionService implements DocumentProjectionApi {
       data.remove(field.key());
       if (DURATION_MONTHS.equals(field.key())) {
         Long months = TermMonths.between(data.get("startDate"), data.get("endDate"));
-        if (months != null) {
+        // A NEGATIVE term is not substituted: a reversed range is not a term a deed can state, and
+        // `durationMonths` no longer carries the `validation: { min: 1 }` that used to reject it as
+        // a typed input, so without this the document body compiled "a term of -4 month(s)".
+        //
+        // ZERO is substituted, deliberately. A lawful sub-month tenancy (say 1 to 20 January) is
+        // zero WHOLE months, and it is creatable -- @EndAfterStart only requires end > start. If
+        // the
+        // key were left unset the compiler would render the `[ Duration (months) ]` placeholder
+        // into
+        // the generated draft, i.e. a form artifact inside the instrument that then gets stamped
+        // and
+        // eSigned. "0 month(s)" is the long-standing behaviour and is merely imprecise; a bracketed
+        // placeholder in an executed deed is worse. What a sub-month deed SHOULD state is a product
+        // and drafting question, tracked as `sub-month-tenancy-term-wording` in the register.
+        if (months != null && months >= 0) {
           data.put(field.key(), months);
         }
       }

@@ -7,9 +7,7 @@ manually from the SHCIL portal, printed, and scanned. Covers the upload contract
 certificate metadata recorded against the agreement, the single-use certificate ledger that
 prevents one stamp being spent twice, and the deterministic reference staff use to find the
 right agreement.
-
 ## Requirements
-
 ### Requirement: Staff upload a purchased e-stamp certificate against an agreement
 
 The system SHALL expose an endpoint that accepts a **scanned e-stamp certificate image**
@@ -305,7 +303,10 @@ party detail and no vendor payload.
 ### Requirement: Stamp intake is audited without leaking certificate contents
 
 Every intake attempt - accepted or rejected - SHALL be recorded with the acting staff
-identity, the target agreement, the outcome, and the time.
+identity, the target agreement, the submitted reference, the outcome, and the time. When the
+target agreement is later deleted by its owner (an unpaid draft only), the record SHALL be kept
+with its target agreement cleared; the submitted reference, outcome, staff identity and time
+SHALL be unchanged.
 
 The scan bytes SHALL be written to object storage only; they SHALL NOT be stored in
 PostgreSQL and SHALL NOT be written to logs. The certificate number SHALL be **redacted** in
@@ -318,6 +319,13 @@ echo any submitted metadata value verbatim, and error bodies SHALL NOT echo subm
 - **WHEN** a stamp upload succeeds or is rejected
 - **THEN** an audit record captures the acting staff identity, target agreement, outcome, and
   timestamp
+
+#### Scenario: An intake audit record outlives a deleted draft
+
+- **GIVEN** a refused intake attempt recorded against an unpaid draft
+- **WHEN** the draft's owner deletes the draft
+- **THEN** the audit record still exists with the same submitted reference, outcome, staff
+  identity and time, and no target agreement
 
 #### Scenario: No certificate contents or PII in logs
 
@@ -456,3 +464,30 @@ The pre-stamp draft SHALL remain stored unchanged.
 - **AND** no blob is written, no stamp info is persisted, and the certificate number is not recorded as used
 - **AND** the signing request remains `PDF_GENERATED` and the agreement remains open
 - **AND** a later retry with the same certificate succeeds once the renderer is available
+
+### Requirement: Staff enter the certificate issue date in day-month-year order
+
+The staff console SHALL collect the stamp certificate's issue date in **`dd/mm/yyyy`** order,
+identically on every operating system, browser, and regional setting, with the same entry behaviour
+and validation as the capture surface's date fields.
+
+The console SHALL NOT allow an upload while the issue date is empty or invalid, and SHALL submit a
+valid issue date in ISO `yyyy-mm-dd` form, unchanged from today.
+
+#### Scenario: Issue date reads day-first on a month-first host
+
+- **GIVEN** a staff machine whose regional settings use month-first date order
+- **WHEN** the console shows an issue date of 8 January 2026
+- **THEN** the field shows `08/01/2026`
+
+#### Scenario: An invalid issue date blocks the upload
+
+- **WHEN** a staff member enters `31/02/2026` as the issue date
+- **THEN** an error is shown against the issue date
+- **AND** the upload cannot be submitted
+
+#### Scenario: A valid issue date is submitted as ISO
+
+- **WHEN** a staff member enters `08/01/2026` as the issue date and uploads
+- **THEN** the upload carries the issue date `2026-01-08`
+

@@ -16,11 +16,16 @@ interface LoginHandoffRepository extends JpaRepository<LoginHandoff, UUID> {
   /**
    * Atomically consume a handoff: mark it consumed only if currently unconsumed and unexpired.
    * Returns {@code 1} when this caller won the single-use race, {@code 0} when the handoff was
-   * unknown, already exchanged, or expired -- so a reused or expired handoff mints no session.
+   * unknown, already exchanged, expired, or bound to another browser -- so none of those mints a
+   * session. A row with a null binding hash never matches (login-browser-binding D2).
    */
   @Modifying
   @Query(
       "update LoginHandoff h set h.consumedAt = :now "
-          + "where h.handoffHash = :handoffHash and h.consumedAt is null and h.expiresAt > :now")
-  int consume(@Param("handoffHash") String handoffHash, @Param("now") Instant now);
+          + "where h.handoffHash = :handoffHash and h.browserBindingHash = :bindingHash "
+          + "and h.consumedAt is null and h.expiresAt > :now")
+  int consume(
+      @Param("handoffHash") String handoffHash,
+      @Param("bindingHash") String bindingHash,
+      @Param("now") Instant now);
 }

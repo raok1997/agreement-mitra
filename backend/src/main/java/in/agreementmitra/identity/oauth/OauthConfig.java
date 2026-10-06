@@ -1,6 +1,8 @@
 package in.agreementmitra.identity.oauth;
 
 import in.agreementmitra.identity.AuthProperties;
+import java.net.URI;
+import java.net.URISyntaxException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -9,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.web.client.RestTemplate;
 
 /**
  * Wires the identity module's OAuth configuration: enables {@link AuthProperties} and builds the
@@ -39,10 +42,47 @@ class OauthConfig {
               + "it. The app runs normally without them (login is optional); the handshake fails "
               + "closed until they are configured.");
     }
+    warnIfCallbackHostsDiffer(google);
     // Signature validation against Google's JWKS; issuer/audience/expiry are enforced in code by
     // GoogleTokenValidator so they stay unit-testable with a stubbed decoder. Building the decoder
     // needs only the JWKS URI, not the client credentials.
-    return NimbusJwtDecoder.withJwkSetUri(google.jwksUri()).build();
+    // The JWKS fetch runs inside the callback transaction, so it gets the same bounded timeouts as
+    // the token POST (GoogleHttp).
+    return NimbusJwtDecoder.withJwkSetUri(google.jwksUri())
+        .restOperations(new RestTemplate(GoogleHttp.requestFactory()))
+        .build();
+  }
+
+  /**
+   * The login-binding cookie is host-only (login-browser-binding D1), so the Google callback and
+   * the SPA route that runs the exchange must share a host -- otherwise every login ends on the
+   * SPA's error screen with only a DEBUG trace. A WARN, not a refusal: login is optional and must
+   * never block startup.
+   */
+  static boolean warnIfCallbackHostsDiffer(AuthProperties.Google google) {
+    String callbackHost = hostOf(google.redirectUri());
+    String spaHost = hostOf(google.spaCallbackUri());
+    if (callbackHost == null || spaHost == null || callbackHost.equalsIgnoreCase(spaHost)) {
+      return false;
+    }
+    log.warn(
+        "Google login will fail: the OAuth callback host ({}) differs from the SPA callback host "
+            + "({}), and the host-only login-binding cookie cannot reach both. Serve them on one "
+            + "host.",
+        callbackHost,
+        spaHost);
+    return true;
+  }
+
+  private static String hostOf(String uri) {
+    if (isBlank(uri)) {
+      return null;
+    }
+    try {
+      return new URI(uri.trim()).getHost();
+    } catch (URISyntaxException e) {
+      return null;
+    }
   }
 
   private static boolean isBlank(String s) {
