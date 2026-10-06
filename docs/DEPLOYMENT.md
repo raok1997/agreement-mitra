@@ -720,24 +720,30 @@ Host agreementmitra-vps
   IdentityFile ~/.ssh/id_ed25519
 ```
 
-Postgres and the MinIO console are not published. Reach them by tunnel:
+Postgres and the MinIO console are not published -- compose maps no port to the
+host, so `ssh -L <port>:localhost:<port>` reaches nothing. Postgres needs no
+tunnel at all:
 
 ```sh
-ssh -L 5432:localhost:5432 agreementmitra-vps   # then connect a client to localhost:5432
-ssh -L 9001:localhost:9001 agreementmitra-vps   # MinIO console at http://localhost:9001
-```
-
-Those tunnels need the ports reachable on the server's loopback. Since compose
-publishes nothing, forward into the container instead:
-
-```sh
-ssh -L 5432:localhost:15432 agreementmitra-vps
-# on the server:
+# on the server, from deploy/:
 docker compose -f docker-compose.prod.yml exec postgres psql -U agreementmitra
 ```
 
-In practice `docker compose exec` is the simpler admin path and avoids opening
-anything at all.
+The MinIO console needs a browser, so tunnel to the **container's** address on the
+compose network. That address is dynamic (from `10.203.17.128/25`) and can change
+when the container is recreated, so look it up each time:
+
+```sh
+ssh agreementmitra-vps \
+  'docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" agreementmitra-minio-1'
+ssh -N -L 9001:<that-ip>:9001 agreementmitra-vps   # console at http://localhost:9001
+```
+
+Log in with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from `deploy/env/minio.env`.
+Treat the console as **read-only**: the database records a key for every stored
+PDF, and an object deleted or renamed by hand leaves an agreement pointing at
+nothing. A desktop Postgres client can use the same tunnel shape against the
+`postgres` container's address on port 5432.
 
 ### Hardening follow-up: Cloudflare Tunnel
 
