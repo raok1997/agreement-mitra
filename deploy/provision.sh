@@ -245,29 +245,52 @@ install_docker_port_filter() {
 #!/usr/bin/env bash
 # Restrict Docker-published 80/443 to Cloudflare. Fails closed: if the cached
 # range lists are missing, everything is dropped rather than left open.
+#
+# SCOPED TO INBOUND, and that scoping is load-bearing. DOCKER-USER sits on the
+# FORWARD path, so it sees BOTH directions: traffic the internet sends to a
+# published port, and traffic a container sends out to the world. Unscoped, the
+# final DROP also kills container EGRESS to any host on 80/443 -- the backend's
+# calls to the eSign and payment vendors, the OAuth token exchange, and any
+# image build that downloads a dependency. Only ESTABLISHED replies survive,
+# which makes it look like a name-resolution or vendor outage rather than a
+# local firewall rule.
+#
+# Inbound arrives on the default-route interface; container egress arrives on a
+# docker bridge (docker0 / br-*). Matching "-i $WAN" therefore leaves egress
+# alone while keeping the inbound policy byte-for-byte identical.
 set -euo pipefail
 
 V4_FILE=/etc/agreementmitra/cloudflare-ips-v4
 V6_FILE=/etc/agreementmitra/cloudflare-ips-v6
 PORTS=80,443
 
+# The public interface. If it cannot be determined, fall back to unscoped rules:
+# that breaks container egress, but it keeps the inbound restriction intact,
+# which is the fail-closed direction to err in.
+WAN="$(ip route show default 2>/dev/null | awk '{print $5; exit}' || true)"
+if [ -n "$WAN" ]; then
+  IN=(-i "$WAN")
+else
+  IN=()
+fi
+
 apply() {
   local ipt="$1" file="$2" cidr
   "$ipt" -F DOCKER-USER 2>/dev/null || return 0
 
   # Return traffic for connections the host/containers initiated.
-  "$ipt" -A DOCKER-USER -p tcp -m multiport --dports "$PORTS" \
+  "$ipt" -A DOCKER-USER "${IN[@]}" -p tcp -m multiport --dports "$PORTS" \
          -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
 
   if [ -s "$file" ]; then
     while read -r cidr; do
       [ -n "$cidr" ] || continue
-      "$ipt" -A DOCKER-USER -p tcp -m multiport --dports "$PORTS" -s "$cidr" -j RETURN
+      "$ipt" -A DOCKER-USER "${IN[@]}" -p tcp -m multiport --dports "$PORTS" -s "$cidr" -j RETURN
     done <"$file"
   fi
 
-  # Everything else reaching a published 80/443 is dropped.
-  "$ipt" -A DOCKER-USER -p tcp -m multiport --dports "$PORTS" -j DROP
+  # Everything else reaching a published 80/443 from outside is dropped.
+  "$ipt" -A DOCKER-USER "${IN[@]}" -p tcp -m multiport --dports "$PORTS" -j DROP
   "$ipt" -A DOCKER-USER -j RETURN
 }
 
@@ -292,8 +315,16 @@ WantedBy=multi-user.target
 UNIT
 
   systemctl daemon-reload
-  systemctl enable --now am-docker-firewall.service
-  iptables -L DOCKER-USER -n --line-numbers | head -20
+  systemctl enable am-docker-firewall.service
+  # restart, NOT "enable --now": the unit is Type=oneshot with RemainAfterExit=yes,
+  # so it stays "active" forever after its first run and a "start" is a silent
+  # no-op. Re-provisioning would then rewrite the script above and never execute
+  # it, while still reporting success -- the stale rules stay loaded in the kernel
+  # and only a reboot would pick up the change.
+  systemctl restart am-docker-firewall.service
+  # -v so the interface columns are visible: the inbound scoping is invisible
+  # without them, which makes a failed apply look identical to a successful one.
+  iptables -L DOCKER-USER -n -v --line-numbers | head -20
 }
 
 # ---------------------------------------------------------------------------
