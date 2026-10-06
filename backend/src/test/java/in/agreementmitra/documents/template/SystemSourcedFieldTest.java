@@ -273,7 +273,11 @@ class SystemSourcedFieldTest {
   private static Map<String, Object> aggregateBackedData() {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("ownerName", "Asha Owner");
+    data.put("ownerFatherName", "Ravi Owner");
+    data.put("ownerAddress", "1 First Street");
     data.put("tenantName", "Bhaskar Tenant");
+    data.put("tenantFatherName", "Kiran Tenant");
+    data.put("tenantAddress", "2 Second Street");
     data.put("propertyAddress", "Plot 7, Jubilee Hills, Hyderabad");
     data.put("monthlyRent", new BigDecimal("25000.00"));
     data.put("securityDeposit", new BigDecimal("100000.00"));

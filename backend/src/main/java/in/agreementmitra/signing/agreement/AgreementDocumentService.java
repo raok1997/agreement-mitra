@@ -72,8 +72,9 @@ public class AgreementDocumentService {
 
   /**
    * Render the agreement's document and return the PDF bytes. Nothing is stored. Uses the generate
-   * projection (full validation over the effective template's field schema); a persisted agreement
-   * always carries its required fields.
+   * projection (full validation over the effective template's field schema), so an agreement whose
+   * stored party father's name or address is blank (a row persisted before structured party
+   * capture) is refused with field-level errors rather than rendered with blanks.
    *
    * <p>Owner-scoped once claimed: a non-owner is refused before anything is rendered.
    *

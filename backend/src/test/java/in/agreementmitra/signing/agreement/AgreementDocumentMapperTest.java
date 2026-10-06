@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Unit test for the agreement-to-document-projection mapping -- no Spring context, no render.
  * Proves the persisted aggregate is mapped to the effective template's aggregate-backed <b>declared
- * field keys</b> (first owner/tenant name, property address, rent, deposit, duration, tenancy
- * dates) and nothing signing-specific leaks into the data map.
+ * field keys</b> (first owner/tenant name, father's name and address, property address, rent,
+ * deposit, duration, tenancy dates) and nothing signing-specific leaks into the data map.
  */
 class AgreementDocumentMapperTest {
 
@@ -48,16 +48,19 @@ class AgreementDocumentMapperTest {
   void mapsDeclaredFieldKeysFromTheAggregate() {
     Map<String, Object> data = AgreementDocumentMapper.toTemplateData(sampleAgreement());
 
-    // The production definition's aggregate-sourced required keys: first owner/tenant name,
-    // property
-    // address, rent, deposit, duration (termMonths), and the ISO tenancy dates. Every other
-    // declared
-    // field is filled from the template's system-authored defaults in the projection service, not
-    // here. Dates are emitted as ISO strings (the operand form the date validator/coercer expects).
+    // The production definition's twelve aggregate-backed keys: first owner/tenant name, father's
+    // name and address, property address, rent, deposit, duration (termMonths), and the ISO
+    // tenancy dates. Every other declared field is filled from the template's system-authored
+    // defaults in the projection service, not here. Dates are emitted as ISO strings (the operand
+    // form the date validator/coercer expects).
     assertThat(data)
         .containsOnlyKeys(
             "ownerName",
+            "ownerFatherName",
+            "ownerAddress",
             "tenantName",
+            "tenantFatherName",
+            "tenantAddress",
             "propertyAddress",
             "monthlyRent",
             "securityDeposit",
@@ -65,7 +68,11 @@ class AgreementDocumentMapperTest {
             "startDate",
             "endDate")
         .containsEntry("ownerName", "Asha Owner")
+        .containsEntry("ownerFatherName", "Ravi Owner")
+        .containsEntry("ownerAddress", "1 First Street")
         .containsEntry("tenantName", "Bhaskar Tenant")
+        .containsEntry("tenantFatherName", "Kiran Tenant")
+        .containsEntry("tenantAddress", "2 Second Street")
         .containsEntry("propertyAddress", "12 MG Road, Bengaluru")
         .containsEntry("monthlyRent", new BigDecimal("25000.00"))
         .containsEntry("securityDeposit", new BigDecimal("50000.00"))
@@ -76,8 +83,9 @@ class AgreementDocumentMapperTest {
 
   @Test
   void missingRoleMapsToNullName() {
-    // An aggregate with only an owner: tenantName is null (the projection's generate validation is
-    // what enforces required-ness; the mapper just reflects what the aggregate carries).
+    // An aggregate with only an owner: every tenant key is null (the projection's generate
+    // validation is what enforces required-ness; the mapper just reflects what the aggregate
+    // carries).
     Agreement ownerOnly =
         Agreement.create(
             "12 MG Road",
@@ -91,5 +99,7 @@ class AgreementDocumentMapperTest {
 
     assertThat(data).containsEntry("ownerName", "Asha Owner");
     assertThat(data.get("tenantName")).isNull();
+    assertThat(data.get("tenantFatherName")).isNull();
+    assertThat(data.get("tenantAddress")).isNull();
   }
 }

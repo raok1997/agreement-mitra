@@ -345,7 +345,8 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     // pattern, non-member enum, or a missing required field in generate mode). 400 + errors[], the
     // same shape as bean-validation failures. The exception already carries only field keys + rule
     // tokens (never a rejected value), so errors[] is safe to surface verbatim -- never-echo holds.
-    // Passive today: no endpoint raises this yet; CR-2's preview endpoint exercises the HTTP path.
+    // Raised by generate and the id-bound preview (e.g. a blank legacy party field) and by the
+    // stateless preview's typed validation.
     ProblemDetail body =
         problem(
             HttpStatus.BAD_REQUEST,

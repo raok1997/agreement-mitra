@@ -1,13 +1,5 @@
-# agreement-preview Specification
+## MODIFIED Requirements
 
-## Purpose
-
-Map a captured agreement onto the rental-agreement template and preview the filled document inline,
-on demand, from the capture screen -- rendered fresh, not stored, non-cacheable, with 404 for an
-unknown agreement and no party PII in logs. Depends on the `document-rendering` capability (the
-`documents` module's `DocumentRenderer`); the agreement-to-template-data mapping lives in the
-`signing` module. (Created by archiving change `agreement-preview` (CR-3b).)
-## Requirements
 ### Requirement: Preview the filled agreement document
 
 The system SHALL provide preview of the filled rental-agreement document rendered on demand and **not
@@ -52,20 +44,3 @@ log.
 
 - **WHEN** a client GETs `/api/agreements/{id}/preview` for an id that does not exist
 - **THEN** the system responds `404 Not Found`
-
-### Requirement: Preview responses are non-cacheable and leave no PII in logs
-
-Preview responses SHALL be served with caching disabled (`Cache-Control: no-store`) so
-intermediaries do not retain the party PII in the document. The system SHALL NOT write the rendered
-PDF bytes or the composed party details to any log at any level on the preview path.
-
-#### Scenario: Preview is marked non-cacheable
-
-- **WHEN** the system responds to a preview request
-- **THEN** the response carries `Cache-Control: no-store`
-
-#### Scenario: A preview leaves no PII in logs
-
-- **WHEN** a preview render runs
-- **THEN** no log line contains the rendered PDF bytes or the composed party details
-

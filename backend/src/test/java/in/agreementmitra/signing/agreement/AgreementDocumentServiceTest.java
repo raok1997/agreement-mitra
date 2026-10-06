@@ -134,9 +134,14 @@ class AgreementDocumentServiceTest {
   void rendersFromTheStoredCaptureStateWithFixedColumnsWinning() {
     UUID id = UUID.randomUUID();
     Agreement agreement = draft();
-    // The stored map carries a DYNAMIC field plus a STALE fixed-column entry that must NOT win.
+    // The stored map carries a DYNAMIC field plus STALE fixed-column entries that must NOT win.
     agreement.replaceCaptureState(
-        Map.of("lockInMonths", "6", "propertyAddress", "STALE ADDRESS"), List.of("Lock-in"));
+        Map.of(
+            "lockInMonths", "6",
+            "propertyAddress", "STALE ADDRESS",
+            "ownerFatherName", "STALE FATHER",
+            "ownerAddress", "STALE OWNER ADDRESS"),
+        List.of("Lock-in"));
     when(repository.findById(id)).thenReturn(Optional.of(agreement));
     when(documentProjection.generate(any())).thenReturn(aResult());
 
@@ -150,6 +155,10 @@ class AgreementDocumentServiceTest {
     assertThat(req.getValue().activeSections()).containsExactly("Lock-in");
     // D3 reconciliation: the authoritative fixed column wins over the stale map entry.
     assertThat(req.getValue().data()).containsEntry("propertyAddress", "12 MG Road, Bengaluru");
+    // The party columns are authoritative too: the signer's father's name and address win.
+    assertThat(req.getValue().data())
+        .containsEntry("ownerFatherName", "Ravi Rao")
+        .containsEntry("ownerAddress", "1 A St");
   }
 
   @Test

@@ -98,7 +98,11 @@ class ProductionRentalLayerSetTest {
   private static Map<String, Object> aggregateBackedData() {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("ownerName", "Asha Owner");
+    data.put("ownerFatherName", "Ravi Owner");
+    data.put("ownerAddress", "1 First Street, Hyderabad");
     data.put("tenantName", "Bhaskar Tenant");
+    data.put("tenantFatherName", "Kiran Tenant");
+    data.put("tenantAddress", "2 Second Street, Hyderabad");
     data.put("propertyAddress", "Plot 7, Jubilee Hills, Hyderabad");
     data.put("monthlyRent", new BigDecimal("25000.00"));
     data.put("securityDeposit", new BigDecimal("100000.00"));
@@ -115,11 +119,38 @@ class ProductionRentalLayerSetTest {
   @Test
   void theBaseLayerPinsItsAuthoredVersion() {
     // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
-    // different deeds must never report one authored version. v3 is the bump that made
-    // durationMonths derived. Pinned explicitly because every other assertion in this suite reads
-    // the version dynamically, which would let a revert through silently.
+    // different deeds must never report one authored version. v4 is the bump that made the party
+    // father's name and address required. Pinned explicitly because every other assertion in this
+    // suite reads the version dynamically, which would let a revert through silently.
     assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
-        .isEqualTo(3);
+        .isEqualTo(4);
+  }
+
+  @Test
+  void onlyAggregateBackedOrDefaultedFieldsAreRequiredAndEveryPartyFieldIs() {
+    // PARITY CONTRACT, both directions, for every published residential dimension. A required
+    // field must be aggregate-backed or defaulted (so generate-with-aggregate-keys validates), and
+    // every aggregate-backed key except the derived durationMonths must be required -- in
+    // particular the party fields the agreement API already requires non-blank, so the capture
+    // form and the server agree.
+    Set<String> aggregateBacked = aggregateBackedData().keySet();
+    for (String state : List.of("IN", "TG", "KA")) {
+      EffectiveTemplate eff = resolve(state, "residential");
+      for (Field f : eff.template().fields()) {
+        if (f.required()) {
+          assertThat(aggregateBacked.contains(f.key()) || f.defaultValue() != null)
+              .as("%s: required field '%s' is aggregate-backed or defaulted", state, f.key())
+              .isTrue();
+        }
+      }
+      for (String key : aggregateBacked) {
+        if (!key.equals("durationMonths")) {
+          assertThat(field(eff, key).required())
+              .as("%s: aggregate-backed '%s' is required", state, key)
+              .isTrue();
+        }
+      }
+    }
   }
 
   @Test
@@ -179,6 +210,13 @@ class ProductionRentalLayerSetTest {
     assertThat(section(eff, "Now This Agreement Witnesseth").render())
         .isEqualTo(RenderKind.CLAUSES);
     assertThat(section(eff, "Annexure").render()).isEqualTo(RenderKind.ANNEXURE);
+
+    // A mandatory section may still hold optional fields: only its aggregate-backed ones are
+    // required.
+    Section schedule = section(eff, "Schedule of Property");
+    assertThat(schedule.entries()).contains("carpetAreaSqft", "furnishingStatus");
+    assertThat(field(eff, "carpetAreaSqft").required()).isFalse();
+    assertThat(field(eff, "furnishingStatus").required()).isFalse();
 
     // The witnesseth section carries clause ids only (zero field entries) -- document structure.
     List<String> fieldKeys = fieldKeys(eff);

@@ -60,17 +60,17 @@ class TemplateCatalogSeederTest {
         .doesNotHaveDuplicates();
     assertThat(saved).allSatisfy(e -> assertThat(e.status()).isEqualTo(TemplateStatus.PUBLISHED));
     // A catalog row's version is derived from its layer set's BASE meta.version, so a base bump
-    // propagates here. rental/base.yaml is v3 and commercial/base.yaml is v2, both bumped when
-    // durationMonths became `source: derived` (the rendered term now follows the dates; before
-    // that, a preview and the signed deed could state different terms). rental was previously v2
-    // (the "(Leave & Licence)" label removal). Asserted per set so the derivation stays pinned and
+    // propagates here. rental/base.yaml is v4 and commercial/base.yaml is v3, both bumped when
+    // the party father's name and address became required and aggregate-backed. Before that both
+    // were bumped when durationMonths became `source: derived`, and rental before that for the
+    // "(Leave & Licence)" label removal. Asserted per set so the derivation stays pinned and
     // a future bump fails loudly rather than drifting -- which is exactly what it did here.
     assertThat(saved)
         .filteredOn(e -> e.type().equals("residential"))
-        .allSatisfy(e -> assertThat(e.version()).isEqualTo(3));
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(4));
     assertThat(saved)
         .filteredOn(e -> e.type().equals("commercial"))
-        .allSatisfy(e -> assertThat(e.version()).isEqualTo(2));
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(3));
     // The commercial rows are named from the commercial base header and point at its layer set.
     // Three: the national base's own dimension plus one per state-<XX>.patch.yaml beside it (TG,
     // KA).
