@@ -111,6 +111,12 @@ cases:
   - name: "13-month boundary takes 1 percent and the cap does not follow"
     basis: { termMonths: 13, monthlyRent: "5000" }
     expect: { outcome: QUOTED, amountPaise: 60000 }
+  # Pins the annualisation (design D2) below the cap, where it changes the figure: the base is
+  # 12,000 average annual rent + 2,000 deposit = 14,000, so INR 70. On total rent (11,000 + 2,000)
+  # it would be INR 65. If counsel rules against annualising sub-year terms, this case flips to 6500.
+  - name: "11 months below the cap annualises the rent"
+    basis: { termMonths: 11, monthlyRent: "1000", refundableDeposit: "2000" }
+    expect: { outcome: QUOTED, amountPaise: 7000 }
   - name: "11 months with the INR 500 cap biting"
     basis: { termMonths: 11, monthlyRent: "20000", refundableDeposit: "100000" }
     expect: { outcome: QUOTED, amountPaise: 50000, plans: { e-stamp: 50000, stamp-paper: 50000 } }
