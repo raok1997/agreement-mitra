@@ -203,8 +203,18 @@ EOF
   return "$rc"
 }
 
+# env_assignments <file> <key>: how many lines assign <key>.
+env_assignments() {
+  local line n=0
+  [ -f "$1" ] || { printf '0\n'; return 0; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "$2="*) n=$((n + 1)) ;; esac
+  done <"$1"
+  printf '%s\n' "$n"
+}
+
 # env_verdict <template> <target> [envdir]: one `<key> <verdict>` line per templated key, in
-# template order. Verdicts: missing blank placeholder pattern drift mismatch (FAIL),
+# template order. Verdicts: missing duplicate blank placeholder pattern drift mismatch (FAIL),
 # blank-optional (INFO), ok. A `match=<file>:<KEY>` reads <envdir>/<file>, envdir defaulting to the
 # target's directory. Returns 1 when any verdict is a FAIL, 2 when the template does not lint.
 env_verdict() {
@@ -217,6 +227,11 @@ env_verdict() {
     [ -n "$key" ] || continue
     if ! value="$(env_value "$target" "$key")"; then
       printf '%s missing\n' "$key"; rc=1; continue
+    fi
+    # Assigned twice, the LAST line silently wins (compose and env_value alike): a commented-out
+    # block that forgot one line once paired a test key id with a live secret.
+    if [ "$(env_assignments "$target" "$key")" -gt 1 ]; then
+      printf '%s duplicate\n' "$key"; rc=1; continue
     fi
 
     required=0
@@ -340,6 +355,11 @@ EOF
     fi
 
     case "$verdict" in
+      duplicate)
+        printf '\n%s: assigned %s times in %s; the LAST one wins. Remove or comment out the extra line(s) by hand.\n' \
+          "$key" "$(env_assignments "$target" "$key")" "$(basename "$target")" >&2
+        continue
+        ;;
       mismatch)
         printf '\n%s: does not match %s. Never copied between files automatically:\n' "$key" "$match" >&2
         printf '  edit %s by hand, or regenerate both on a fresh box.\n' "$(basename "$target")" >&2

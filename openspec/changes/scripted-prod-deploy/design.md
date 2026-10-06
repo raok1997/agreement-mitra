@@ -138,6 +138,7 @@ need   required | optional | required-if=<KEY>=<VALUE>
 | Condition | Verdict |
 |---|---|
 | key absent from the server file | `missing` (FAIL) |
+| key assigned on more than one line (the last silently wins; found at the gate: a live block that commented out its key id but not its secret) | `duplicate` (FAIL) |
 | `required`, or `required-if` met, and blank | `blank` (FAIL) |
 | `secret`, not blank, and a placeholder: `__GENERATED_ON_SERVER__`, `dev-only-*`, `change*me`, `placeholder`, `todo`, all `x` (case-insensitive) | `placeholder` (FAIL) |
 | not blank and fails `pattern` | `pattern` (FAIL) |

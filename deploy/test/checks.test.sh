@@ -144,6 +144,15 @@ eq "credential mismatch" "mismatch" "$(verdict_of DB_PASSWORD)"
 printf 'OTHER_PASSWORD=%s\n' "$good32" >"$tmp/other.env"
 eq "credential match" "ok" "$(verdict_of DB_PASSWORD)"
 
+write_target
+printf '# live block\nVENDOR_KEY=%s\n' "$SENTINEL" >>"$tmp/t.env"
+eq "a key assigned twice is a duplicate" "duplicate" "$(verdict_of VENDOR_KEY)"
+case "$(env_verdict "$tmp/t.env.example" "$tmp/t.env" 2>&1; env_fill "$tmp/t.env.example" "$tmp/t.env" </dev/null 2>&1)" in
+  *"$SENTINEL"*) bad "duplicate verdict leaked a value" ;; *"VENDOR_KEY: duplicate"*) ok ;; *) bad "fill names the duplicate" ;;
+esac
+printf '#VENDOR_KEY=x\n' >>"$tmp/t.env"
+eq "a commented copy is not an assignment" "2" "$(env_assignments "$tmp/t.env" VENDOR_KEY)"
+
 # A sentinel never appears in any output, whatever verdict carries it: each key below holds a
 # sentinel-bearing value that lands on a different verdict.
 SENT32="S3ntinelS3ntinelS3ntinelS3ntinel"

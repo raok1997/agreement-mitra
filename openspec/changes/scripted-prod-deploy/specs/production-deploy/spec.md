@@ -78,8 +78,9 @@ Every assigned key in `deploy/env/{backend,postgres,minio,web-build}.env.example
 - **THEN** the template lint fails
 
 ### Requirement: Env contract fails closed
-The deploy SHALL compute a verdict for every templated key and refuse when any verdict is `missing`, `blank`, `placeholder`, `pattern`, `drift` or `mismatch`:
+The deploy SHALL compute a verdict for every templated key and refuse when any verdict is `missing`, `duplicate`, `blank`, `placeholder`, `pattern`, `drift` or `mismatch`:
 - `missing`: the key is absent from the server file;
+- `duplicate`: the key is assigned more than once in the server file (the last assignment would silently win);
 - `blank`: a `required` key, or a `required-if` key whose condition holds on the server, is empty, whitespace, `""` or `''`;
 - `placeholder`: a non-blank `secret` matches the placeholder list, including `__GENERATED_ON_SERVER__`;
 - `pattern`: a non-blank value fails its `pattern`;
