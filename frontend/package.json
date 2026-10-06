@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "engines": { "node": ">=20.19.0" },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "npm run security:scan && npm run test && vue-tsc -b && vite build",
@@ -37,5 +39,8 @@
     "vitest": "^4.1.11",
     "vue-eslint-parser": "^9.4.3",
     "vue-tsc": "^2.2.0"
+  },
+  "overrides": {
+    "postcss-selector-parser": "^7.1.6"
   }
 }
