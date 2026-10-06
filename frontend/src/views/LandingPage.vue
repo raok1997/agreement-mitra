@@ -35,7 +35,7 @@ import { RELEASE_STATE_LABEL, RELEASE_STATUS } from "../content/releaseStatus";
 const emit = defineEmits<{ (e: "start"): void }>();
 
 const total = formatRupees(PRICE.totalRupees);
-const includedDuty = formatRupees(PRICE.includedDutyRupees);
+const includedStamp = formatRupees(PRICE.includedStampRupees);
 const refund = formatRupees(GUARANTEES.certificateRefundRupees);
 const retryCharge = formatRupees(GUARANTEES.signerRetryChargeRupees);
 const perDay = formatRupees(GUARANTEES.delayCreditPerDayRupees);
@@ -58,7 +58,7 @@ const steps = [
   {
     n: "3",
     title: "Pay, and we stamp it",
-    body: "We buy the stamp certificate and attach it to your agreement.",
+    body: "We buy the stamp and attach it to your agreement.",
     icon: "M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z",
   },
   {
@@ -70,15 +70,15 @@ const steps = [
 ];
 
 const inclusions = [
-  `stamp duty up to ${includedDuty}`,
-  "buying and attaching the stamp certificate",
+  `a stamp of up to ${includedStamp}`,
+  "buying and attaching the stamp",
   "Aadhaar eSign",
 ];
 
 const guarantees = [
   {
-    title: `We fix a wrong stamp certificate, and refund ${refund}.`,
-    body: `If a certificate we buy for you is rejected or wrongly denominated because we got it wrong, we put it right at our cost and refund you ${refund}.`,
+    title: `We fix a wrong stamp, and refund ${refund}.`,
+    body: `If a stamp we buy for you is rejected or wrongly denominated because we got it wrong, we put it right at our cost and refund you ${refund}.`,
     qualifier:
       "Only when the mistake is ours. Reduced by any discount you received.",
     section: 8,
@@ -93,7 +93,7 @@ const guarantees = [
     title: "Late through our fault? We pay you back.",
     body: `We aim to stamp your agreement within ${GUARANTEES.stampTargetWorkingDaysText} working day of payment; an order paid outside business hours counts from the next working day. If we are more than ${GUARANTEES.delayGraceWorkingDaysText} working days late through something that was ours, we refund ${perDay} for each further working day, up to ${cap}.`,
     qualifier:
-      "Not while we wait on details from you or a signer we can't reach, or during a stamp-portal or eSign outage or a public holiday. Reduced by any discount you received.",
+      "Not while we wait on details from you or a signer we can't reach, while SHCIL or eSign is down or no licensed vendor can supply the stamp, or on a public holiday. Reduced by any discount you received.",
     section: 14,
   },
 ];
@@ -109,7 +109,7 @@ const faqs = [
   },
   {
     q: "What does it cost?",
-    a: `${total} in total when the stamp duty on your agreement is ${includedDuty} or less. Where the duty is higher, you see the stamp amount and the exact total before you pay, and there is never a second bill. Stamp duty is set by your state from the rent, deposit and term, and we cannot change it.`,
+    a: `${total} in total when the stamp on your agreement is ${includedStamp} or less. Where your stamp duty is more than ${includedStamp}, you see the stamp we can buy, the duty and the exact total before you pay, and there is never a second bill. Stamp duty is set by your state from the rent, deposit and term, and we cannot change it.`,
   },
   {
     q: "Does a stamped agreement mean it is registered?",
@@ -125,7 +125,7 @@ const faqs = [
   },
   {
     q: "What happens if something goes wrong?",
-    a: `The guarantees on our home page cover the main things that can go wrong on our side: a wrong stamp certificate, a failed signature and a late delivery. For anything else, write to ${CONTACT_EMAIL}. We answer ${SUPPORT_HOURS}.`,
+    a: `The guarantees on our home page cover the main things that can go wrong on our side: a wrong stamp, a failed signature and a late delivery. For anything else, write to ${CONTACT_EMAIL}. We answer ${SUPPORT_HOURS}.`,
   },
 ];
 
@@ -322,7 +322,7 @@ onBeforeUnmount(() => {
         >
           <div>
             <p class="text-lg font-bold text-ink-900 md:text-xl">
-              {{ total }} when your stamp duty is {{ includedDuty }} or less
+              {{ total }} when your stamp is {{ includedStamp }} or less
             </p>
             <div class="mt-1.5 text-sm text-ink-600">
               <span class="mr-1.5 font-semibold text-ink-800">Included:</span>
@@ -339,8 +339,9 @@ onBeforeUnmount(() => {
           </div>
           <div class="space-y-1 text-sm leading-relaxed text-ink-600">
             <p>
-              Where the duty is higher, you see the stamp amount and the exact
-              total before you pay. There is never a second bill.
+              Where your stamp duty is more than {{ includedStamp }}, you see the
+              stamp we can buy, the duty and the exact total before you pay. There
+              is never a second bill.
             </p>
             <p>Drafting, previewing and downloading a draft are free.</p>
             <p class="text-ink-500">

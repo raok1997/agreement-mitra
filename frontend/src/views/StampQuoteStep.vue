@@ -288,6 +288,7 @@ function confirm(): void {
         class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900"
         data-testid="under-stamp-warning"
       >
+        <!-- ToS §7 (termsOfService.ts, our-fee) paraphrases this warning: re-check it when this text changes. -->
         <p>
           This stamp value is below the stamp duty payable on this agreement. An
           under-stamped agreement cannot be relied on as evidence in court until

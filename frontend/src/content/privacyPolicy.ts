@@ -16,7 +16,7 @@ export const PRIVACY_COLLECTED_CATEGORIES = [
   "the content of the agreement",
   "account sign-in details",
   "the signed PDF and the signing audit trail",
-  "stamp-certificate scans",
+  "stamp scans",
   "payment records",
   "IP address",
 ] as const;
@@ -25,7 +25,9 @@ export const PRIVACY_COLLECTED_CATEGORIES = [
 export const PRIVACY_RECIPIENT_ROLES = [
   "eSign provider",
   "payment gateway",
-  "stamp-certificate issuing authority",
+  "Karnataka e-stamp issuer",
+  "Telangana licensed stamp vendor",
+  "courier, only if you ask us to send you a stamp paper original",
   "email delivery provider",
   "sign-in provider",
   "hosting and storage providers",
@@ -35,7 +37,7 @@ export const PRIVACY_RECIPIENT_ROLES = [
 
 export const PRIVACY_POLICY: LegalDocument = {
   title: "Privacy Policy",
-  lastUpdated: "5 October 2026",
+  lastUpdated: "6 October 2026",
   banner:
     "This is a draft, published during a restricted beta and pending review by Indian counsel. " +
     "Sections marked below are deliberately incomplete. It describes what the service does with " +
@@ -57,7 +59,7 @@ export const PRIVACY_POLICY: LegalDocument = {
         "We collect the details you enter about the parties (name, parentage and address), the email address and any telephone number you give for each party, and the content of the agreement itself, including every answer you give in the form.",
         "If you sign in, we keep your account sign-in details: the name and email address of the account you sign in with, whether that email address has been verified, and the identifier the sign-in provider assigns to the account.",
         "When an agreement is signed, we store the signed PDF and the signing audit trail exactly as the eSign provider issues them. They are the provider's evidence of the signing, and they may include identity details the provider obtains from Aadhaar, such as the signer's name and postal code and how well the name matched.",
-        "When our staff buy a stamp certificate for you, we keep stamp-certificate scans and the details printed on the certificate, which include the parties' names and details of the property.",
+        "When our staff buy the stamp for your agreement, we keep stamp scans: a scan of the stamp and the details written or printed on it, which include the parties' names. For a Telangana agreement we also keep the paper original for one year, and then shred it.",
         "When you pay, we keep payment records: the amount, the payment gateway's order and payment references, and the agreement the payment was for, which links the payment to your account if that agreement is saved to one.",
         "To prevent abuse of the service, we record the IP address that some requests come from, such as a request to recover an agreement link: the full address for IPv4, and only the network part for IPv6. Our security logs record a shortened form of it.",
       ],
@@ -83,10 +85,12 @@ export const PRIVACY_POLICY: LegalDocument = {
       heading: "5. Who receives it",
       status: "drafted",
       body: [
-        "We share personal data only with the service providers the service needs in order to work. We describe them by role rather than by company, because the company that fills a role can change.",
+        "We share personal data only with the service providers the service needs in order to work, and with whoever sells us the stamp your agreement legally needs. We describe them by role rather than by company, because the company that fills a role can change.",
         "The eSign provider receives each signer's name and email address and the agreement to be signed, and emails each party its signing invitation.",
         "The payment gateway receives the amount and our order reference, and collects your payment details on its own checkout page, which sets its own cookies.",
-        "The stamp-certificate issuing authority receives the parties' names and details of the property, which our staff enter on its portal to buy your certificate.",
+        "The Karnataka e-stamp issuer, from which we buy a Karnataka e-stamp certificate, receives the details its form requires, such as the parties' names, a description of the document and the amounts it covers. It keeps its own record under its own rules, and anyone holding the e-stamp certificate number can look that record up.",
+        "A Telangana licensed stamp vendor, from which we buy Telangana stamp paper, receives the details the state's rules require it to record, such as the parties' names and the purpose of the stamp, and keeps them in its own register under those rules.",
+        "A courier, only if you ask us to send you a stamp paper original, receives the name and address you give us for delivery, and nothing else.",
         "Our email delivery provider carries the emails we send: the draft agreement to every party once their contact details are confirmed, the signed agreement once everyone has signed, and links to recover an agreement.",
         "The sign-in provider you choose tells us your name and email address when you sign in.",
         "Our hosting and storage providers hold the data described in this policy on our behalf.",
@@ -108,7 +112,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       id: "retention",
       heading: "7. How long we keep it",
       status: "counsel",
-      gap: "How long we keep each kind of personal data described here, and whether the periods in the terms of service are the right ones under the Act, is with counsel. Until it is settled, this policy states no period of its own.",
+      gap: "How long we keep each kind of personal data described here, and whether the periods in the terms of service are the right ones under the Act, is with counsel. Until it is settled, this policy states no period of its own, other than how long we keep a Telangana stamp-paper original, which is set out under what we collect and in the terms of service's stamp-duty clause.",
       body: [
         "How long we keep an agreement and its signing records is set out in the terms of service's clause on how long we keep things and deletion.",
       ],

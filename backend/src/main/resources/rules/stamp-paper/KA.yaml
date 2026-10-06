@@ -20,11 +20,10 @@
 # therefore affect only which override options appear -- never the legal duty, and never the
 # recommended value, both of which come from the duty rule and the e-stamp medium.
 #
-# *** NO OPS PROCUREMENT CHANNEL EXISTS FOR KARNATAKA E-STAMPS. This file describes what the STATE
-# *** issues, which is a fact about Karnataka; it is not a claim that we can buy one. Paid fulfilment
-# *** is separately gated by the counsel review on the duty rules (both are counselReview: null), so
-# *** Karnataka is priced and drafted but not fulfilled until both exist. Tracked in the follow-up
-# *** register in docs/ROADMAP.md.
+# OPS PROCUREMENT CHANNEL: staff buy every Karnataka stamp, at any value, as a SHCIL e-stamp
+# certificate (ops, confirmed 2026-10-06; ToS §8 names it). This file still describes only what the
+# STATE issues -- the channel is an ops fact recorded here for the reader, not read by any code. Paid
+# fulfilment is separately gated by the counsel review on the duty rules (counselReview: null).
 state: KA
 # Provenance, not commencement -- the vintage of the Art. 30 source the duty rules were read from.
 # Kept equal to the rules' effectiveFrom so a catalog and a rule are never in effect for disjoint

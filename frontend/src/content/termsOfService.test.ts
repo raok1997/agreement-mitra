@@ -3,6 +3,7 @@ import { clauseById } from "./legalDocument";
 import { OPERATOR_LEGAL_NAME } from "./operatorFacts";
 import { PRIVACY_POLICY } from "./privacyPolicy";
 import { CONTACT_EMAIL } from "./promises";
+import { RELEASE_STATE_LABEL } from "./releaseStatus";
 import { TERMS_OF_SERVICE } from "./termsOfService";
 
 // operating-entity-disclosure D6: §1 names the contracting party literally.
@@ -11,6 +12,41 @@ describe("terms of service, the operator", () => {
     const first = clauseById(TERMS_OF_SERVICE, "who-we-are");
     expect(first.heading).toMatch(/^1\. /);
     expect(first.body.join("\n")).toContain(OPERATOR_LEGAL_NAME);
+  });
+});
+
+// jurisdiction-eligibility: §5 states the drafting scope and defers stampability to the server's
+// decision, so the terms carry no live list that could drift from the board.
+describe("terms of service, jurisdictions", () => {
+  const body = (id: string) => clauseById(TERMS_OF_SERVICE, id).body.join(" ");
+
+  it("states the drafting scope and keys the no-payment promise to the service", () => {
+    const text = body("jurisdictions");
+    for (const phrase of [
+      "Telangana",
+      "Karnataka",
+      "residential",
+      "We will not take payment for an agreement in a state we cannot stamp",
+      "Draft and download only",
+      "status board on our home page",
+    ]) {
+      expect(text, phrase).toContain(phrase);
+    }
+  });
+
+  it.each(["what-the-service-does", "jurisdictions"])(
+    "does not restate the live list in %s",
+    (id) => {
+      const text = body(id);
+      expect(text).not.toContain("Today that is");
+      for (const label of Object.values(RELEASE_STATE_LABEL)) {
+        expect(text, label).not.toContain(label);
+      }
+    },
+  );
+
+  it("does not mention a template the picker hides", () => {
+    expect(body("jurisdictions")).not.toContain("national template");
   });
 });
 

@@ -41,9 +41,9 @@ Two definitions apply to every text check in this capability:
 - **AND** no element with `data-testid="closing-cta"` or `data-testid="cta-start"` exists
 
 ### Requirement: The price card states the published fee
-The home page SHALL show the price as a slim band (`#price`) directly under the hero, whose headline leads with its condition, as in "₹499 when your stamp duty is ₹100 or less". The band states:
-- a total of ₹499 that includes stamp duty up to ₹100;
-- that where the duty is higher, the stamp amount and the exact total are shown before payment, and there is no second bill;
+The home page SHALL show the price as a slim band (`#price`) directly under the hero, whose headline leads with its condition, as in "₹499 when your stamp is ₹100 or less". The price follows the **stamp value** on the agreement (the value of the stamp we buy), not the legal duty, because that is what `payment-processing` charges. The band states:
+- a total of ₹499 that includes a stamp of up to ₹100;
+- that where the stamp duty is more than ₹100, the stamp we can buy, the duty and the exact total are shown before payment, and there is no second bill (the band keeps the phrase "stamp duty", which it owns under "Each recurring message has one owning section");
 - that drafting, previewing and downloading a draft cost nothing;
 - that the price applies where stamping and eSign are offered, pointing to the status board without itself stating what is live.
 
@@ -61,16 +61,16 @@ The rupee figures SHALL come from a single frontend constant, which SHALL equal 
 #### Scenario: The constant matches the backend default fee
 - **GIVEN** `application.yml` declares `payment.fee.base-minor-units` and `payment.fee.included-stamp-value-minor-units` defaults
 - **WHEN** the pricing constant is compared with those defaults divided by 100
-- **THEN** both the total and the included duty are equal
+- **THEN** both the total and the included stamp value are equal
 
 #### Scenario: The constant matches the published terms
 - **GIVEN** the ToS clause with id `our-fee` (§7), looked up by id
-- **WHEN** its body is searched for "INR <total> where the stamp duty on your agreement is INR <included duty> or less", built from the constant
+- **WHEN** its body is searched for "INR <total> where the stamp value on your agreement is INR <included stamp value> or less", built from the constant
 - **THEN** it is found
 
 ### Requirement: Guarantees mirror the terms of service
 The home page SHALL present the guarantees as the `#guarantees` tab panel of the "Before you decide" panel. It SHALL hold exactly three guarantees, each restating one ToS promise with all its qualifying conditions and linking to `/terms`:
-- a wrong stamp certificate that is our fault is fixed at our cost, plus a ₹400 refund (§8);
+- a wrong stamp that is our fault is fixed at our cost, plus a ₹400 refund (§8);
 - a failed or expired signing request is re-sent at no charge (§11);
 - a delay of more than two working days through our fault earns ₹100 per further working day, up to ₹400 (§14).
 
@@ -82,7 +82,7 @@ The panel SHALL NOT promise more than those clauses. Its rupee figures and day c
 - **GIVEN** the home page is rendered
 - **WHEN** the `#guarantees` panel is read
 - **THEN** it contains three `details` elements marked `data-testid="guarantee"`, each with its title in the `summary` and a link `href="/terms"` in its body:
-  - a certificate guarantee naming ₹400;
+  - a stamp guarantee naming ₹400;
   - a signing guarantee naming a re-send "at no charge";
   - a delay guarantee naming "₹100 for each further working day, up to ₹400".
 
@@ -90,9 +90,9 @@ The panel SHALL NOT promise more than those clauses. Its rupee figures and day c
 - **GIVEN** the `#guarantees` panel
 - **WHEN** each guarantee's text, including its collapsed body, is read
 - **THEN** the guarantees carry these qualifiers:
-  - certificate: the mistake must be ours, and the refund is reduced by any discount;
+  - stamp: the mistake must be ours, and the refund is reduced by any discount;
   - signing: repeated signer-side failures may cost ₹100;
-  - delay: it names the one-working-day stamping target and that out-of-hours orders count from the next working day; it applies only beyond two working days late through our fault; it excludes waiting on the customer's details, an unreachable signer, portal or eSign outages and public holidays; and it is reduced by any discount.
+  - delay: it names the one-working-day stamping target and that out-of-hours orders count from the next working day; it applies only beyond two working days late through our fault; it excludes waiting on the customer's details, an unreachable signer, SHCIL or eSign being down or no licensed vendor being able to supply the stamp and public holidays; and it is reduced by any discount.
 
 #### Scenario: Guarantee figures match the terms
 - **GIVEN** the guarantees constant
@@ -316,4 +316,13 @@ The home page SHALL replace the separate guarantees, status and FAQ sections wit
 - **GIVEN** the home page is rendered
 - **WHEN** each tab's `aria-controls` and each panel's `aria-labelledby` are read
 - **THEN** every tab controls an existing panel id, and that panel is labelled by that tab's id
+
+### Requirement: The home page describes the stamp without assuming its medium
+The home page and its FAQPage JSON-LD SHALL describe the stamp in words that hold for every state served: a Karnataka SHCIL e-stamp certificate and Telangana non-judicial stamp paper from a licensed vendor. They SHALL NOT call every stamp a "certificate" or say a stamp is bought on a portal. The eSign answer's "digital signature certificate" is about the signature, not the stamp, and is unaffected.
+
+#### Scenario: The home page does not assume the stamp medium
+- **GIVEN** the home page is rendered, together with the FAQPage JSON-LD in `index.html`
+- **WHEN** their text is searched case-insensitively for "portal" and for every occurrence of "certificate"
+- **THEN** "portal" is not found
+- **AND** every occurrence of "certificate" is part of "e-stamp certificate" or "digital signature certificate"
 

@@ -109,6 +109,11 @@ describe("RefundPolicy", () => {
       wrapper.get('[data-testid="refund-intro"] a').attributes("href"),
     ).toBe("/terms");
   });
+
+  it("speaks of a stamp, not a certificate, since Telangana stamps are paper", () => {
+    const text = mount(RefundPolicy, { props: { entity } }).text();
+    expect(text).not.toMatch(/certificate/i);
+  });
 });
 
 describe("draft banner lead-in", () => {

@@ -4,7 +4,7 @@
 
 # AgreementMitra — Terms of Service (DRAFT)
 
-**Last updated:** 5 October 2026
+**Last updated:** 6 October 2026
 
 > This is a draft, published during a restricted beta and pending review by Indian counsel. Sections marked below are deliberately incomplete. We publish it in this state because a draft you can read beats terms that do not exist -- not because it is finished.
 
@@ -25,11 +25,11 @@ These terms apply whenever you use the service, whether or not you create an acc
 
 You answer a structured form about the parties, the premises, the term, the rent and the deposit. We generate a completed rental agreement from a stored template and show it to you before you pay anything.
 
-If you go ahead, we arrange for a stamp certificate to be purchased and affixed to the agreement, and we invite each party to sign it electronically. When everybody has signed, we send the signed PDF and the signing audit trail to the parties.
+If you go ahead, we arrange for a stamp to be purchased and affixed to the agreement, and we invite each party to sign it electronically. When everybody has signed, we send the signed PDF and the signing audit trail to the parties.
 
 We record, for every agreement we generate, a cryptographic fingerprint of the exact template wording used to produce it. For any document we have issued we can state precisely what its template said on the day it was generated.
 
-Not all of that is live yet. The service is in a restricted beta: drafting, previewing and downloading an agreement work today, and stamping and Aadhaar signing are still being integrated. The status board on our home page says what is live, what is in integration and what is planned, and it is kept honest.
+Not all of that is available everywhere yet. The service is in a restricted beta. The status board on our home page summarises where each part stands, and it is kept honest.
 
 ## 3. We are not a law firm, and this is not legal advice
 
@@ -49,13 +49,13 @@ We update templates as the law changes and as we correct them. An agreement you 
 
 ## 5. Where we can stamp and eSign
 
-Stamp duty is levied by each state under its own law, and there is no single national rate. So we can only buy a stamp certificate for a state whose duty we can calculate and whose certificates we can obtain. Today that is Telangana.
+Stamp duty is levied by each state under its own law, and there is no single national rate. So we can stamp and eSign an agreement only for a state whose duty we can calculate and whose stamps we can obtain.
 
-Those are two separate conditions, and a state can meet one without the other. We calculate stamp duty for Karnataka agreements and show you the figure, but we cannot yet buy a Karnataka certificate for you, so a Karnataka agreement is draft-only here for now. Seeing a duty amount is not the same as us being able to stamp for you, and we will not take your money until it is.
+You can draft residential rental agreements for Telangana and Karnataka here.
 
-Templates for other jurisdictions, including our national template, are available to draft, preview and download free of charge. They cannot be paid for, stamped or eSigned here, and we mark them accordingly before you start filling one in. A document you draft this way is yours to use however you wish -- including having it stamped yourself -- but it has not been stamped by us and carries no signature from this service.
+We will not take payment for an agreement in a state we cannot stamp: the service refuses it. We normally tell you before you start filling in a template, by marking it "Draft and download only". Such an agreement can be previewed and downloaded free of charge, but it cannot be paid for, stamped or eSigned here. A document you draft this way is yours to use however you wish -- including having it stamped yourself -- but it has not been stamped by us and carries no signature from this service. The status board on our home page summarises where stamping and eSign stand in each state; for your own agreement, what the service tells you applies.
 
-We add jurisdictions as we are able to. This clause is updated when we do, so it is the current list rather than a promise about the future.
+We add jurisdictions as we are able to, and this clause is updated when we do.
 
 ## 6. What you tell us
 
@@ -65,27 +65,29 @@ You must be entitled to enter into the agreement you are creating, and to provid
 
 ## 7. Our fee
 
-You pay one total, and stamp duty is inside it. There is no second bill later.
+You pay one total, and the stamp is inside it. There is no second bill later.
 
-That total is INR 499 where the stamp duty on your agreement is INR 100 or less. Where the duty is more than INR 100, the total is INR 499 plus the amount by which the duty exceeds INR 100. So a higher duty raises what you pay by exactly what the state charges, and by nothing else.
+That total is INR 499 where the stamp value on your agreement is INR 100 or less. Where the stamp value is more than INR 100, the total is INR 499 plus the amount by which it exceeds INR 100. So a higher stamp raises what you pay by exactly its extra value, and by nothing else.
 
-You are shown the total, and the duty inside it, before you pay. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due.
+We work out the stamp duty the law requires for your agreement and show it to you. Where the state's stamps allow it, we recommend a stamp of that value. In some states we can offer only a stamp of a fixed value, and that value can be below the duty. You can go ahead with a stamp below the duty only after we have shown you what that means: an under-stamped agreement cannot be relied on as evidence until the missing duty and a penalty are paid.
 
-We are still building the part that works the duty out automatically -- the status board on our home page says where it has got to. Until it is live, the price you first see is the flat INR 499, which assumes duty of INR 100. Where the duty on your agreement is more than that, we correct the total to the right amount and show you the corrected figure, and the duty inside it, before you pay. What we will not do is take payment and then come back to you for more.
+You are shown the stamp, the duty and the total before you pay. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due. What we will not do is take payment and then come back to you for more.
 
 ## 8. Stamp duty
 
-> **GAP - FOR COUNSEL.** Our legal position when we buy a stamp certificate for you -- whether we do so as your agent, and what follows from that -- is with counsel. Until that is settled, treat this clause as descriptive rather than as a statement of who bears what -- in particular, whether duty we have paid on your behalf is recoverable, and from whom. What we do when we get it wrong is settled and stated below.
+> **GAP - FOR COUNSEL.** Our legal position when we buy a stamp for you -- whether we do so as your agent, and what follows from that -- is with counsel. Until that is settled, treat this clause as descriptive rather than as a statement of who bears what -- in particular, whether duty we have paid on your behalf is recoverable, and from whom. What we do when we get it wrong is settled and stated below. Also with counsel: whether stamp paper bought separately and attached to an electronically signed agreement stamps it validly, and whether the paper original must accompany the agreement.
 
-Stamp duty is a tax levied by the state government on the document. It is not our fee and we do not keep it. We hold no franking licence of our own: our staff purchase an e-stamp certificate through the ordinary Stock Holding Corporation of India (SHCIL) channel and affix it to your agreement on your behalf.
+Stamp duty is a tax levied by the state government on the document. It is not our fee and we do not keep it. We hold no franking licence of our own: our staff buy the stamp for your agreement through the ordinary channel for its state and attach it to your agreement on your behalf. For a Karnataka agreement that is an e-stamp certificate bought through the Stock Holding Corporation of India (SHCIL). For a Telangana agreement, which SHCIL does not serve, it is non-judicial stamp paper bought from a licensed stamp vendor.
 
 The amount of duty is fixed by the law of the relevant state and depends on the rent, the deposit and the term. We do not set it and we cannot reduce it.
 
 Stamping is not registration. Paying stamp duty on a document is a different thing from registering a lease with the sub-registrar, and a stamped, electronically signed agreement is not a registered lease.
 
-If a certificate we obtain for you is rejected or wrongly denominated because we got it wrong, we put it right at our own cost. You are not asked for any further payment, and we do not treat our mistake as your problem to solve.
+For a Telangana agreement, we keep the paper original of the stamp for one year from the day we buy it, and then shred it. The scan attached to your agreement is not the paper itself. If you want the original, write to us within that year and we will arrange to have it sent to you.
 
-On top of that we refund you INR 400 for the trouble -- in effect our whole charge for arranging the stamping, so the work costs you only the duty the state was always going to take. Where the certificate was rejected because of something you told us that was wrong, we will still help you put it right, but the duty on the replacement is yours.
+If a stamp we obtain for you is rejected or wrongly denominated because we got it wrong, we put it right at our own cost. You are not asked for any further payment, and we do not treat our mistake as your problem to solve.
+
+On top of that we refund you INR 400 for the trouble -- in effect our whole charge for arranging the stamping, so the work costs you only the stamp itself. Where the stamp was rejected because of something you told us that was wrong, we will still help you put it right, but the replacement stamp is yours to pay for.
 
 ## 9. Electronic signature and identity
 
@@ -113,9 +115,9 @@ We may delete unpaid drafts that have been untouched for a long time. See the re
 
 ## 11. Refunds and cancellation
 
-> **GAP - AWAITING PRODUCT INPUT.** One case is still open: what you get back once we have already bought your stamp certificate. Duty paid to the state is not ours to return, whether any of it can be recovered is limited by law, and whether the certificate is yours rather than ours in the first place is a question we have put to counsel. We would rather leave this blank than state a rule we may have no right to apply. No external customer has yet paid us, so no refund has been asked for or refused.
+> **GAP - AWAITING PRODUCT INPUT.** One case is still open: what you get back once we have already bought your stamp. Duty paid to the state is not ours to return, whether any of it can be recovered is limited by law, and whether the stamp is yours rather than ours in the first place is a question we have put to counsel. We would rather leave this blank than state a rule we may have no right to apply. No external customer has yet paid us, so no refund has been asked for or refused.
 
-Before we buy your stamp certificate, you can cancel for any reason. We refund what you paid, less INR 100 towards handling the cancellation.
+Before we buy your stamp, you can cancel for any reason. We refund what you paid, less INR 100 towards handling the cancellation.
 
 If a signing attempt fails or expires, we re-send the signing request at no charge. Where signing repeatedly fails because of something at the signer's end -- an abandoned session, or details that do not match -- we may ask for INR 100 before starting it again. We do not charge you when the failure was ours or the eSign provider's, and where we cannot tell, we treat it as ours.
 
@@ -147,9 +149,9 @@ We answer messages during business hours, 9am to 5pm IST on working days.
 
 We aim to have your agreement stamped within one working day of payment. An order paid for outside business hours is treated as received at the start of the next working day.
 
-That is a target we work to, not a guarantee, and one part of it is outside our hands: the stamp certificate is bought on a government portal and the signing runs through a third party. Where either is unavailable, or where a public holiday intervenes, the clock stops until it is back.
+That is a target we work to, not a guarantee, and one part of it is outside our hands: the stamp is bought through SHCIL or, in Telangana, from licensed stamp vendors, and the signing runs through a third party. Where SHCIL or the signing provider is down, where no licensed vendor can supply the stamp, or where a public holiday intervenes, the clock stops until it is back.
 
-If we are more than two working days late through something that was ours, we refund INR 100 for each further working day, up to INR 400. We do not pay this where the delay was caused by details we were waiting on from you, by a signer we could not reach, or by an outage of the kind just described.
+If we are more than two working days late through something that was ours, we refund INR 100 for each further working day, up to INR 400. We do not pay this where the delay was caused by details we were waiting on from you, by a signer we could not reach, or by a hold-up of the kind just described.
 
 The service is currently in a restricted beta and is not offered with any wider availability guarantee.
 

@@ -142,9 +142,12 @@ Indian buyers are skeptical of online legal docs. Awareness isn't the problem �
 - **Rental/lease agreements are NOT in the excluded list** for Aadhaar eSign
   (the exclusions are negotiable instruments, PoA, trusts, wills, and sale/
   conveyance of immovable property).
-- Telangana supports **online e-stamping** (Registration & Stamps Dept eSTAMPS;
-  **SHCIL** authorized for verification) — you can deliver a properly stamped,
-  legally usable agreement digitally.
+- Telangana stamps are **physical non-judicial stamp paper** bought from a
+  licensed stamp vendor — SHCIL does not list Telangana (ops, confirmed
+  2026-10-06; `rules/stamp-paper/TG.yaml`). We scan and attach the paper to the
+  eSigned agreement; whether that stamps it validly is with counsel
+  (`tg-stamp-duty-counsel-review` in `docs/ROADMAP.md`). Do not claim online
+  e-stamping for Telangana.
 
 **[FLAG] — do NOT over-claim:**
 - Don't say Aadhaar eSign is "*stronger than / exceeds* wet-ink." That's vendor
@@ -197,7 +200,7 @@ players don't build. You will **not** win on price or ad spend vs. NoBroker.
   **Telangana Registration & Stamps Dept official StampFees / Article 31 (LEASE)**
   (`registration.telangana.gov.in`). Compute from there in-product; cite it.
 - **You can say:** "legally valid," "Aadhaar eSign recognized under the IT Act,"
-  "properly e-stamped per Telangana rules," "court-admissible electronic record."
+  "properly stamped per Telangana rules" (once counsel confirms), "court-admissible electronic record."
 - **Avoid:** "registered" (unless you actually register at the Sub-Registrar),
   "stronger than wet-ink," any invented penalty/mandate, and exact stamp-duty
   percentages in ad copy (compute live; rates change).

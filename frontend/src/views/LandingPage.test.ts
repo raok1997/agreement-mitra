@@ -304,11 +304,11 @@ describe("LandingPage", () => {
       expect(card.find('a[href="/terms"]').exists()).toBe(true);
       expect(card.attributes("open"), "collapsed by default").toBeUndefined();
     }
-    const [certificate, signing, delay] = cards.map((c) => squash(c.text()));
+    const [stamp, signing, delay] = cards.map((c) => squash(c.text()));
 
-    expect(certificate).toContain("₹400");
-    expect(certificate).toContain("Only when the mistake is ours");
-    expect(certificate).toContain("Reduced by any discount");
+    expect(stamp).toContain("₹400");
+    expect(stamp).toContain("Only when the mistake is ours");
+    expect(stamp).toContain("Reduced by any discount");
 
     expect(signing).toContain("at no charge");
     expect(signing).toContain("₹100 before restarting");
@@ -320,7 +320,8 @@ describe("LandingPage", () => {
       "counts from the next working day",
       "details from you",
       "a signer we can't reach",
-      "outage",
+      "SHCIL",
+      "licensed vendor",
       "public holiday",
       "Reduced by any discount",
     ]) {
@@ -330,6 +331,22 @@ describe("LandingPage", () => {
     const page = textOf(wrapper.element);
     expect(page).not.toContain("Why bother");
     expect(page).not.toContain("in your language");
+  });
+
+  it("describes the stamp without assuming its medium", () => {
+    // Karnataka stamps are SHCIL e-stamp certificates, Telangana stamps are vendor stamp paper, so
+    // "certificate" is reserved for the e-stamp (or the eSign's digital signature certificate).
+    const texts = [
+      textOf(mount(LandingPage).element),
+      ...faqPageMarkup().flatMap((q) => [q.name, q.text]),
+    ];
+    for (const text of texts) {
+      expect(text).not.toMatch(/portal/i);
+      const stray = text
+        .replace(/e-stamp certificate|digital signature certificate/gi, "")
+        .match(/certificate/i);
+      expect(stray, text).toBeNull();
+    }
   });
 
   describe("FAQ", () => {

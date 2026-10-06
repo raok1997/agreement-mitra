@@ -3,7 +3,7 @@
 // (application.yml defaults and the ToS clause bodies), so a reworded clause fails the build
 // until the page follows.
 
-export const PRICE = { totalRupees: 499, includedDutyRupees: 100 } as const;
+export const PRICE = { totalRupees: 499, includedStampRupees: 100 } as const;
 
 export const GUARANTEES = {
   certificateRefundRupees: 400, // §8

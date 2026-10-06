@@ -15,14 +15,14 @@ describe("promises", () => {
     expect(PRICE.totalRupees * 100).toBe(
       Number(readYamlDefault("base-minor-units")),
     );
-    expect(PRICE.includedDutyRupees * 100).toBe(
+    expect(PRICE.includedStampRupees * 100).toBe(
       Number(readYamlDefault("included-stamp-value-minor-units")),
     );
   });
 
   it("states the fee the terms state (§7)", () => {
     expect(clause("our-fee")).toContain(
-      `INR ${PRICE.totalRupees} where the stamp duty on your agreement is INR ${PRICE.includedDutyRupees} or less`,
+      `INR ${PRICE.totalRupees} where the stamp value on your agreement is INR ${PRICE.includedStampRupees} or less`,
     );
   });
 
