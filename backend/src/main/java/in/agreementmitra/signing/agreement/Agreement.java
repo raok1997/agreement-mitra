@@ -458,6 +458,9 @@ class Agreement implements Persistable<UUID> {
    * Drives both the owner's delete and the list's {@code deletable} flag, so the two cannot
    * disagree. {@code OPEN} is defence in depth - nothing closes an agreement without a signing
    * request today, but the rule must not depend on that staying true.
+   *
+   * <p>Restated by the purge candidate query ({@link AgreementRepository#findStaleDraftCandidates})
+   * as a pre-filter; change both.
    */
   boolean isDeletableDraft(boolean hasSigningRequest, boolean hasPaymentOrder) {
     return !hasSigningRequest

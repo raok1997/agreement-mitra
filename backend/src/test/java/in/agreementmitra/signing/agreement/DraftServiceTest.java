@@ -18,6 +18,7 @@ import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.signing.SigningRequestQuery;
 import in.agreementmitra.support.LogCapture;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -198,6 +199,7 @@ class DraftServiceTest {
     assertThat(record.getValue().getId()).isEqualTo(id);
     assertThat(record.getValue().trackingReference()).isEqualTo("AM7K2Q9XP");
     assertThat(record.getValue().ownerIdentityId()).isEqualTo(CALLER);
+    assertThat(record.getValue().reason()).isEqualTo(DeletionReason.OWNER_DELETE);
     assertThat(record.getValue().deletedAt()).isNotNull();
     verifyNoInteractions(blobStore);
 
@@ -297,5 +299,118 @@ class DraftServiceTest {
     assertThat(logs.messages())
         .anySatisfy(m -> assertThat(m).contains("IOException").doesNotContain(id.toString()));
     assertThat(logs.throwableMessages()).isEmpty();
+  }
+
+  // --- purgeIfStale ------------------------------------------------------------------------
+
+  private static final Instant CUTOFF = Instant.parse("2026-07-01T00:00:00Z");
+
+  /** The agreement loads under the skip-locked lock, last edited at {@code editedAt}. */
+  private void lockedForPurge(UUID id, Instant editedAt) {
+    when(repository.findByIdForPurge(id)).thenReturn(Optional.of(agreement));
+    when(agreement.lastEditedAt()).thenReturn(editedAt);
+  }
+
+  @Test
+  void aStaleUnclaimedDraftIsPurgedWithARetentionRecordAndNoOwner() {
+    UUID id = UUID.randomUUID();
+    lockedForPurge(id, CUTOFF.minusSeconds(86_400));
+    deletable(id);
+    TransactionSynchronizationManager.initSynchronization();
+
+    assertThat(service().purgeIfStale(id, CUTOFF)).isTrue();
+
+    verify(repository).delete(agreement);
+    ArgumentCaptor<AgreementDeletion> record = ArgumentCaptor.forClass(AgreementDeletion.class);
+    verify(deletions).save(record.capture());
+    assertThat(record.getValue().getId()).isEqualTo(id);
+    assertThat(record.getValue().trackingReference()).isEqualTo("AM7K2Q9XP");
+    assertThat(record.getValue().ownerIdentityId()).isNull();
+    assertThat(record.getValue().reason()).isEqualTo(DeletionReason.RETENTION_PURGE);
+    verifyNoInteractions(blobStore);
+
+    runAfterCommit();
+
+    verify(blobStore).delete("drafts/" + id + ".pdf");
+  }
+
+  @Test
+  void aDraftLastEditedOneMicrosecondBeforeTheCutoffIsPurged() {
+    UUID id = UUID.randomUUID();
+    lockedForPurge(id, CUTOFF.minusNanos(1_000));
+    deletable(id);
+
+    assertThat(service().purgeIfStale(id, CUTOFF)).isTrue();
+    verify(repository).delete(agreement);
+  }
+
+  @Test
+  void aDraftLastEditedExactlyAtTheCutoffIsKept() {
+    UUID id = UUID.randomUUID();
+    lockedForPurge(id, CUTOFF);
+
+    assertThat(service().purgeIfStale(id, CUTOFF)).isFalse();
+    assertNothingRemoved();
+  }
+
+  @Test
+  void aDraftEditedAfterTheCutoffIsKept() {
+    UUID id = UUID.randomUUID();
+    lockedForPurge(id, CUTOFF.plusSeconds(60));
+
+    assertThat(service().purgeIfStale(id, CUTOFF)).isFalse();
+    assertNothingRemoved();
+  }
+
+  @Test
+  void aMissingOrSkipLockedRowIsKeptWithoutAnyCheck() {
+    UUID id = UUID.randomUUID();
+    when(repository.findByIdForPurge(id)).thenReturn(Optional.empty());
+
+    assertThat(service().purgeIfStale(id, CUTOFF)).isFalse();
+    verifyNoInteractions(signingRequestQuery, paymentOrderQuery);
+    assertNothingRemoved();
+  }
+
+  @Test
+  void aStaleAgreementTheRuleRefusesIsKept() {
+    UUID id = UUID.randomUUID();
+    lockedForPurge(id, CUTOFF.minusSeconds(86_400));
+    when(signingRequestQuery.existsForAgreement(id)).thenReturn(false);
+    when(paymentOrderQuery.existsForAgreement(id)).thenReturn(true);
+    when(agreement.isDeletableDraft(false, true)).thenReturn(false);
+    TransactionSynchronizationManager.initSynchronization();
+
+    assertThat(service().purgeIfStale(id, CUTOFF)).isFalse();
+    assertNothingRemoved();
+    assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+  }
+
+  private void assertNothingRemoved() {
+    verify(repository, never()).delete(any());
+    verifyNoInteractions(deletions, blobStore);
+  }
+
+  // --- draftIdOf ---------------------------------------------------------------------------
+
+  @Test
+  void draftIdOfAcceptsExactlyADraftStageKey() {
+    UUID id = UUID.randomUUID();
+
+    assertThat(DraftService.draftIdOf("drafts/" + id + ".pdf")).contains(id);
+    assertThat(DraftService.draftStagePrefixes()).containsExactly("drafts/");
+  }
+
+  @Test
+  void draftIdOfRejectsEveryOtherForm() {
+    UUID id = UUID.randomUUID();
+
+    assertThat(DraftService.draftIdOf("drafts/readme.txt")).isEmpty();
+    assertThat(DraftService.draftIdOf("drafts/" + id + ".png")).isEmpty();
+    assertThat(DraftService.draftIdOf("drafts/" + id + ".pdf.bak")).isEmpty();
+    assertThat(DraftService.draftIdOf("drafts/" + id.toString().toUpperCase() + ".pdf")).isEmpty();
+    assertThat(DraftService.draftIdOf("drafts/sub/" + id + ".pdf")).isEmpty();
+    assertThat(DraftService.draftIdOf("signed/" + id + ".pdf")).isEmpty();
+    assertThat(DraftService.draftIdOf("drafts/")).isEmpty();
   }
 }

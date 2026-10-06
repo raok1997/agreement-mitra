@@ -801,8 +801,10 @@ agreement and its parties in one transaction, so that afterwards the agreement i
 (`drafts/{id}.pdf`) SHALL be removed from object storage after that transaction commits, whether or not the
 agreement currently records a draft reference; a failure to remove it SHALL NOT fail the request or restore
 the agreement. In the same transaction the system SHALL record the deletion as a row holding only the agreement id, its
-tracking reference, the owner identity id and the time of deletion, and no party name, contact, address or
-money value. A `stamp_intake_audit` row that referenced the deleted agreement SHALL be kept, with its
+tracking reference, the owner identity id, the time of deletion and the reason `OWNER_DELETE`, and no party
+name, contact, address or money value. The deletion rule, the removal of the agreement, its parties and its
+draft-stage objects, and the shape of this record SHALL be shared with the retention purge (`draft-retention`),
+so the two removals cannot diverge. A `stamp_intake_audit` row that referenced the deleted agreement SHALL be kept, with its
 submitted reference and outcome, and its reference to the agreement cleared. The decision and the delete
 SHALL run under the agreement row's write lock, so that a signing request or payment order committed for the
 agreement before the delete takes the lock causes the delete to be refused.
@@ -834,8 +836,8 @@ agreement before the delete takes the lock causes the delete to be refused.
 
 - **GIVEN** an owned unpaid draft with tracking reference R
 - **WHEN** the owner deletes it
-- **THEN** exactly one deletion record exists holding the agreement id, R, the owner identity id and the
-  deletion time, and it holds no party name, contact, address or money value
+- **THEN** exactly one deletion record exists holding the agreement id, R, the owner identity id, the
+  deletion time and the reason `OWNER_DELETE`, and it holds no party name, contact, address or money value
 - **AND** a refused delete (`404` or `409`) leaves no deletion record
 
 #### Scenario: Another identity's agreement is indistinguishable from an unknown one

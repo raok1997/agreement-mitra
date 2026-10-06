@@ -478,7 +478,9 @@ class DeleteDraftAgreementIntegrationTest {
     Map<String, Object> record =
         jdbc.queryForMap("SELECT * FROM agreement_deletion WHERE agreement_id = ?", id);
     assertThat(record)
-        .containsOnlyKeys("agreement_id", "tracking_reference", "owner_identity_id", "deleted_at")
+        .containsOnlyKeys(
+            "agreement_id", "tracking_reference", "owner_identity_id", "deleted_at", "reason")
+        .containsEntry("reason", "OWNER_DELETE")
         .containsEntry("tracking_reference", reference)
         .containsEntry("owner_identity_id", ownerId);
     assertThat(((java.sql.Timestamp) record.get("deleted_at")).toInstant())

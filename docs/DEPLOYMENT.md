@@ -306,6 +306,7 @@ is the part of the configuration that actually needs reviewing.
 | `MAIL_PROVIDER` | `stub` | The email channel is enabled by default, so delivery reports success and sends nothing. |
 | `ESIGN_PROVIDER` | `zoop` | Correct, but `ZOOP_RESPONSE_URL`/`ZOOP_REDIRECT_URL` default **blank**: the callback never arrives and signatures complete only via the reconciliation job. |
 | `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `INFO` | Correct. Set `DEBUG` only deliberately, for a bounded diagnosis: application lines redact agreement ids to an 8-character prefix, but debug output is still more than production needs. **Do not** raise framework loggers instead -- `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG` logs request URIs (`/api/agreements/<id>/...`), Hibernate bind `TRACE` logs parameter values, root `DEBUG` does both, and enabling a Caddy `log` directive records request URIs; each writes raw agreement ids. |
+| `SIGNING_DRAFT_RETENTION_ENABLED` | `false` | Unpaid drafts are never purged, breaking the 90-day deletion terms of service section 10 promises -- see below. |
 | `DB_URL` | `...?logServerErrorDetail=false` | Correct. An override must keep `logServerErrorDetail=false`, or a unique violation logs the raw agreement id (Postgres `DETAIL`) at ERROR. |
 
 ### Paid fulfilment is off by default, and that is easy to miss
@@ -331,6 +332,22 @@ Lock the files down (`provision.sh secrets` already does this):
 `chmod 600 deploy/env/*.env`. `web-build.env` holds only public operator identifiers, but is
 locked down with the rest; an existing server created before it existed runs
 `touch deploy/env/web-build.env` once (absent also builds, as "being issued").
+
+### Draft retention is opt-in
+
+A daily job (03:30 IST) deletes every unpaid draft whose content has gone 90
+days without an edit, and sweeps `drafts/` objects a failed delete left behind
+(change `stale-draft-purge`). It runs **only** where
+`SIGNING_DRAFT_RETENTION_ENABLED=true`; `backend.env.example` sets it, and
+production must keep it set -- terms of service section 10 promises the
+deletion. Unsetting it is an incident-only lever.
+
+It is off by default because the purge deletes objects in whatever bucket it
+is pointed at. A database restored or cloned from production and run against
+the same bucket (`S3_BUCKET` defaults to the same name everywhere) would purge
+agreements that are live in production and remove their PDFs. **Invariant: each
+environment has its own bucket.** Never enable the job on a restored or cloned
+database until its `S3_BUCKET` is confirmed to be that environment's own.
 
 ### Why the `sandbox` profile is required
 

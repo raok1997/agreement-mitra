@@ -9,6 +9,7 @@ import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.signing.SigningRequestQuery;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,11 @@ public class DraftService {
 
   private static final String CONTENT_TYPE_PDF = "application/pdf";
 
+  private static final String DRAFT_PREFIX = "drafts/";
+
+  /** Characters in a canonical UUID's text form. */
+  private static final int UUID_LENGTH = 36;
+
   private final AgreementRepository repository;
   private final BlobStore blobStore;
   private final SigningRequestQuery signingRequestQuery;
@@ -66,8 +72,40 @@ public class DraftService {
     return List.of(draftKey(agreementId));
   }
 
+  /**
+   * The storage prefix of every key {@link #draftStageKeys} can return - what the orphan sweep
+   * lists. A change that adds a draft-stage key under a new prefix adds the prefix here.
+   */
+  static List<String> draftStagePrefixes() {
+    return List.of(DRAFT_PREFIX);
+  }
+
+  /**
+   * The agreement id whose draft-stage key {@code key} is exactly, or empty. Takes the 36
+   * characters after a {@link #draftStagePrefixes prefix} as the candidate id and accepts it only
+   * if {@link #draftStageKeys} of that id contains {@code key}, so the key format has one
+   * definition and a non-canonical spelling (upper case, another extension, a stray file) is
+   * rejected.
+   */
+  static Optional<UUID> draftIdOf(String key) {
+    for (String prefix : draftStagePrefixes()) {
+      if (!key.startsWith(prefix) || key.length() < prefix.length() + UUID_LENGTH) {
+        continue;
+      }
+      try {
+        UUID id = UUID.fromString(key.substring(prefix.length(), prefix.length() + UUID_LENGTH));
+        if (draftStageKeys(id).contains(key)) {
+          return Optional.of(id);
+        }
+      } catch (IllegalArgumentException notAUuid) {
+        // not a draft-stage key
+      }
+    }
+    return Optional.empty();
+  }
+
   private static String draftKey(UUID agreementId) {
-    return "drafts/" + agreementId + ".pdf";
+    return DRAFT_PREFIX + agreementId + ".pdf";
   }
 
   /**
@@ -149,8 +187,47 @@ public class DraftService {
       throw ConflictException.draftNotDeletable();
     }
 
+    remove(agreement, DeletionReason.OWNER_DELETE);
+    log.debug("Draft deleted for agreement {}", AgreementIds.redact(agreementId));
+  }
+
+  /**
+   * Purge the agreement if, under its row lock, it is still an unpaid draft last edited before
+   * {@code cutoff} (stale-draft-purge D1, D2b). The lock is {@code SKIP LOCKED}: a row another
+   * transaction holds is left for the next run, never waited for. Removes exactly what {@link
+   * #deleteDraft} removes, through the same core, with a {@code RETENTION_PURGE} record.
+   *
+   * <p>Package-private: {@code DraftService} is Java-public for the {@code api} controller, and
+   * nothing outside this package may purge with an arbitrary cutoff.
+   *
+   * @return true if the agreement was purged; false if it is absent, locked, edited since the
+   *     cutoff, or no longer an unpaid draft
+   */
+  @Transactional
+  boolean purgeIfStale(UUID agreementId, Instant cutoff) {
+    Optional<Agreement> locked = repository.findByIdForPurge(agreementId);
+    if (locked.isEmpty()) {
+      return false;
+    }
+    Agreement agreement = locked.get();
+    if (!agreement.lastEditedAt().isBefore(cutoff)
+        || !agreement.isDeletableDraft(
+            signingRequestQuery.existsForAgreement(agreementId),
+            paymentOrderQuery.existsForAgreement(agreementId))) {
+      return false;
+    }
+    remove(agreement, DeletionReason.RETENTION_PURGE);
+    return true;
+  }
+
+  /**
+   * The one delete core: the agreement and its parties, the deletion record stamped now, and the
+   * draft-stage objects after commit. Callers hold the row lock and have decided deletability.
+   */
+  private void remove(Agreement agreement, DeletionReason reason) {
+    UUID agreementId = agreement.getId();
     repository.delete(agreement); // parties cascade
-    deletions.save(AgreementDeletion.of(agreement, Instant.now()));
+    deletions.save(AgreementDeletion.of(agreement, reason, Instant.now()));
 
     List<String> keys = draftStageKeys(agreementId);
     if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -167,8 +244,6 @@ public class DraftService {
           AgreementIds.redact(agreementId));
       removeObjects(agreementId, keys);
     }
-
-    log.debug("Draft deleted for agreement {}", AgreementIds.redact(agreementId));
   }
 
   /**

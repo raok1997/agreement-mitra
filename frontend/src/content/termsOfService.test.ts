@@ -74,3 +74,23 @@ describe("terms of service, single-sourced clauses", () => {
     );
   });
 });
+
+// stale-draft-purge: §10 states the unpaid-draft period. The backend pins the same 90 days in
+// DraftRetentionTest; a change on either side fails a test on that side.
+describe("terms of service, unpaid-draft retention", () => {
+  const drafts = () => clauseById(TERMS_OF_SERVICE, "drafts").body.join(" ");
+
+  it("states the 90-day period and excludes finalised agreements", () => {
+    const text = drafts();
+    expect(text).toContain("90 days");
+    expect(text).toContain("finalised");
+    expect(text).toContain("whether or not it is saved to an account");
+    expect(text).toContain("its link stops working");
+  });
+
+  it("does not describe the period as a discretion", () => {
+    const text = drafts();
+    expect(text).not.toContain("a long time");
+    expect(text).not.toMatch(/may delete/i);
+  });
+});

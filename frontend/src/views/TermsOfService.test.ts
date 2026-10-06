@@ -165,4 +165,10 @@ describe("TermsOfService operator details", () => {
       expect(source, file).not.toContain("v-html");
     }
   });
+
+  it("renders the unpaid-draft retention period in §10", () => {
+    expect(mount(TermsOfService).text()).toContain(
+      "Once an unpaid draft has gone 90 days without a change to its content, we delete it",
+    );
+  });
 });

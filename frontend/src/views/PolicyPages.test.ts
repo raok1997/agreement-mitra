@@ -155,3 +155,13 @@ describe("ContactPage", () => {
     expect(details).toContain("being issued");
   });
 });
+
+describe("PrivacyPolicy, deleted drafts", () => {
+  it("renders the deleted-drafts clause covering a draft we delete", () => {
+    const text = mount(PrivacyPolicy, { props: { entity } }).text();
+    expect(text).toContain("8. Deleted drafts");
+    expect(text).toContain(
+      "We keep the same record when we delete an unpaid draft that has gone 90 days without a change.",
+    );
+  });
+});

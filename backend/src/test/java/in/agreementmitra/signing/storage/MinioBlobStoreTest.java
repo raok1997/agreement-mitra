@@ -11,10 +11,14 @@ import static org.mockito.Mockito.when;
 import in.agreementmitra.AgreementIds;
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
+import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -74,5 +78,27 @@ class MinioBlobStoreTest {
     assertThatThrownBy(() -> store.delete(KEY))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("Failed to delete object " + REDACTED_KEY);
+  }
+
+  @Test
+  void aFailedListingNamesNoObject() throws Exception {
+    when(client.listObjects(any(ListObjectsArgs.class)))
+        .thenReturn(List.of(new Result<Item>(new IOException("bad item " + KEY))));
+
+    assertThatThrownBy(() -> store.list("drafts/"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .hasMessageNotContaining(ID.toString());
+  }
+
+  @Test
+  void aListingCallThatThrowsNamesNoObject() {
+    when(client.listObjects(any(ListObjectsArgs.class)))
+        .thenThrow(new IllegalArgumentException("bad " + KEY));
+
+    assertThatThrownBy(() -> store.list("drafts/"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .hasMessageNotContaining(ID.toString());
   }
 }

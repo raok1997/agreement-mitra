@@ -1,6 +1,7 @@
 package in.agreementmitra.signing.agreement;
 
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,4 +49,45 @@ interface AgreementRepository extends JpaRepository<Agreement, UUID> {
    */
   @Query(value = "SELECT * FROM agreement WHERE id = :id FOR UPDATE", nativeQuery = true)
   Optional<Agreement> findByIdForDelete(@Param("id") UUID id);
+
+  /**
+   * Load an agreement under {@code FOR UPDATE SKIP LOCKED}, for the retention purge (stale-draft-
+   * purge D2b): the same full lock as {@link #findByIdForDelete}, but a row another transaction
+   * holds - an edit, a claim, a finalise, an in-flight child insert, another instance's purge - is
+   * returned empty instead of waited for. The purge never queues behind a user request.
+   */
+  @Query(
+      value = "SELECT * FROM agreement WHERE id = :id FOR UPDATE SKIP LOCKED",
+      nativeQuery = true)
+  Optional<Agreement> findByIdForPurge(@Param("id") UUID id);
+
+  /**
+   * One keyset page of retention-purge candidates: {@code (id, last_edited_at)} of unpaid open
+   * agreements last edited before {@code cutoff}, with no signing request and no payment order,
+   * strictly after the cursor {@code (afterEditedAt, afterId)}, oldest first.
+   *
+   * <p>A deliberate <b>pre-filter copy</b> of {@link Agreement#isDeletableDraft} (D2): it only
+   * narrows the set, and the decision is re-made under the row lock in {@code
+   * DraftService.purgeIfStale}, so drift cannot cause a wrong delete. Change both together. The
+   * state literals stay inline so the planner matches the V25 partial index. The cursor must never
+   * be NULL (a NULL row comparison selects nothing); start at {@code (EPOCH, 0-UUID)}.
+   */
+  @Query(
+      value =
+          """
+          SELECT a.id, a.last_edited_at FROM agreement a
+          WHERE a.payment_state = 'UNPAID' AND a.closure_state = 'OPEN'
+            AND a.last_edited_at < :cutoff
+            AND (a.last_edited_at, a.id) > (:afterEditedAt, :afterId)
+            AND NOT EXISTS (SELECT 1 FROM signing_request s WHERE s.agreement_id = a.id)
+            AND NOT EXISTS (SELECT 1 FROM payment_order p WHERE p.agreement_id = a.id)
+          ORDER BY a.last_edited_at, a.id
+          LIMIT :limit
+          """,
+      nativeQuery = true)
+  List<Object[]> findStaleDraftCandidates(
+      @Param("cutoff") Instant cutoff,
+      @Param("afterEditedAt") Instant afterEditedAt,
+      @Param("afterId") UUID afterId,
+      @Param("limit") int limit);
 }

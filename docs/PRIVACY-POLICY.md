@@ -75,13 +75,15 @@ While you draft, the form keeps your answers, including the parties' details, in
 
 ## 7. How long we keep it
 
-> **GAP - FOR COUNSEL.** How long we keep each kind of personal data described here, and whether the periods in the terms of service are the right ones under the Act, is with counsel. Until it is settled, this policy states no period of its own, other than how long we keep a Telangana stamp-paper original, which is set out under what we collect and in the terms of service's stamp-duty clause.
+> **GAP - FOR COUNSEL.** How long we keep each kind of personal data described here, and whether the periods in the terms of service are the right ones under the Act, is with counsel. Until it is settled, this policy states no period of its own, other than how long we keep a Telangana stamp-paper original, which is set out under what we collect and in the terms of service's stamp-duty clause, and the 90 days an unpaid draft may go without a change before we delete it, which is set out in the terms of service's drafts clause.
 
 How long we keep an agreement and its signing records is set out in the terms of service's clause on how long we keep things and deletion.
 
-## 8. Drafts you delete
+## 8. Deleted drafts
 
-When you delete a draft, we keep a record that it was deleted -- its reference, the account that deleted it and the time -- and none of the parties' details.
+When you delete a draft, we keep a record that it was deleted -- its reference, the account it was saved to, if any, and the time -- and none of the parties' details.
+
+We keep the same record when we delete an unpaid draft that has gone 90 days without a change.
 
 ## 9. Your rights
 

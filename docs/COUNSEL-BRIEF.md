@@ -338,9 +338,12 @@ Protection Act, 2023 requires a separate privacy notice and a stated basis and r
 period rather than terms of service alone, and whether our retention of the provider's audit
 trail carries obligations of its own. The same question covers one further record: when a
 signed-in customer deletes an unpaid draft, we keep a record that it was deleted — the
-agreement's reference, the account that deleted it and the time, with no party details. We
+agreement's reference, the account it was saved to and the time, with no party details. We
 intend to keep it on the same three-year horizon as our other records and would like to know
-whether that is a permissible period for it.
+whether that is a permissible period for it. We now also delete, ourselves, every unpaid draft
+that has gone **90 days** without a change to its content, whether or not it was saved to an
+account, and keep the same record (terms §10, privacy policy §8): is 90 days a permissible
+period for keeping an abandoned unpaid draft's party details, or must it be shorter?
 
 **A draft privacy policy now exists** — the separate document `PRIVACY-POLICY.md` (Annexure C),
 published at `agreementmitra.com/privacy`. Terms §15 now only points to it, and deliberately

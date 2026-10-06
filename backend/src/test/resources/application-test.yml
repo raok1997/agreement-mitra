@@ -58,6 +58,10 @@ signing:
     retry-enabled: false
     initial-backoff: PT0S
     max-backoff: PT0S
+  # The draft retention job is opt-in everywhere; pinned off here too. Tests call DraftRetention
+  # directly.
+  draft-retention:
+    enabled: false
 
 # The email seam stays on the STUB in tests: messages are captured in memory and nothing is sent, so
 # no test needs a mailbox, a credential, or network access. Delivery tests assert against the

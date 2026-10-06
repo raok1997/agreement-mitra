@@ -1,6 +1,7 @@
 package in.agreementmitra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import in.agreementmitra.support.HarnessTestConfig;
 import java.sql.Timestamp;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.jdbc.JdbcConnectionDetails;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
@@ -169,5 +171,58 @@ class FlywayMigrationIntegrationTest {
             String.class);
 
     assertThat(deleteRule).isEqualTo("SET NULL");
+  }
+
+  @Test
+  void v25BackfillsOwnerDeleteAndAllowsAnOwnerlessPurgeRecordOnly() {
+    String schema = "v25_reason";
+    DriverManagerDataSource scratch =
+        new DriverManagerDataSource(
+            connectionDetails.getJdbcUrl(),
+            connectionDetails.getUsername(),
+            connectionDetails.getPassword());
+    JdbcTemplate jdbc = new JdbcTemplate(scratch);
+    String table = schema + ".agreement_deletion";
+    try {
+      Flyway.configure().dataSource(scratch).schemas(schema).target("24").load().migrate();
+      UUID existing = UUID.randomUUID();
+      jdbc.update(
+          "INSERT INTO "
+              + table
+              + " (agreement_id, tracking_reference, owner_identity_id, deleted_at)"
+              + " VALUES (?, 'AMV25BACK1', ?, now())",
+          existing,
+          UUID.randomUUID());
+
+      Flyway.configure().dataSource(scratch).schemas(schema).target("25").load().migrate();
+
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT reason FROM " + table + " WHERE agreement_id = ?",
+                  String.class,
+                  existing))
+          .isEqualTo("OWNER_DELETE");
+      String insert =
+          "INSERT INTO "
+              + table
+              + " (agreement_id, tracking_reference, owner_identity_id, deleted_at, reason)"
+              + " VALUES (?, 'AMV25NEW01', NULL, now(), ?)";
+      jdbc.update(insert, UUID.randomUUID(), "RETENTION_PURGE");
+      assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), "SOMETHING_ELSE"))
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(
+              () ->
+                  jdbc.update(
+                      "INSERT INTO "
+                          + table
+                          + " (agreement_id, tracking_reference, owner_identity_id, deleted_at)"
+                          + " VALUES (?, 'AMV25NEW02', ?, now())",
+                      UUID.randomUUID(),
+                      UUID.randomUUID()))
+          .as("reason has no default after V25")
+          .isInstanceOf(DataIntegrityViolationException.class);
+    } finally {
+      jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
   }
 }

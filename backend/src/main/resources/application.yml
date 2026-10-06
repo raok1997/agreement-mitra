@@ -32,6 +32,14 @@ spring:
   flyway:
     enabled: true
     clean-disabled: true
+  # One thread per @Scheduled job - today four: signing and payment reconciliation, delivery retry,
+  # draft retention. Boot's default pool is ONE thread, so a long draft-retention run would otherwise
+  # delay the reconciliation jobs that are the fallback for missed webhooks (stale-draft-purge D7).
+  # A change that adds a @Scheduled job raises this number.
+  task:
+    scheduling:
+      pool:
+        size: 4
 
 server:
   port: ${SERVER_PORT:8090}
@@ -94,6 +102,14 @@ signing:
     initial-backoff: ${SIGNING_DELIVERY_INITIAL_BACKOFF:PT1M}
     max-backoff: ${SIGNING_DELIVERY_MAX_BACKOFF:PT1H}
     batch-size: ${SIGNING_DELIVERY_BATCH_SIZE:50}
+  # Daily retention purge of unpaid drafts unedited for 90 days, plus the orphaned drafts/ object
+  # sweep (stale-draft-purge). OPT-IN: it deletes objects in whatever bucket it points at, so a
+  # cloned database against a shared bucket would purge production's live agreements. Production
+  # sets SIGNING_DRAFT_RETENTION_ENABLED=true (docs/DEPLOYMENT.md); each environment has its own
+  # bucket. The 90-day period is a code constant (terms of service section 10), not a property.
+  draft-retention:
+    enabled: ${SIGNING_DRAFT_RETENTION_ENABLED:false}
+    cron: ${SIGNING_DRAFT_RETENTION_CRON:0 30 3 * * *}
 
 # Outbound email (signed-delivery-and-closure CR). ONE SMTP adapter serves both environments:
 # free Zoho Mail in development, Zoho ZeptoMail in production. The upgrade is host plus credentials,

@@ -29,12 +29,30 @@ describe("privacy policy", () => {
     expect(clauseById(PRIVACY_POLICY, id).status).toBe("counsel");
   });
 
-  it("states no retention period of its own", () => {
+  it("states no retention period of its own beyond the unpaid-draft period", () => {
     // Retention is counsel's; a period here would be a second copy of the terms' clause, or a guess.
-    expect(text("retention")).not.toMatch(
+    // The one exception is the 90-day draft period, which the gap points at in the terms.
+    const gap = text("retention");
+    expect(gap).toContain("90 days an unpaid draft may go without a change");
+    expect(gap.replace("90 days", "")).not.toMatch(
       /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[\s-]*(hour|day|week|month|year)/i,
     );
-    expect(text("retention")).toContain("terms of service");
+    expect(gap).toContain("terms of service");
+  });
+
+  it("covers a draft we delete in the deleted-drafts clause", () => {
+    const clause = clauseById(PRIVACY_POLICY, "deleted-drafts");
+    const body = text("deleted-drafts");
+    expect(clause.heading).toBe("8. Deleted drafts");
+    expect(body).toContain(
+      "when we delete an unpaid draft that has gone 90 days without a change",
+    );
+    expect(body).toContain("the account it was saved to, if any");
+    expect(body).not.toContain("the account that deleted it");
+    expect(body).toContain("none of the parties' details");
+    expect(body).not.toMatch(/deleted after/i);
+    // No period for an agreement that has been finalised or gone to payment.
+    expect(body).not.toMatch(/finalised|payment|three years/i);
   });
 
   it("discloses browser storage and the sign-in binding cookie", () => {
