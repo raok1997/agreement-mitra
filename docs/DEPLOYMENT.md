@@ -527,6 +527,8 @@ already broken -- check with step 3 before deploying anything else, and resolve
 
 ### Deploying a change: `deploy/deploy.sh`
 
+A one-page overview for humans is in [`DEPLOYING.md`](DEPLOYING.md); this section is the full reference.
+
 One command deploys a commit from `main`, and refuses before touching anything
 when the box is not in a deployable state. Run it as root **inside `tmux`**: a
 dropped SSH session otherwise kills the deploy mid-way (the script warns, and the
