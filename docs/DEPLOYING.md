@@ -81,3 +81,5 @@ whether the key is secret, who sets it, and whether it is required.
 - **Never run `docker compose ... --build` by hand.** It would overwrite the running image.
 - **Never run `docker compose pull`.** It can silently upgrade MinIO, and a newer MinIO can break storage.
 - **Merge rights on `main` are, in effect, root on production.** Treat branch protection accordingly.
+
+<!-- practice deploy 2026-10-07 -->
