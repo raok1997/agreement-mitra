@@ -276,10 +276,25 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
    - **`byo-every-page-signatures`** — detect whether every page's footer band is
      free of text, decide once per document, and disclose the outcome with a
      remedy. Needs the one above.
+3. **Lease-expiry reminders** — opt-in email reminders, before the notice date and
+   the end date of a signed agreement, so neither party loses money to a missed
+   notice or an unplanned vacancy. Direction agreed 2026-10-06 and **not yet
+   proposed**; decisions, constraints and the CR split are in
+   `docs/LEASE-REMINDERS.md`. **Mock screens:**
+   https://claude.ai/artifact/SvSyc48KjevsQH68nxcabF (private — ask for access).
+   Opt-in only, signed-in owning account only, to its Google-verified email;
+   email only in v1. Three changes in dependency order:
+   - **`lease-countdown`** — notice period copied onto the agreement at signing,
+     countdown chips, "Add to calendar". No email.
+   - **`lease-reminders`** — consent-recorded opt-in, the reminder job and emails,
+     turn-off from app and email, privacy/ToS/FAQ text. Needs the one above;
+     production sends need `zeptomail-production-provisioning`.
+   - **`renew-agreement`** — a new draft prefilled from a signed agreement; the
+     reminder's button becomes "Renew".
 
 ## Track B — ZOOP test access is free and self-serve (no longer blocked)
 
-3. **ZOOP test-environment tracer** — the one deferred manual-test item, and the
+4. **ZOOP test-environment tracer** — the one deferred manual-test item, and the
    acceptance gate for signature placement. Sign up for free staging access, set
    `ZOOP_APP_ID` / `ZOOP_API_KEY` from env, and run one real `/v5/init` against
    `https://test.zoop.plus/contract/esign` with two dummy Aadhaar signers,
@@ -293,7 +308,7 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
    `docs/integrations/zoop.md` section 5.
    _(The equivalent Leegality sandbox tracer remains blocked on a support-issued
    developer account; it is no longer on the critical path.)_
-4. **`leegality-real-stamp`** — **SUPERSEDED** by `manual-estamp-upload`.
+5. **`leegality-real-stamp`** — **SUPERSEDED** by `manual-estamp-upload`.
    Synthetic stamping is gone; staff now purchase a real stamp out-of-band
    (Karnataka: a SHCIL e-stamp; Telangana: non-judicial stamp paper from a
    licensed vendor), scan it, and upload it through the STAFF-only intake endpoint,
