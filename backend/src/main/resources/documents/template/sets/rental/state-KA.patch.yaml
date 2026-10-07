@@ -38,18 +38,16 @@ ops:
                 text: "This Agreement shall be governed by the laws of India and the tenancy laws
                        applicable in the State of Karnataka, including, where applicable, the
                        Karnataka Rent Act, 1999, as amended." } }
-  # The twelve-month threshold is NOT a copy of Telangana's "eleven (11) months". Karnataka has no
-  # state amendment to section 17 of the Registration Act 1908, so the unamended central threshold
-  # applies -- a term exceeding one year. It must stay equal to `requiredWhenTermMonthsOver` in
-  # rules/stamp-duty/KA/*.yaml; a deed that states one threshold while the quote applies another is
-  # a defect the render tests exist to catch.
+  # The clause states NO registration threshold: "where the law requires it". The threshold lives
+  # only in rules/stamp-duty/<state>/*.yaml (`requiredWhenTermMonthsOver`), which drives the
+  # registration notice on the stamp quote, so the deed can never contradict it (decided
+  # 2026-10-07, after the Telangana clause had drifted to "eleven months" against a rule of 0).
   - { op: addClause,
       clause: { id: kaStampRegistration,
                 text: "This Agreement shall be duly stamped under the Karnataka Stamp Act, 1957 and,
-                       where the term exceeds twelve (12) months, compulsorily registered before the
-                       jurisdictional Sub-Registrar in the State of Karnataka under the Registration
-                       Act, 1908. The stamp duty and registration charges shall be borne by the
-                       {{registrationChargesBorneBy}}." } }
+                       where the law requires it, registered before the jurisdictional Sub-Registrar
+                       in the State of Karnataka under the Registration Act, 1908. The stamp duty and
+                       registration charges shall be borne by the {{registrationChargesBorneBy}}." } }
   - { op: addClause,
       clause: { id: kaStampAmount, showWhen: "stampDutyAmount > 0",
                 text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }
