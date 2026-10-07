@@ -44,8 +44,9 @@ maximumAmount: null
 rounding: { mode: UP, unitRupees: 1 }
 # Art. 22 [K4]; flat, and a deliberate over-reading -- see lease-residential.yaml.
 counterpartDuty: "500"
-# Registration Act 1908 s.17(1)(d) [K3], unamended in Karnataka.
-registration: { requiredWhenTermMonthsOver: 12 }
+# Registration Act 1908 s.17(1)(d) [K3], unamended in Karnataka: twelve months or more, as
+# lease-residential.yaml explains.
+registration: { requiredWhenTermMonthsOver: 11 }
 cases:
   # The deliberate contrast with the residential rule: identical facts, no cap, so INR 1,700 rather
   # than INR 500. If these two ever quote the same figure, the cap has leaked across usages.

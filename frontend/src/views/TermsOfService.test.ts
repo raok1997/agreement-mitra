@@ -5,7 +5,7 @@ import { mount } from "@vue/test-utils";
 import TermsOfService from "./TermsOfService.vue";
 import { clauseById } from "../content/legalDocument";
 import { TERMS_OF_SERVICE } from "../content/termsOfService";
-import { CONTACT_EMAIL, PRICE } from "../content/promises";
+import { CONTACT_EMAIL, GRIEVANCE_EMAIL, PRICE } from "../content/promises";
 
 // The page is published DELIBERATELY unfinished (docs/LEGAL-POSTURE.md item 2: a draft beats
 // nothing). What makes that defensible rather than sloppy is that the unfinished parts announce
@@ -39,12 +39,12 @@ describe("TermsOfService", () => {
     }
   });
 
-  it("distinguishes a gap that is with counsel from one nobody has decided", () => {
-    // The two are different problems with different owners, and conflating them would let a
-    // commercial decision hide behind "the lawyers have it".
+  it("labels each gap with who owes it", () => {
+    // Counsel gaps and undecided commercial terms are different problems with different owners.
+    // Every commercial term is decided today, so only the counsel label renders.
     const text = mount(TermsOfService).text();
     expect(text).toContain("Gap - with our lawyers");
-    expect(text).toContain("Gap - not yet decided");
+    expect(text).not.toContain("Gap - not yet decided");
   });
 
   it("states the things we committed to writing ourselves", () => {
@@ -60,17 +60,16 @@ describe("TermsOfService", () => {
     expect(text).toContain("An unpaid draft is yours to abandon");
   });
 
-  it("leaves open only what nobody has decided, and marks it", () => {
+  it("states every commercial term, leaving only legal questions open", () => {
     // The failure this guards against: a placeholder number reaching counsel as though intended.
-    // The fee, the compensation for our own error and the turnaround are now decided, so they are
-    // stated. What a customer gets back once we have already bought their stamp is not, and
-    // it stays a visible gap rather than acquiring a plausible-looking number.
+    // The fee, the compensation for our own error, the turnaround and the refund once the stamp is
+    // bought are all decided, so they are stated.
     const byId = (id: string) => clauseById(TERMS_OF_SERVICE, id);
 
     expect(byId("our-fee").status).toBe("drafted");
     expect(byId("availability-and-support").status).toBe("drafted");
-    expect(byId("refunds").status).toBe("product");
-    // Retention is decided (three years); what remains on it is a legal question, not a
+    expect(byId("refunds").status).toBe("drafted");
+    // Retention is decided; what remains on it is a legal question, not a
     // commercial one, so it carries a counsel gap rather than a product one.
     expect(byId("retention").status).toBe("counsel");
   });
@@ -131,6 +130,7 @@ describe("TermsOfService operator details", () => {
     legalName: "KAVISAT TEK LABS LLP",
     llpin: null,
     registeredOffice: null,
+    grievanceOfficer: null,
   };
 
   it("follows the last clause and names the LLP, its LLPIN state and the support email", () => {
@@ -143,6 +143,7 @@ describe("TermsOfService operator details", () => {
     expect(text).toContain("being issued");
     expect(text).toContain("to be confirmed");
     expect(text).toContain(CONTACT_EMAIL);
+    expect(text).toContain(`to be named, ${GRIEVANCE_EMAIL}`);
 
     const sections = wrapper.findAll("section").map((s) => s.element);
     const lastClause = sections

@@ -220,19 +220,23 @@ class StampDutyCalculatorIntegrationTest {
   }
 
   @Test
-  void karnatakaReportsRegistrationOnlyAboveTwelveMonths() {
+  void karnatakaReportsRegistrationFromTwelveMonths() {
     shippedKarnataka()
         .run(
             context -> {
               StampDutyCalculator calculator = context.getBean(StampDutyCalculator.class);
 
               // Registration Act 1908 s.17(1)(d), unamended in Karnataka -- unlike Telangana, where
-              // a state amendment makes every lease registrable.
-              assertThat(calculator.quote(karnataka(DutyBasis.Usage.RESIDENTIAL, 12, "5000", "0")))
+              // a state amendment makes every lease registrable. Twelve months or more, the
+              // ordinary published position (decided 2026-10-07; counsel confirms).
+              assertThat(calculator.quote(karnataka(DutyBasis.Usage.RESIDENTIAL, 11, "5000", "0")))
                   .isInstanceOfSatisfying(
                       DutyOutcome.Quoted.class,
                       q -> assertThat(q.registrationRequired()).isFalse());
-              assertThat(calculator.quote(karnataka(DutyBasis.Usage.RESIDENTIAL, 13, "5000", "0")))
+              assertThat(calculator.quote(karnataka(DutyBasis.Usage.RESIDENTIAL, 12, "5000", "0")))
+                  .isInstanceOfSatisfying(
+                      DutyOutcome.Quoted.class, q -> assertThat(q.registrationRequired()).isTrue());
+              assertThat(calculator.quote(karnataka(DutyBasis.Usage.COMMERCIAL, 12, "5000", "0")))
                   .isInstanceOfSatisfying(
                       DutyOutcome.Quoted.class, q -> assertThat(q.registrationRequired()).isTrue());
             });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { clauseById } from "./legalDocument";
+import { GRIEVANCE_EMAIL } from "./promises";
+import { TERMS_OF_SERVICE } from "./termsOfService";
 import {
   PRIVACY_COLLECTED_CATEGORIES,
   PRIVACY_POLICY,
@@ -19,25 +21,30 @@ describe("privacy policy", () => {
     expect(clause.body.join(" ")).toContain("data fiduciary");
   });
 
-  it.each([
-    "purposes-and-basis",
-    "retention",
-    "your-rights",
-    "grievance",
-    "transfers",
-  ])("leaves %s to counsel", (id) => {
-    expect(clauseById(PRIVACY_POLICY, id).status).toBe("counsel");
+  it("drafts every clause, leaving nothing to counsel", () => {
+    for (const clause of PRIVACY_POLICY.clauses) {
+      expect(clause.status, clause.id).toBe("drafted");
+    }
   });
 
-  it("states no retention period of its own beyond the unpaid-draft period", () => {
-    // Retention is counsel's; a period here would be a second copy of the terms' clause, or a guess.
-    // The one exception is the 90-day draft period, which the gap points at in the terms.
-    const gap = text("retention");
-    expect(gap).toContain("90 days an unpaid draft may go without a change");
-    expect(gap.replace("90 days", "")).not.toMatch(
-      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[\s-]*(hour|day|week|month|year)/i,
+  it("states the same agreement and draft periods the terms state", () => {
+    // Each period is restated here, so a change on either side must fail until both agree.
+    const retention = text("retention");
+    const signedPeriod = "until three years after the tenancy ends";
+    expect(retention).toContain(signedPeriod);
+    expect(clauseById(TERMS_OF_SERVICE, "retention").body.join(" ")).toContain(
+      signedPeriod,
     );
-    expect(gap).toContain("terms of service");
+    expect(retention).toContain("90 days without a change");
+    expect(clauseById(TERMS_OF_SERVICE, "drafts").body.join(" ")).toContain(
+      "90 days without a change",
+    );
+  });
+
+  it("sends rights requests and grievances to the grievance address", () => {
+    expect(text("your-rights")).toContain(GRIEVANCE_EMAIL);
+    expect(text("grievance")).toContain(GRIEVANCE_EMAIL);
+    expect(text("grievance")).toContain("Data Protection Board of India");
   });
 
   it("covers a draft we delete in the deleted-drafts clause", () => {

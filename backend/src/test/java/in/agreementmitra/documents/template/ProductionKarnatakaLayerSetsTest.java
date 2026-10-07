@@ -101,20 +101,20 @@ class ProductionKarnatakaLayerSetsTest {
     String html = compileWithNoOptionalSections(type);
 
     assertThat(html).contains(STATUTORY).contains("Karnataka Stamp Act, 1957");
-    assertThat(html.split("compulsorily registered", -1))
+    assertThat(html.split("registered before the jurisdictional Sub-Registrar", -1))
         .as("exactly one stamp/registration clause on a default Karnataka deed")
         .hasSize(2);
   }
 
   @ParameterizedTest(name = "(KA, {0})")
   @CsvSource({"residential", "commercial"})
-  void theRegistrationThresholdMatchesTheKarnatakaDutyRule(String type) {
-    // rules/stamp-duty/KA/*.yaml sets requiredWhenTermMonthsOver: 12 (the unamended Registration
-    // Act
-    // 1908 s.17(1)(d)), NOT Telangana's threshold. A deed that states one threshold while the quote
-    // applies another is a defect, so the wording is pinned here.
+  void theDeedStatesNoRegistrationThreshold(String type) {
+    // The threshold lives only in rules/stamp-duty/KA/*.yaml (requiredWhenTermMonthsOver), which
+    // drives the quote's registration notice. A deed that stated its own threshold could contradict
+    // the quote -- Telangana's did -- so the deed defers to the law instead.
     assertThat(compileWithNoOptionalSections(type))
-        .contains("the term exceeds twelve (12) months")
+        .contains("where the law requires it, registered")
+        .doesNotContain("twelve (12) months, compulsorily")
         .doesNotContain("eleven (11) months");
   }
 

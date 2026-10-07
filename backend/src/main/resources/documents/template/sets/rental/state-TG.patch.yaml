@@ -34,10 +34,10 @@ ops:
                        Rent and Eviction) Control Act, 1960, as amended." } }
   - { op: addClause,
       clause: { id: tgStampRegistration,
-                text: "This Agreement shall be duly stamped and, where the term exceeds eleven (11)
-                       months, compulsorily registered before the jurisdictional Sub-Registrar in the
-                       State of Telangana under the Registration Act, 1908. The stamp duty and
-                       registration charges shall be borne by the {{registrationChargesBorneBy}}." } }
+                text: "This Agreement shall be duly stamped and, where the law requires it, registered
+                       before the jurisdictional Sub-Registrar in the State of Telangana under the
+                       Registration Act, 1908. The stamp duty and registration charges shall be borne
+                       by the {{registrationChargesBorneBy}}." } }
   - { op: addClause,
       clause: { id: tgStampAmount, showWhen: "stampDutyAmount > 0",
                 text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }

@@ -328,7 +328,7 @@ class ProductionRentalLayerSetTest {
         .contains("Statutory (Telangana)") // mandatory TG statutory overlay renders by default
         // The clause the whole flag exists for: TG drops the national stampRegistrationClause, so
         // this is the only stamp/registration wording a Telangana deed can carry.
-        .contains("compulsorily registered before the jurisdictional Sub-Registrar")
+        .contains("where the law requires it, registered before the jurisdictional Sub-Registrar")
         // tgEssentialServices: the owner may not cut water/electricity during the tenancy.
         .contains("withhold or disconnect essential supplies")
         // tgGoverningLaw: the TG-specific statute, not just "laws of India".

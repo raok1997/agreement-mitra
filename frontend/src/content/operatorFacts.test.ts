@@ -46,6 +46,7 @@ describe("assertOperatorEnv", () => {
       assertOperatorEnv({
         VITE_OPERATOR_LLPIN: value,
         VITE_OPERATOR_REGISTERED_OFFICE: value,
+        VITE_OPERATOR_GRIEVANCE_OFFICER: value,
       }),
     ).not.toThrow();
   });
@@ -89,6 +90,32 @@ describe("assertOperatorEnv", () => {
   });
 });
 
+describe("the grievance officer's name", () => {
+  it("passes a realistic name", () => {
+    expect(() =>
+      assertOperatorEnv({
+        VITE_OPERATOR_GRIEVANCE_OFFICER: " K. Rao-D'Souza ",
+      }),
+    ).not.toThrow();
+  });
+
+  it.each(["Rao <script>", "Rao 1", "Rao\nK", "Rāo", "x".repeat(101)])(
+    "refuses %j, naming the variable",
+    (name) => {
+      expect(() =>
+        assertOperatorEnv({ VITE_OPERATOR_GRIEVANCE_OFFICER: name }),
+      ).toThrow(/VITE_OPERATOR_GRIEVANCE_OFFICER/);
+    },
+  );
+
+  it("resolves a set name, trimmed", () => {
+    expect(
+      resolveOperatingEntity({ VITE_OPERATOR_GRIEVANCE_OFFICER: " K Rao " })
+        .grievanceOfficer,
+    ).toBe("K Rao");
+  });
+});
+
 describe("resolveOperatingEntity", () => {
   it("trims values and maps blank to null", () => {
     expect(
@@ -100,6 +127,7 @@ describe("resolveOperatingEntity", () => {
       legalName: OPERATOR_LEGAL_NAME,
       llpin: "ACA-1234",
       registeredOffice: null,
+      grievanceOfficer: null,
     });
   });
 
@@ -108,6 +136,7 @@ describe("resolveOperatingEntity", () => {
       legalName: OPERATOR_LEGAL_NAME,
       llpin: null,
       registeredOffice: null,
+      grievanceOfficer: null,
     });
   });
 });

@@ -2,7 +2,7 @@
 // The operator's identifiers, rendered after the clauses and never inside them: the accepted policy
 // text must not change when an LLPIN is issued (operating-entity-disclosure D6).
 import type { OperatingEntity } from "../content/operatingEntity";
-import { CONTACT_EMAIL } from "../content/promises";
+import { CONTACT_EMAIL, GRIEVANCE_EMAIL } from "../content/promises";
 
 defineProps<{ entity: OperatingEntity }>();
 </script>
@@ -24,6 +24,10 @@ defineProps<{ entity: OperatingEntity }>();
       <dd>{{ entity.registeredOffice ?? "to be confirmed" }}</dd>
       <dt class="font-medium">Support</dt>
       <dd>{{ CONTACT_EMAIL }}</dd>
+      <dt class="font-medium">Grievance officer</dt>
+      <dd>
+        {{ entity.grievanceOfficer ?? "to be named" }}, {{ GRIEVANCE_EMAIL }}
+      </dd>
     </dl>
   </section>
 </template>

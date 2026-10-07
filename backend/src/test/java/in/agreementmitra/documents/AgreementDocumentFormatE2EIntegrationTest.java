@@ -306,7 +306,7 @@ class AgreementDocumentFormatE2EIntegrationTest {
     assertThat(without)
         .contains("<h2>Statutory (Telangana)</h2>")
         // The clause the whole flag exists for.
-        .contains("compulsorily registered before the jurisdictional Sub-Registrar")
+        .contains("where the law requires it, registered before the jurisdictional Sub-Registrar")
         // The TG-specific statute, not merely "laws of India".
         .contains("Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960")
         // The tenant protection: no cutting water/electricity during the tenancy.

@@ -93,10 +93,13 @@ rounding: { mode: UP, unitRupees: 1 }
 # the feature ships, not after.
 counterpartDuty: "500"
 # Registration Act 1908 s.17(1)(d) [K3] MEDIUM. Karnataka has NO state amendment equivalent to the
-# AP/Telangana one that makes every lease compulsorily registrable, so the unamended central
-# threshold applies: a term exceeding one year. Hence 12, not Telangana's 0. The Karnataka template
-# layers state this same threshold in their stamp/registration clause -- keep the two in step.
-registration: { requiredWhenTermMonthsOver: 12 }
+# AP/Telangana one that makes every lease compulsorily registrable, so the unamended central text
+# applies: "any term exceeding one year". We apply twelve months OR MORE (11 = over eleven), the
+# ordinary published position, rather than the literal over-twelve: wrongly showing the
+# registration notice at exactly twelve months costs the customer little, wrongly withholding it
+# costs a lot (decided 2026-10-07; counsel confirms, ka-stamp-duty-counsel-review). This is the
+# threshold's only home: the deed clause says "where the law requires it".
+registration: { requiredWhenTermMonthsOver: 11 }
 cases:
   # The low boundary of the first slab. Annualisation (design D2) is at its most visible here: one
   # month at INR 8,000 is charged on an average annual rent of INR 96,000, not on INR 8,000.

@@ -4,14 +4,12 @@
 
 # AgreementMitra — Terms of Service (DRAFT)
 
-**Last updated:** 6 October 2026
+**Last updated:** 7 October 2026
 
 > This is a draft, published during a restricted beta and pending review by Indian counsel. Sections marked below are deliberately incomplete. We publish it in this state because a draft you can read beats terms that do not exist -- not because it is finished.
 
-Two kinds of gap are marked below. **FOR COUNSEL** is a section we have deliberately not
-written because it is not ours to write. **AWAITING PRODUCT INPUT** is a commercial term the
-company has not yet decided; it is left empty rather than guessed, because a guess here would be
-reviewed as though it were intended.
+Gaps are marked below. **FOR COUNSEL** is a section we have deliberately not
+written because it is not ours to write.
 
 ---
 
@@ -75,7 +73,7 @@ You are shown the stamp, the duty and the total before you pay. Drafting, previe
 
 ## 8. Stamp duty
 
-> **GAP - FOR COUNSEL.** Our legal position when we buy a stamp for you -- whether we do so as your agent, and what follows from that -- is with counsel. Until that is settled, treat this clause as descriptive rather than as a statement of who bears what -- in particular, whether duty we have paid on your behalf is recoverable, and from whom. What we do when we get it wrong is settled and stated below. Also with counsel: whether stamp paper bought separately and attached to an electronically signed agreement stamps it validly, and whether the paper original must accompany the agreement.
+> **GAP - FOR COUNSEL.** Parts of this section are still with our lawyers: whether we need a licence to buy stamps for you; how GST applies to the stamp duty we pass on at cost; whether a Telangana stamp paper, bought separately and attached to your agreement as a scan, validly stamps an agreement signed online, and whether the paper original has to be kept with it. Until they answer, this section describes what we do. It does not yet say who is responsible for what. What we do when we get a stamp wrong is settled, and is set out below.
 
 Stamp duty is a tax levied by the state government on the document. It is not our fee and we do not keep it. We hold no franking licence of our own: our staff buy the stamp for your agreement through the ordinary channel for its state and attach it to your agreement on your behalf. For a Karnataka agreement that is an e-stamp certificate bought through the Stock Holding Corporation of India (SHCIL). For a Telangana agreement, which SHCIL does not serve, it is non-judicial stamp paper bought from a licensed stamp vendor.
 
@@ -89,11 +87,13 @@ If a stamp we obtain for you is rejected or wrongly denominated because we got i
 
 On top of that we refund you INR 400 for the trouble -- in effect our whole charge for arranging the stamping, so the work costs you only the stamp itself. Where the stamp was rejected because of something you told us that was wrong, we will still help you put it right, but the replacement stamp is yours to pay for.
 
+A stamp below the duty that you chose to go ahead with after we showed you what that means (see our fee) is not a stamp we got wrong.
+
 ## 9. Electronic signature and identity
 
 Signing is performed using Aadhaar-based electronic signature under section 3A of the Information Technology Act, 2000, through a licensed eSign Service Provider. We are not that provider and we do not perform the authentication.
 
-Each signer authenticates on the provider's own page. No Aadhaar number, virtual ID or one-time password passes through our systems, is stored by us, or is written to our logs.
+Each signer authenticates on the provider's own page. No Aadhaar number, virtual ID or one-time password passes through our systems, is stored by us, or is written to our logs. The one exception is the signed PDF: the signature the provider adds to it may show part of an Aadhaar number in masked form, as the eSign framework provides.
 
 We receive and store the signed PDF and the provider's completion audit trail. We keep the audit trail as the provider issued it: we do not parse it or extract fields from it. It is the provider's evidence of the authentication, and it may contain identity evidence generated at the provider's end.
 
@@ -115,9 +115,9 @@ Once an unpaid draft has gone 90 days without a change to its content, we delete
 
 ## 11. Refunds and cancellation
 
-> **GAP - AWAITING PRODUCT INPUT.** One case is still open: what you get back once we have already bought your stamp. Duty paid to the state is not ours to return, whether any of it can be recovered is limited by law, and whether the stamp is yours rather than ours in the first place is a question we have put to counsel. We would rather leave this blank than state a rule we may have no right to apply. No external customer has yet paid us, so no refund has been asked for or refused.
-
 Before we buy your stamp, you can cancel for any reason. We refund what you paid, less INR 100 towards handling the cancellation.
+
+Once we have bought your stamp, you can still cancel. We refund what you paid, less the value of the stamp and INR 100 towards handling the cancellation, and we give you the stamp -- the Karnataka e-stamp or the Telangana stamp paper -- to use if you need it. We do not apply to the state for a refund of the stamp.
 
 If a signing attempt fails or expires, we re-send the signing request at no charge. Where signing repeatedly fails because of something at the signer's end -- an abandoned session, or details that do not match -- we may ask for INR 100 before starting it again. We do not charge you when the failure was ours or the eSign provider's, and where we cannot tell, we treat it as ours.
 
@@ -125,11 +125,11 @@ One rule covers every fixed sum these terms promise you -- the INR 400 in the st
 
 ## 12. How long we keep things, and deletion
 
-> **GAP - FOR COUNSEL.** Three questions here are with counsel and their answers may change what this clause says. Whether one party may have a jointly executed instrument deleted when the other party's continued access to it depends on us. Whether three years is the right period, given that a tenancy dispute usually arises at or after the end of the term rather than when the agreement was made. And whether the eSign provider's audit trail carries a retention obligation of its own, separate from ours. See also the data-protection clause below.
+> **GAP - FOR COUNSEL.** Two questions here are with counsel. Under the Digital Personal Data Protection Act, 2023, must we delete a signed agreement when asked, or may we keep it until the period below ends? And do we have any duty to keep the eSign record that is separate from the eSign provider's own? Counsel is also confirming the period itself. See also the data-protection clause below.
 
-We keep a signed agreement, its signed PDF and its signing audit trail for three years.
+We keep a signed agreement, its signed PDF and its signing audit trail until three years after the tenancy ends.
 
-Once everyone has signed, every party can download the signed agreement. Keep your own copy: it is your document, and it is the copy that does not depend on us.
+Once everyone has signed, we send every party the signed agreement, and every party can download it. Keep your own copy: it is your document, and it is the copy that does not depend on us. If we delete ours, the copies the parties already hold are not affected.
 
 You can delete an unpaid draft yourself from My agreements (see the drafts clause above). For anything else, deletion can be asked for by the person who created and paid for the agreement, signed in to the account it is saved to: write to us and we will do it by hand.
 
@@ -157,17 +157,31 @@ The service is currently in a restricted beta and is not offered with any wider 
 
 ## 15. Your personal data
 
-> **GAP - FOR COUNSEL.** Whether the privacy notice under the Digital Personal Data Protection Act, 2023 must stand apart from these terms or form part of them is with counsel. Until that is answered, the privacy policy is a separate document and this clause only points to it.
-
-What personal data we hold, why, and who receives it is set out in our privacy policy at agreementmitra.com/privacy.
+Our privacy policy is a separate document. It sets out what personal data we hold, why, and who receives it: agreementmitra.com/privacy.
 
 ## 16. Our liability
 
-> **GAP - FOR COUNSEL.** The limitation of liability is with counsel and is deliberately not drafted by us. Nothing in these terms should be read as limiting our liability until this clause exists.
+> **GAP - FOR COUNSEL.** This clause is our draft and is with counsel for review. Until counsel has reviewed it, it may change.
+
+Our total liability to you for an agreement is limited to our fee for it: what you paid us for that agreement, less the value of the stamp.
+
+We are not responsible for the contents and terms of your agreement, which are what you and the other party chose; for disputes between the owner and the tenant; for the accuracy of the details you give us; for whether your agreement needs to be registered, or for registering it; or for delays or failures of services we do not control -- the eSign provider, the e-stamp issuer, stamp vendors, the payment processor and government systems -- beyond the remedies these terms already promise.
+
+We are not liable for indirect losses, such as lost rent, a lost deal or a lost opportunity.
+
+Nothing in this clause limits our liability for fraud, or any liability the law does not allow us to limit.
+
+The specific remedies in these terms -- the INR 400 for a stamp we got wrong, the delay credit and the refunds -- apply in addition to this clause.
 
 ## 17. Disputes and governing law
 
-> **GAP - FOR COUNSEL.** Governing law, jurisdiction and the dispute-resolution route are with counsel, as is whether the Consumer Protection Act, 2019 and its e-commerce rules constrain what these terms may say or require us to publish anything further.
+> **GAP - FOR COUNSEL.** This clause is our draft and is with counsel for review, together with whether our grievance-officer arrangement meets both the Consumer Protection (E-Commerce) Rules, 2020 and the Digital Personal Data Protection Act, 2023.
+
+These terms are governed by the law of India.
+
+If you have a complaint, write to our grievance officer at grievance@agreementmitra.com, named in the operator details below. We acknowledge a complaint within 48 hours and resolve it within one month.
+
+Subject to that, the courts at the place of our registered office have jurisdiction. This does not affect any right you have as a consumer to bring a complaint before a consumer commission.
 
 ## 18. Changes to these terms
 
@@ -190,3 +204,4 @@ the clause text above. This document shows the committed defaults.
 - **LLPIN:** being issued
 - **Registered office:** to be confirmed
 - **Support:** support@agreementmitra.com
+- **Grievance officer:** to be named, grievance@agreementmitra.com

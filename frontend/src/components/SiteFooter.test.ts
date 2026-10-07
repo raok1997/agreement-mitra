@@ -10,12 +10,14 @@ const NOT_YET_ISSUED: OperatingEntity = {
   legalName: "KAVISAT TEK LABS LLP",
   llpin: null,
   registeredOffice: null,
+  grievanceOfficer: null,
 };
 
 const ISSUED: OperatingEntity = {
   legalName: "KAVISAT TEK LABS LLP",
   llpin: "ACA-1234",
   registeredOffice: "Plot 12, Road No. 3, Hyderabad - 500034",
+  grievanceOfficer: null,
 };
 
 describe("SiteFooter", () => {

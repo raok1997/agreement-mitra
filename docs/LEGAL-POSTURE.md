@@ -238,9 +238,10 @@ the half we know makes the engagement cheaper and faster, and it has turned brie
   certificate we got wrong at our own cost, plus compensation equal to the duty capped at
   INR 500; a one-working-day stamping target with a capped delay credit; retention of three
   years; deletion on request by the paying party; support hours.
-- *We still owe,* marked **AWAITING PRODUCT INPUT** on one clause: what a customer gets back
-  once we have already bought their certificate. It is blocked on counsel (brief Q6(a)) as
-  much as on us, so it stays empty rather than acquiring a plausible number.
+- *Decided 2026-10-07:* what a customer gets back once we have bought their stamp (what they
+  paid, less the stamp's value and INR 100, and we hand over the stamp), so no clause awaits
+  product input. Retention is now until three years after the tenancy ends, and §16 liability
+  and §17 disputes are our drafts for counsel's review (`docs/COUNSEL-BRIEF.md`, revised).
 
 **The pricing rule, since every remedy is sized against it.** The customer pays one total with
 duty inside it: INR 499 where duty is INR 100 or less, and INR 499 plus the excess where duty
@@ -292,31 +293,29 @@ Annexure C of the brief — is *generated* from it (`npm run legal:doc`), with a
 fails the build when the two drift. Two hand-kept copies of a legal text is the same class of
 defect as the Telangana clause above, and it was avoidable here.
 
-_Status: **done**, in the sense the item scoped. What remains is not engineering: send the
-brief, and answer the five AWAITING PRODUCT INPUT questions. The published terms stay a draft
+_Status: **done**, in the sense the item scoped. What remains is not engineering: counsel's
+review of the revised brief. The published terms stay a draft
 until counsel has reviewed them, and they must be reviewed before the first real customer._
 
 ## With counsel
 
-Everything requiring a lawyer is **one engagement**, drafted as `docs/COUNSEL-BRIEF.md`: the
-five template questions (licence-vs-lease, the Telangana statutory addendum, the shared
-commercial terms and their pre-filled defaults, recital and jurisdiction placement,
-Telangana heading wording), plus terms of service (Q6), what a professional-indemnity
-insurer will require of our review process (Q7), and where clause selection crosses into the
-practice of law under the Advocates Act 1961 — asked before the rules engine is built,
-because the answer changes its design (Q8).
+Everything requiring a lawyer is **one engagement**, drafted as `docs/COUNSEL-BRIEF.md`,
+narrowed on 2026-10-07 to what only a lawyer can answer: lease vs licence, now including
+whether Aadhaar eSign can execute the instrument under the IT Act First Schedule (Q1, top
+priority); the Telangana statutory addendum (Q2); review of the terms and privacy policy,
+with seven stamp questions under Q6(a); the scope of counsel's own engagement (Q7, the
+insurer's requirements going to a broker); and where clause selection crosses into the
+practice of law (Q8, not a v1 blocker). Q3–Q5 are withdrawn or merged with the decision we
+took stated in their place.
 
-**The brief is drafted but NOT sent, and no counsel is engaged.** This is the critical path:
-weeks of latency, and it is the only thing unblocking `rental-document-content-v2` (stuck at
-22/23). Brief Q6 now reads "review and complete our draft"; the draft is Annexure C.
+**Counsel is engaged and the review is in progress** (`docs/ROADMAP.md` release section).
 
 ## Near-term order
 
 Full scheduling is in `docs/ROADMAP.md`. Legal-posture work specifically:
 
 1. ~~Disclaimer + ToS draft (item 2)~~ — done 2026-09-07, brief Q6 updated with it
-2. **Send the brief.** The one remaining AWAITING PRODUCT INPUT clause is blocked on its
-   answer, not on us
+2. **Counsel's review of the revised brief** — no clause awaits product input any more
 3. Approval gate (item 1) — manual checklist for v1 (`docs/ROADMAP.md`); automated gate after v1
 4. Revisit CI (CR-7) once items 1 and 2 land — two more gates whose whole value is being
    unmissable, and its own revisit trigger is approaching
@@ -328,8 +327,8 @@ first real customer, revisit all of:
 
 - Counsel's actual signature required on the template hash, not just an acknowledgement
 - Professional indemnity cover in force
-- Terms of service counsel-reviewed (they are published, as a draft, since 2026-09-07) and
-  their remaining AWAITING PRODUCT INPUT clause filled in
+- Terms of service counsel-reviewed (they are published, as a draft, since 2026-09-07), and
+  acceptance of them recorded per agreement (`terms-acceptance-clickwrap`)
 - **The published pricing rule actually implemented** — see "Implementing the pricing rule"
   below. The terms now say plainly that the calculation is still being built and that we absorb
   duty above INR 100 until it is, so they no longer overstate the product; what expires is the
