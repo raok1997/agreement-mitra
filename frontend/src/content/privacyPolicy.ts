@@ -7,7 +7,7 @@
 // When an integration changes what we collect or who receives it, update the lists below first:
 // privacyPolicy.test.ts holds the clause text to them.
 
-import { CONTACT_EMAIL } from "./promises";
+import { GRIEVANCE_EMAIL } from "./promises";
 import type { LegalDocument } from "./legalDocument";
 
 /** Every category of personal data `what-we-collect` must name. */
@@ -37,11 +37,11 @@ export const PRIVACY_RECIPIENT_ROLES = [
 
 export const PRIVACY_POLICY: LegalDocument = {
   title: "Privacy Policy",
-  lastUpdated: "6 October 2026",
+  lastUpdated: "7 October 2026",
   banner:
     "This is a draft, published during a restricted beta and pending review by Indian counsel. " +
-    "Sections marked below are deliberately incomplete. It describes what the service does with " +
-    "personal data today; it is not yet the full notice the law requires.",
+    "It describes what the service does with personal data today, and it may change once counsel " +
+    "has reviewed it.",
   clauses: [
     {
       id: "who-we-are",
@@ -76,9 +76,15 @@ export const PRIVACY_POLICY: LegalDocument = {
     {
       id: "purposes-and-basis",
       heading: "4. Why we process it",
-      status: "counsel",
-      gap: "The purposes for which we process personal data, and the lawful basis for each under the Digital Personal Data Protection Act, 2023, are with counsel and deliberately not drafted by us.",
-      body: [],
+      status: "drafted",
+      body: [
+        "To draft, stamp, eSign and deliver your agreement, we use the party details, contact details and agreement content you give us for that purpose. Where you enter another party's details, you confirm that you are entitled to give them to us (terms of service, what you tell us).",
+        "To buy the stamp, we pass the parties' names and the document's details to the stamp issuer or vendor, as the state's stamp law requires.",
+        "To take payment and keep the tax records the law requires, we keep payment records.",
+        "To sign you in and keep your account, we use the details your sign-in provider gives us.",
+        "To keep the service secure and prevent abuse, we record IP addresses as described above.",
+        "We do not use your personal data for marketing or analytics.",
+      ],
     },
     {
       id: "who-receives-it",
@@ -111,10 +117,16 @@ export const PRIVACY_POLICY: LegalDocument = {
     {
       id: "retention",
       heading: "7. How long we keep it",
-      status: "counsel",
-      gap: "How long we keep each kind of personal data described here, and whether the periods in the terms of service are the right ones under the Act, is with counsel. Until it is settled, this policy states no period of its own, other than how long we keep a Telangana stamp-paper original, which is set out under what we collect and in the terms of service's stamp-duty clause, and the 90 days an unpaid draft may go without a change before we delete it, which is set out in the terms of service's drafts clause.",
+      status: "drafted",
       body: [
-        "How long we keep an agreement and its signing records is set out in the terms of service's clause on how long we keep things and deletion.",
+        "A signed agreement, its signed PDF, its signing audit trail and its stamp scans: until three years after the tenancy ends, as the terms of service's clause on how long we keep things and deletion sets out.",
+        "An agreement that was paid for but never signed: three years after it was closed.",
+        "An unpaid draft: deleted once it has gone 90 days without a change, as the terms of service's drafts clause sets out.",
+        "The record that a draft was deleted: three years.",
+        "Payment records: as long as tax law requires us to keep them.",
+        "Your account sign-in details: for as long as the account exists.",
+        "A Telangana stamp-paper original: one year from the day we buy it, and then it is shredded.",
+        "IP addresses we record to prevent abuse: one year.",
       ],
     },
     {
@@ -129,30 +141,39 @@ export const PRIVACY_POLICY: LegalDocument = {
     {
       id: "your-rights",
       heading: "9. Your rights",
-      status: "counsel",
-      gap: "Your rights as a data principal -- access, correction, erasure and nomination -- and how to exercise them are with counsel and deliberately not drafted by us.",
-      body: [],
+      status: "drafted",
+      body: [
+        "You can ask us for a summary of the personal data we hold about you, what we do with it, and who we have shared it with.",
+        "You can ask us to correct, complete or update it. Once an agreement is signed, the signed document cannot be changed: a correction then updates our records, not the signed agreement.",
+        "You can ask us to delete it. We delete it unless we must keep it: for the period the terms of service set out where it is part of a signed agreement, or where the law requires us to keep it.",
+        "You can name someone who can exercise these rights for you if you die or become unable to.",
+        `Write to ${GRIEVANCE_EMAIL}. We will check that the request comes from you, for example from the email address on the agreement or your signed-in account, and we will reply within one month.`,
+      ],
     },
     {
       id: "grievance",
       heading: "10. Grievances",
-      status: "counsel",
-      gap: `The grievance officer and the route to the Data Protection Board of India are with counsel. Until they are named here, you can write to ${CONTACT_EMAIL} about anything in this policy.`,
-      body: [],
+      status: "drafted",
+      body: [
+        `If you have a complaint about how we handle your personal data, write to our grievance officer at ${GRIEVANCE_EMAIL}, named in the operator details below. We acknowledge a complaint within 48 hours and resolve it within one month.`,
+        "If you are not satisfied with our answer, you can complain to the Data Protection Board of India.",
+      ],
     },
     {
       id: "transfers",
       heading: "11. Processing outside India",
-      status: "counsel",
-      gap: "Whether any of our service providers processes personal data outside India, and what follows from that under the Act, is with counsel.",
-      body: [],
+      status: "drafted",
+      body: [
+        "Our hosting, storage, email, payment and eSign providers process personal data in India. Our network security, web-font and sign-in providers may process it outside India.",
+        "The Digital Personal Data Protection Act, 2023 allows this except to a country the Government of India restricts, and we will not use a provider that processes personal data in such a country.",
+      ],
     },
     {
       id: "changes",
       heading: "12. Changes to this policy",
       status: "drafted",
       body: [
-        "We will change this policy as the service changes and as counsel completes the sections marked above. Changes are published on this page with a new last-updated date.",
+        "We will change this policy as the service changes and as counsel reviews it. Changes are published on this page with a new last-updated date.",
       ],
     },
   ],

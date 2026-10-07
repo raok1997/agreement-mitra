@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clauseById } from "./legalDocument";
 import { OPERATOR_LEGAL_NAME } from "./operatorFacts";
 import { PRIVACY_POLICY } from "./privacyPolicy";
-import { CONTACT_EMAIL } from "./promises";
+import { CONTACT_EMAIL, GRIEVANCE_EMAIL } from "./promises";
 import { RELEASE_STATE_LABEL } from "./releaseStatus";
 import { TERMS_OF_SERVICE } from "./termsOfService";
 
@@ -55,7 +55,7 @@ describe("terms of service, single-sourced clauses", () => {
   it("makes §15 a pointer to the privacy policy that shares none of its text", () => {
     const clause = clauseById(TERMS_OF_SERVICE, "personal-data");
     expect(clause.heading).toBe("15. Your personal data");
-    expect(clause.status).toBe("counsel");
+    expect(clause.status).toBe("drafted");
     expect(clause.body).toHaveLength(1);
     expect(clause.body[0]).toContain("/privacy");
 
@@ -65,6 +65,12 @@ describe("terms of service, single-sourced clauses", () => {
     for (const paragraph of clause.body) {
       expect(privacyParagraphs.has(paragraph)).toBe(false);
     }
+  });
+
+  it("states the grievance email the rest of the site uses (§17)", () => {
+    expect(clauseById(TERMS_OF_SERVICE, "disputes").body.join(" ")).toContain(
+      GRIEVANCE_EMAIL,
+    );
   });
 
   it("states the support email the rest of the site uses (§19)", () => {

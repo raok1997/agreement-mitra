@@ -39,7 +39,9 @@ describe("stamp wording across the policy texts", () => {
 
   it("uses certificate only for the e-stamp certificate", () => {
     for (const { id, text } of ALL_TEXT) {
-      const stray = text.replace(/e-stamp certificate/gi, "").match(/certificate/i);
+      const stray = text
+        .replace(/e-stamp certificate/gi, "")
+        .match(/certificate/i);
       expect(stray, `${id}: ${text}`).toBeNull();
     }
   });
@@ -62,7 +64,7 @@ describe("stamp wording across the policy texts", () => {
     }
   });
 
-  it("ties each channel to its state in §8, and asks counsel about stamp paper", () => {
+  it("ties each channel to its state in §8, and asks counsel about Telangana stamp paper", () => {
     const clause = clauseById(TERMS_OF_SERVICE, "stamp-duty");
     const body = clause.body.join(" ");
     expect(body).toMatch(
@@ -72,10 +74,10 @@ describe("stamp wording across the policy texts", () => {
       /Telangana agreement[^.]*non-judicial stamp paper bought from a licensed stamp vendor/,
     );
     expect(clause.gap).toContain(
-      "whether stamp paper bought separately and attached to an electronically signed agreement stamps it validly",
+      "whether a Telangana stamp paper, bought separately and attached to your agreement as a scan, validly stamps an agreement signed online",
     );
     expect(clause.gap).toContain(
-      "whether the paper original must accompany the agreement",
+      "whether the paper original has to be kept with it",
     );
   });
 
@@ -89,7 +91,9 @@ describe("stamp wording across the policy texts", () => {
     }
     const recipients = clauseText(PRIVACY_POLICY, "who-receives-it");
     expect(recipients).toContain("keeps its own record under its own rules");
-    expect(recipients).toContain("keeps them in its own register under those rules");
+    expect(recipients).toContain(
+      "keeps them in its own register under those rules",
+    );
   });
 
   it("accounts for the Telangana paper original in both texts", () => {

@@ -9,7 +9,7 @@
 import type { LegalDocEntry } from "./legalDocs";
 import type { ClauseStatus } from "./legalDocument";
 import { OPERATING_ENTITY_DEFAULTS } from "./operatingEntity";
-import { CONTACT_EMAIL } from "./promises";
+import { CONTACT_EMAIL, GRIEVANCE_EMAIL } from "./promises";
 
 /** How a non-drafted clause announces itself in the markdown, mirroring the on-page gap box. */
 const GAP_LABEL: Record<ClauseStatus, string | null> = {
@@ -83,6 +83,7 @@ export function renderLegalMarkdown(entry: LegalDocEntry): string {
     `- **LLPIN:** ${entity.llpin ?? "being issued"}`,
     `- **Registered office:** ${entity.registeredOffice ?? "to be confirmed"}`,
     `- **Support:** ${CONTACT_EMAIL}`,
+    `- **Grievance officer:** ${entity.grievanceOfficer ?? "to be named"}, ${GRIEVANCE_EMAIL}`,
     "",
   );
 

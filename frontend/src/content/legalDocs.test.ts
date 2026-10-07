@@ -58,7 +58,8 @@ describe("the privacy document", () => {
     )!;
     const markdown = renderLegalMarkdown(privacy);
     expect(markdown).toContain("# AgreementMitra — Privacy Policy (DRAFT)");
-    expect(markdown).toContain("**FOR COUNSEL**");
+    // Every privacy clause is drafted, so the document explains no gap at all.
+    expect(markdown).not.toContain("FOR COUNSEL");
     expect(markdown).not.toContain("AWAITING PRODUCT INPUT");
   });
 });

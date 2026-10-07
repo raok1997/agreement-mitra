@@ -8,6 +8,8 @@ export interface OperatingEntity {
   llpin: string | null;
   /** null until confirmed. */
   registeredOffice: string | null;
+  /** null until named. */
+  grievanceOfficer: string | null;
 }
 
 function present(value: string | undefined): string | null {
@@ -20,6 +22,7 @@ export function resolveOperatingEntity(env: OperatorEnv): OperatingEntity {
     legalName: OPERATOR_LEGAL_NAME,
     llpin: present(env.VITE_OPERATOR_LLPIN),
     registeredOffice: present(env.VITE_OPERATOR_REGISTERED_OFFICE),
+    grievanceOfficer: present(env.VITE_OPERATOR_GRIEVANCE_OFFICER),
   };
 }
 
@@ -28,10 +31,12 @@ export function resolveOperatingEntity(env: OperatorEnv): OperatingEntity {
 // a build env, into the public bundle.
 const llpin = import.meta.env.VITE_OPERATOR_LLPIN;
 const office = import.meta.env.VITE_OPERATOR_REGISTERED_OFFICE;
+const grievanceOfficer = import.meta.env.VITE_OPERATOR_GRIEVANCE_OFFICER;
 
 export const OPERATING_ENTITY: OperatingEntity = resolveOperatingEntity({
   VITE_OPERATOR_LLPIN: llpin,
   VITE_OPERATOR_REGISTERED_OFFICE: office,
+  VITE_OPERATOR_GRIEVANCE_OFFICER: grievanceOfficer,
 });
 
 /** The committed defaults: what the generated counsel document renders, whatever the build env. */

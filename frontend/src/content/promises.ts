@@ -18,6 +18,9 @@ export const SUPPORT_HOURS = "9am to 5pm IST on working days"; // §14
 
 export const CONTACT_EMAIL = "support@agreementmitra.com";
 
+/** Consumer Protection (E-Commerce) Rules 2020 and DPDP Act grievances: one officer, one address. */
+export const GRIEVANCE_EMAIL = "grievance@agreementmitra.com";
+
 // Not Intl: it renders "₹499.00".
 export const formatRupees = (n: number): string => `₹${n}`;
 

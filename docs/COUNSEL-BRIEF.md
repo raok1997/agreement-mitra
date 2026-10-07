@@ -2,7 +2,7 @@
 
 **To:** [Counsel]
 **From:** AgreementMitra (the "Company")
-**Date:** 7 September 2026
+**Date:** 7 September 2026, revised 7 October 2026
 **Subject:** Review of a residential tenancy instrument; terms of service; professional
 indemnity; and the scope of the legal-advice restriction
 
@@ -43,18 +43,21 @@ us a clause is wrong, we can identify exactly which agreements carry it.
 
 ## 2. What we are asking you to do
 
-1. **Answer Questions 1 to 5** on the instrument itself (Part A). Each is a discrete
-   drafting decision we have already taken provisionally; each is a small, contained change
-   if you disagree.
-2. **Review and complete our draft terms of service, and fill the gaps we have marked**
-   (Question 6, Part B). We have drafted the half we are competent to draft and left the rest
-   as labelled, deliberate gaps rather than adapting someone else's terms. The draft is at
-   **Annexure C**.
-3. **Advise on professional indemnity cover** (Question 7, Part C) — specifically on what an
-   insurer will require of us, not on whether we should buy it.
+**Revised 7 October 2026.** We have narrowed this brief. Where a question turned out to be a
+decision we could take ourselves, we have taken it, stated it in the documents, and withdrawn
+the question; you will see each such question marked *Withdrawn* or *Merged* below, with the
+decision we took, so that you can disagree with it. What remains needs a lawyer.
+
+1. **Answer Questions 1 and 2** on the instrument itself (Part A). **Question 1 is the one we
+   most need answered**: it decides whether Aadhaar eSign can execute our instrument at all.
+2. **Review our draft terms of service and privacy policy** (Question 6, Part B, and
+   **Annexure C**). The privacy policy is now fully drafted, and the terms leave only two
+   sections open (stamp duty and retention); liability and disputes are our drafts for your
+   review rather than blanks.
+3. **Professional indemnity** (Question 7, Part C) is now one question about the scope of
+   your own engagement; we are asking a broker what an insurer will require.
 4. **Advise on the legal-advice boundary** (Question 8, Part D). This concerns a feature we
-   have not yet built, and we are asking before we build it precisely so the answer can shape
-   it.
+   have not yet built, and it does not block our first release.
 5. Tell us whether you would be willing to take on **ongoing sign-off of template wording**
    as changes are made, and on what terms. We intend to put a control in place that prevents
    amended legal wording from reaching customers until it has been approved, and we would
@@ -133,6 +136,23 @@ lease notwithstanding its label — please tell us (i) what the correct characte
 (ii) what consequences follow for the stamp-duty basis and the registration trigger, and
 (iii) whether the defined terms and the operative language should change to match.
 
+**Update, 7 October 2026 — the question, sharpened, and why it comes first.** The Information
+Technology Act, 2000 does not apply, by its First Schedule, to a contract for the sale or
+conveyance of immovable property or any interest in such property. A lease transfers an
+interest in immovable property (Transfer of Property Act, 1882, s.105); a licence does not. So
+the characterisation decides not only the stamp article and the registration position but
+whether an Aadhaar eSign validly executes the instrument at all. Our question is therefore:
+**for residential rentals in Karnataka and Telangana, should our instrument be a lease or a
+leave and licence, so that (i) Aadhaar eSign validly executes it and (ii) the correct stamp
+article applies — and what should its heading, recital and defined terms then say?** This
+absorbs Question 5 (the Telangana heading). Two facts have moved since this question was
+written: the "(Leave & Licence)" label has since been removed from the subtitle and recital
+pending your answer, and both stamp/registration clauses now say registration is required
+"where the law requires it" rather than stating a threshold (point (d) above no longer
+applies). We are treating every lease in Telangana as compulsorily registrable (Registration
+(Andhra Pradesh Amendment) Act 4 of 1999), and twelve months or more as the trigger in
+Karnataka; please tell us if either is wrong, and whether either reaches a leave and licence.
+
 **What changes if you disagree.** The characterisation is carried in the title, the
 subtitle and the recital of the **shared** template, so it is the same in every state.
 Changing it is a single edit that takes effect everywhere at once — but by the same token,
@@ -165,9 +185,10 @@ affected: we have confirmed that only founding-team agreements were generated in
 affected period.
 
 **What we are asking.** Is it right that these four clauses always appear in a Telangana
-residential agreement, and is their wording correct? In particular, is the eleven-month
-registration trigger in Annexure B, clause 2 correctly stated, and is it appropriate that
-the allocation of duty and registration charges is left to the parties' selection?
+residential agreement, and is their wording correct? In particular, is it appropriate that
+the allocation of duty and registration charges is left to the parties' selection? (The
+eleven-month trigger in Annexure B, clause 2 has since been replaced by "where the law
+requires it"; see the update under Question 1.)
 
 **What changes if you disagree.** If you consider the addendum genuinely optional, we will
 make it optional again **and** restore the general stamp-and-registration covenant to the
@@ -176,93 +197,29 @@ issued without one.
 
 ---
 
-## Question 3 — Are the shared commercial terms genuinely pan-India, and are their
-defaults appropriate?
+## Question 3 — Withdrawn (7 October 2026)
 
-**What we do now.** A group of commercial terms is held in the **shared** template and is
-therefore offered in identical wording in every state, Telangana included. They fall into
-two categories, and we would ask you to treat the first as the more important:
-
-- **Terms that appear by default**, because the form pre-fills the underlying figure, so
-  they are in practice terms of nearly every agreement we issue: a **six-month lock-in**
-  (Annexure A, clause 4) and an **annual rent escalation of five per cent** (clause 7). A
-  **one-month termination notice** period (clause 5) always appears.
-- **Terms the user adds if they want them:** maintenance charges, utilities and
-  late-payment charges (clauses 9 to 12); occupancy limits, pets and parking (clauses 14 to
-  16); special conditions (clause 23); and a fixtures and inventory annexure (clause 29).
-
-**Why.** We took the view that these are ordinary commercial terms of a residential letting
-and carry no state-specific legal content, so that the only genuinely state-specific
-material is the statutory addendum at Question 2.
-
-**What we are asking.** Is that right? Is any of these terms in fact regulated, restricted
-or of different effect in a particular state — we are thinking especially of the lock-in
-period, late-payment charges, the interest-free treatment of the security deposit (Annexure
-A, clause 8), and any statutory cap on deposit or escalation — such that it should not be
-offered in identical terms nationally?
-
-**A second and separate question on the same clauses.** Quite apart from whether they are
-state-specific: are the **pre-filled defaults themselves** appropriate? A six-month lock-in
-and a five per cent annual escalation appear in an agreement unless the user actively
-changes them. If either is unusual, one-sided, or liable to be read as unconscionable in a
-residential letting, we would rather change the default than defend it.
-
-**What changes if you disagree.** Any clause you identify as state-specific moves out of the
-shared wording and into a state addendum of the kind described at Question 2. That is a
-contained change per clause.
+We previously asked whether the shared commercial terms (lock-in, escalation, late-payment
+charges and the rest at Annexure A) are genuinely pan-India and whether their pre-filled
+defaults are appropriate. We have settled this ourselves and withdrawn the question; you will
+see the terms as part of the template review under item 5 of section 2.
 
 ---
 
-## Question 4 — Is the recital and the jurisdiction covenant correctly placed?
+## Question 4 — Withdrawn (7 October 2026)
 
-**What we do now.** The recital reproduced at Question 1, and the dispute and jurisdiction
-covenant, both sit in the **operative covenants section** of the agreement and therefore
-always appear, whatever else the user selects. The jurisdiction covenant takes one of two
-forms depending on the user's choice:
-
-> "Any dispute arising out of or in connection with this Agreement shall be subject to the
-> exclusive jurisdiction of the courts at [city]."
-
-or, where the user selects arbitration or mediation:
-
-> "Any dispute arising out of or in connection with this Agreement shall first be referred
-> to [arbitration / mediation]; subject thereto, the courts at [city] shall have
-> jurisdiction."
-
-In a Telangana agreement, the city defaults to **Hyderabad**; elsewhere the user supplies
-it.
-
-**Why.** A recital identifying the parties and a jurisdiction covenant seemed to us the sort
-of provision that should not be capable of being omitted by a user who simply does not
-select it.
-
-**What we are asking.** Is that placement correct, and is either form of the jurisdiction
-covenant objectionable? We would particularly welcome your view on whether the second form
-is an adequate arbitration agreement, or whether — if a user selects arbitration — a
-properly constituted arbitration clause (seat, number of arbitrators, appointment
-mechanism, and the Arbitration and Conciliation Act, 1996) is required. We suspect the
-present wording is thin.
-
-**What changes if you disagree.** Moving either provision, or replacing the arbitration
-wording with a properly drafted clause, is a contained change to the shared wording.
+We previously asked about the placement of the recital and whether the arbitration form of the
+jurisdiction covenant was adequate. We agree that it was thin, and have decided to remove the
+arbitration and mediation options altogether: the covenant will name the courts only, which
+matches the disputes clause of our own terms. The recital's placement you will see in the
+template review.
 
 ---
 
-## Question 5 — Does a Telangana agreement need state-specific heading wording?
+## Question 5 — Merged into Question 1 (7 October 2026)
 
-**What we do now.** A Telangana agreement carries the **national** heading — title
-"Rental Agreement", subtitle "Residential Tenancy (Leave & Licence)", and the execution line
-quoted in the common context above. We have authored no Telangana-specific heading.
-
-**Why.** We saw no reason for the heading to differ, but we have no basis for that beyond
-the absence of a reason.
-
-**What we are asking.** Is any state-specific heading, description of the instrument, or
-recital of the applicable statute conventionally required or expected in Telangana — whether
-by the Sub-Registrar on registration, by the stamping authority, or by settled practice?
-
-**What changes if you disagree.** We would author Telangana-specific heading wording as part
-of the same addendum described at Question 2. It is a one-line change.
+Whether a Telangana agreement needs its own heading depends on whether the instrument is a
+lease or a licence, so we ask it once, as part of Question 1.
 
 ---
 
@@ -274,17 +231,13 @@ of the same addendum described at Question 2. It is a one-line change.
 the service at `agreementmitra.com/terms`. It is marked on its face as a draft pending your
 review. We ask you to review it as a whole and to complete the sections it leaves open.
 
-Two kinds of gap are marked in it, and the distinction matters to what we are asking of you:
-
-- **FOR COUNSEL** — a section we have deliberately not written, because it is not ours to
-  write. These are the ones we are asking you to draft: limitation of liability; our position
-  on the stamp payment; the data-protection notice; and governing law, jurisdiction and
-  disputes.
-- **AWAITING PRODUCT INPUT** — a commercial term the company has not itself decided yet. **One
-  remains:** what a customer gets back once we have already bought their stamp certificate. We
-  have left it empty rather than filling it with a plausible figure, precisely so that you are
-  not asked to review a number we never intended — and it waits on your answer to Question 6(a)
-  as much as on us, since we do not yet know whether that certificate is ours to withhold.
+**Revised 7 October 2026.** The sections marked **FOR COUNSEL** are now: stamp duty (§8,
+question (a) below), retention (§12), and our own drafts of limitation of liability (§16) and
+disputes (§17), which we ask you to review rather than write. Every commercial term is now
+decided, so no section is marked as awaiting product input: once we have bought a customer's
+stamp, a cancelling customer gets back what they paid less the stamp's value and INR 100,
+and we hand over the stamp; we do not apply to the state for a refund of it. The privacy
+policy (Annexure C) is fully drafted for your review.
 
 Two features of the drafted terms we would particularly like you to look at. First, **every
 compensation we promise is a fixed sum** (INR 400 where we obtain a wrong certificate; INR 100
@@ -311,11 +264,28 @@ depended on it. That protection expires the moment we admit an external customer
 **What we are asking you to cover.** Beyond the usual, we would draw your attention to four
 features of the service that we think bear on scope:
 
-(a) **We act on the user's behalf in a statutory payment.** The user pays us one flat fee.
-Our staff then purchase the SHCIL e-stamp certificate and affix it. We hold no franking
-licence. We would like your view on whether that makes us an agent for the purposes of the
-stamp payment, what we should say about it, and what our position is if a certificate is
-wrongly denominated, wrongly attributed, or rejected.
+(a) **We buy the stamp for the user, with the user's money.** The user pays us in full before
+anything is bought; we then pay, out of that money, for the stamp, the eSign and the payment
+processing. For a Karnataka agreement our staff buy a SHCIL e-stamp certificate; for a
+Telangana agreement, which SHCIL does not serve, they buy non-judicial stamp paper from a
+licensed stamp vendor and attach a scan of it. We hold no franking licence. What we do when a
+stamp is wrong is settled in §8. Our questions:
+
+1. **Licensing.** May we buy stamps on a customer's behalf in this way, in each state, or do
+   we need a registration of our own (for example as a SHCIL collection centre)?
+2. **GST.** Can the stamp duty pass through us at cost as a pure agent, with GST only on our
+   fee, or is GST due on the whole amount we collect? What must our invoice show?
+3. **Liability.** If a stamp is wrong — the amount, the names or the state — who is liable to
+   whom: us, or the parties?
+4. **Telangana stamp paper.** Does stamp paper bought separately and attached as a scan
+   validly stamp an agreement executed by Aadhaar eSign?
+5. **The paper original.** Must the Telangana paper original be kept with the agreement? We
+   keep it for one year, then shred it, and send it to a customer who asks.
+6. **Karnataka e-stamp.** Is a SHCIL e-stamp certificate together with an Aadhaar-eSigned PDF
+   a validly stamped instrument, and is the e-stamp's online record enough without a printed
+   copy?
+7. **Holding funds.** Is there any difficulty in our holding the customer's money between
+   payment and purchase, given that the payment gateway is a licensed payment aggregator?
 
 (b) **We handle Aadhaar-based e-signature through a third-party provider.** To be precise
 about what we hold, because the answer may turn on it:
@@ -333,24 +303,17 @@ about what we hold, because the answer may turn on it:
 - We may ask the provider to **verify the signer's name against Aadhaar** as part of the
   signing flow. The comparison is performed by the provider; we receive its outcome.
 
-We need to know what we must disclose about this, whether the Digital Personal Data
-Protection Act, 2023 requires a separate privacy notice and a stated basis and retention
-period rather than terms of service alone, and whether our retention of the provider's audit
-trail carries obligations of its own. The same question covers one further record: when a
-signed-in customer deletes an unpaid draft, we keep a record that it was deleted — the
-agreement's reference, the account it was saved to and the time, with no party details. We
-intend to keep it on the same three-year horizon as our other records and would like to know
-whether that is a permissible period for it. We now also delete, ourselves, every unpaid draft
-that has gone **90 days** without a change to its content, whether or not it was saved to an
-account, and keep the same record (terms §10, privacy policy §8): is 90 days a permissible
-period for keeping an abandoned unpaid draft's party details, or must it be shorter?
+**Update, 7 October 2026: answered by the drafts, save one point in §12.** We have kept the
+privacy policy as a separate notice (the DPDP Rules, 2025, r.3, require a notice understandable
+independently of other information) and drafted its purposes, retention, rights, grievance and
+transfer sections. Terms §9 now carries the masked-Aadhaar qualification raised below. What
+remains — whether our retention of the provider's audit trail carries obligations of its own,
+and whether we must delete a signed agreement on request — is the counsel gap in terms §12. The periods are now stated in privacy policy §7, including three years for the record that a
+draft was deleted and 90 days for an abandoned unpaid draft; please tell us if any is wrong.
 
-**A draft privacy policy now exists** — the separate document `PRIVACY-POLICY.md` (Annexure C),
-published at `agreementmitra.com/privacy`. Terms §15 now only points to it, and deliberately
-does not say whether the policy forms part of the terms: **that is the question in this
-paragraph, and it is yours to answer.** We drafted only what we could check against the system
-as built; purposes and lawful basis, retention, your-rights, the grievance officer and
-cross-border transfer are marked as gaps for you. The checks behind each drafted statement:
+**The privacy policy** — the separate document `PRIVACY-POLICY.md` (Annexure C), published at
+`agreementmitra.com/privacy` — is now fully drafted, and terms §15 says it is a separate
+document. The checks behind the statements about what we collect and share:
 
 - *What we collect* — party and agreement details (`V2`, `V7`, `V13` migrations; the full
   form answers are kept); sign-in name, email, verified-email flag and the provider's account
@@ -374,10 +337,10 @@ cross-border transfer are marked as gaps for you. The checks behind each drafted
   keeps answers, including party details, in the browser's local storage, which signing out does
   not clear.
 
-(c) **The service is deliberately available without an account.** A user can generate,
-pay for and sign an agreement without registering. We would like to know how acceptance of
-the terms should be captured in that flow so as to be binding — and whether the absence of a
-registration step is itself a problem.
+(c) **Withdrawn (7 October 2026).** We asked how acceptance of the terms should be captured
+when a user has no account. We will add an unticked "I agree to the Terms of Service and
+Privacy Policy" checkbox before payment and record, against each agreement, the version of
+the terms accepted and the time; you will see it in your review.
 
 (d) **We would like to know where the disclaimer should live.** Our own instinct is that a
 "this is not legal advice" notice belongs in the terms and on the screens the user sees
@@ -389,16 +352,16 @@ We have now acted on the first half of that instinct: the notice is live on the 
 preview of the document and on the review, contact and payment screens. It is built so that
 it renders **on screen only** and is suppressed whenever the document is printed or turned
 into a PDF, so it appears in neither the executed instrument nor a draft PDF the customer
-downloads. **The question we have left open is whether it should appear in the executed
-document after all**, and it is a one-line change for us either way.
+downloads. We have now settled the placement ourselves (7 October 2026): on screen only, not in the
+executed instrument.
 
 - **(d)(i) The wording itself.** The notice now reads: "The wording of this agreement is ours: we
   wrote the template and we stand behind it. The facts you enter and the choices you make are
   yours, so check them before you sign. We are not a law firm, no lawyer reviews your agreement
   for your circumstances, and this is not legal advice; see the terms of service." We would like
   your view on whether "we stand behind it" is an express representation about the template's
-  quality, and how it sits with our liability clause (terms §16, which is still blank for you to
-  complete). The same sentence appears in three places: the on-screen notice component, the
+  quality, and how it sits with our draft liability clause (terms §16), which limits our
+  liability for an agreement to our fee for it. The same sentence appears in three places: the on-screen notice component, the
   configured default under the document preview, and any environment override of that default.
   It will not reach a paying customer until you have reviewed it.
 
@@ -407,6 +370,11 @@ document after all**, and it is a one-line change for us either way.
 # Part C — Insurance
 
 ## Question 7 — What will a professional indemnity insurer require of us?
+
+**Revised 7 October 2026.** We are asking an insurance broker what an insurer will require,
+since that is theirs to answer with authority. The one question we still ask you is the last
+paragraph of this section: what scope of engagement you would need to sign off template
+wording you did not draft, and whether one-off or standing. The rest is kept for context.
 
 **What we are asking.** Not whether we should carry professional indemnity cover — we intend
 to have it in force before we take our first external customer. What we would like to know
@@ -461,6 +429,9 @@ rather than judgment formed at the moment of use?
 (d) Are there structural arrangements — a partnership or panel arrangement with an advocate,
 a defined referral point, particular framing — commonly used by Indian legal-technology
 businesses to stay on the right side of this line?
+
+**Timing (7 October 2026).** This does not block our first release, which offers only the
+catalogue. We ask it now because the answer should shape the second product before we design it.
 
 **Why we ask now.** These are two different products with two different risk profiles, and
 we have not yet committed to either. Choosing between them now costs us a design decision.

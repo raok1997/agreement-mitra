@@ -9,6 +9,7 @@ import { PRIVACY_POLICY } from "../content/privacyPolicy";
 import {
   CONTACT_EMAIL,
   CONTACT_PAGE_BANNER,
+  GRIEVANCE_EMAIL,
   SUPPORT_HOURS,
 } from "../content/promises";
 import {
@@ -21,6 +22,7 @@ const entity: OperatingEntity = {
   legalName: "KAVISAT TEK LABS LLP",
   llpin: null,
   registeredOffice: null,
+  grievanceOfficer: null,
 };
 
 const PAGES = [
@@ -67,21 +69,23 @@ describe.each(PAGES)("%s", (name, component, rootTestId) => {
 });
 
 describe("PrivacyPolicy", () => {
-  it("shows a gap box for every counsel clause, and the operator details", () => {
+  it("shows a gap box for every unwritten clause, and the operator details", () => {
     const wrapper = mount(PrivacyPolicy, { props: { entity } });
     const unwritten = PRIVACY_POLICY.clauses.filter(
       (c) => c.status !== "drafted",
     );
-    expect(unwritten.length).toBeGreaterThan(0);
     expect(wrapper.findAll('[data-testid="terms-gap"]')).toHaveLength(
       unwritten.length,
     );
     for (const clause of unwritten) {
       expect(wrapper.text()).toContain(clause.gap);
     }
-    expect(
-      wrapper.get('[data-testid="terms-operator-details"]').text(),
-    ).toContain("KAVISAT TEK LABS LLP");
+    const details = wrapper
+      .get('[data-testid="terms-operator-details"]')
+      .text();
+    expect(details).toContain("KAVISAT TEK LABS LLP");
+    // The grievance clause points at this row for the officer's name.
+    expect(details).toContain(`to be named, ${GRIEVANCE_EMAIL}`);
   });
 });
 
@@ -93,13 +97,9 @@ describe("RefundPolicy", () => {
     const clause = sections[0];
 
     expect(clause.get("h2").text()).toBe(TERMS_REFUNDS_CLAUSE.heading);
-    expect(clause.get('[data-testid="terms-gap"]').text()).toContain(
-      TERMS_REFUNDS_CLAUSE.gap,
-    );
-    const paragraphs = clause
-      .findAll("p")
-      .filter((p) => p.attributes("data-testid") !== "terms-gap")
-      .map((p) => p.text());
+    expect(TERMS_REFUNDS_CLAUSE.status).toBe("drafted");
+    expect(clause.find('[data-testid="terms-gap"]').exists()).toBe(false);
+    const paragraphs = clause.findAll("p").map((p) => p.text());
     expect(paragraphs).toEqual(TERMS_REFUNDS_CLAUSE.body);
 
     expect(wrapper.get('[data-testid="terms-draft-banner"]').text()).toContain(
