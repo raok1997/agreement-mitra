@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { AgreementView, Role } from "../api/client";
-import { isSignedIn, reconcile } from "../api/authStore";
+import type { AgreementView } from "../api/client";
+import { isSignedIn } from "../api/authStore";
 import {
   getPaymentProgress,
   payForAgreement,
@@ -21,14 +21,15 @@ import { busyMessage, ServiceBusyError } from "../api/http";
 import {
   getStampQuote,
   selectionFor,
-  StampQuoteHttpError,
   type StampSelection,
 } from "../api/stampQuote";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
+import { formatRupees, roleLabel } from "./agreementListFormat";
 import { hasProblemType, PROBLEM } from "../api/problems";
 import {
   AGREEMENT_UNAVAILABLE_MESSAGE,
+  agreementUnavailable,
   customerMessage,
   JURISDICTION_UNSUPPORTED_MESSAGE,
 } from "./refusalMessages";
@@ -91,10 +92,6 @@ const stage = computed<FulfilmentStage>(
   () => progress.value?.stage ?? "NOT_STARTED",
 );
 const ended = computed(() => TERMINAL.has(stage.value));
-
-function roleLabel(role: Role | string | null | undefined): string {
-  return role === "OWNER" ? "Owner" : role === "TENANT" ? "Tenant" : "Party";
-}
 
 function partyName(p: PartyProgress): string {
   const signer = props.agreement.signers.find((s) => s.id === p.signerId);
@@ -298,21 +295,11 @@ async function pay(): Promise<void> {
   } catch (e) {
     // The stamp quote's error carries only a status; on this route a 404 is "unknown or not yours".
     payError.value =
-      e instanceof StampQuoteHttpError && e.status === 404
-        ? notAvailableToThisSession()
+      agreementUnavailable(e)
+        ? AGREEMENT_UNAVAILABLE_MESSAGE
         : (busyMessage(e) ??
           "Payment cannot be started yet. Contact support quoting your reference.");
   }
-}
-
-/**
- * A payment call refused as not found: this session is not (or no longer) the owner's. Signing in
- * is the remedy, not support. A 404 does not trip the client's 401/403 hook, so re-check the
- * session here, or a header still showing an ended session would contradict the message.
- */
-function notAvailableToThisSession(): string {
-  void reconcile();
-  return AGREEMENT_UNAVAILABLE_MESSAGE;
 }
 
 async function onStampChosen(selection: StampSelection): Promise<void> {
@@ -332,8 +319,8 @@ async function payWith(selection: StampSelection): Promise<void> {
   } catch (e) {
     payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
       ? JURISDICTION_UNSUPPORTED_MESSAGE
-      : hasProblemType(e, PROBLEM.notFound)
-        ? notAvailableToThisSession()
+      : agreementUnavailable(e)
+        ? AGREEMENT_UNAVAILABLE_MESSAGE
         : customerMessage(
             e,
             "Payment cannot be started yet. Contact support quoting your reference.",
@@ -368,11 +355,6 @@ async function download(): Promise<void> {
 
 // --- display helpers ----------------------------------------------------------------------------
 
-const rupees = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
 /** A date-only ISO string is a calendar date, not an instant: parse it as local, never as UTC. */
 function date(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -423,7 +405,13 @@ const CONDITION_MARK: Record<Condition, string> = {
       <div>
         <dt class="text-slate-500">Monthly rent</dt>
         <dd class="text-slate-900">
-          {{ rupees.format(agreement.monthlyRent) }}
+          {{ formatRupees(agreement.monthlyRent) }}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-slate-500">Security deposit</dt>
+        <dd class="text-slate-900" data-testid="status-deposit">
+          {{ formatRupees(agreement.securityDeposit) }}
         </dd>
       </div>
       <div>

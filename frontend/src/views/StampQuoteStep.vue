@@ -10,16 +10,27 @@
 // The server enforces the same rule and records the acknowledgement; this screen only makes sure the
 // customer meets it here rather than as a refusal.
 //
+// WHAT IS BEING PAID FOR. Above the price, the agreement's key terms as the server has them stored,
+// read afresh on every mount -- never from a parent's copy, the capture form or the browser draft
+// (pre-payment-key-terms-summary). Payment waits for them; if they cannot be read, the step cannot
+// be paid from. Only the shown fields are kept: no party contact, address or captured value.
+//
 // NOTHING HERE IS COMPUTED IN THE BROWSER. Every amount -- duty, stamp value, total -- is rendered
 // exactly as the server sent it. The emitted selection names a choice, never an amount to charge.
 
 import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
 import { busyMessage } from "../api/http";
+import { getAgreement } from "../api/agreements";
+import type { AgreementView } from "../api/client";
 import {
+  AGREEMENT_UNAVAILABLE_MESSAGE,
+  agreementUnavailable,
   JURISDICTION_UNSUPPORTED_MESSAGE,
   STAMP_UNPLANNABLE_MESSAGE,
 } from "./refusalMessages";
+import { formatRupees, roleLabel } from "./agreementListFormat";
+import { formatIso } from "./dateEntry";
 import {
   getStampQuote,
   selectionFor,
@@ -48,6 +59,53 @@ const loadError = ref<string | null>(null);
 const selectedValue = ref<number | null>(null);
 const acknowledged = ref(false);
 
+/** The only fields of the stored agreement this step keeps (design D3). */
+interface KeyTerms {
+  propertyAddress: string;
+  monthlyRent: number;
+  securityDeposit: number;
+  startDate: string;
+  endDate: string;
+  durationMonths: number;
+  parties: { name: string; role: string }[];
+}
+
+const terms = ref<KeyTerms | null>(null);
+const termsError = ref<string | null>(null);
+
+function keyTerms(a: AgreementView): KeyTerms {
+  const complete =
+    typeof a.propertyAddress === "string" &&
+    typeof a.monthlyRent === "number" &&
+    typeof a.securityDeposit === "number" &&
+    typeof a.startDate === "string" &&
+    typeof a.endDate === "string" &&
+    typeof a.durationMonths === "number" &&
+    Array.isArray(a.signers) &&
+    a.signers.length > 0 &&
+    a.signers.every((p) => typeof p?.name === "string" && p.name.trim() !== "");
+  if (!complete) throw new Error("incomplete agreement");
+  return {
+    propertyAddress: a.propertyAddress,
+    monthlyRent: a.monthlyRent,
+    securityDeposit: a.securityDeposit,
+    startDate: a.startDate,
+    endDate: a.endDate,
+    durationMonths: a.durationMonths,
+    parties: a.signers.map((p) => ({ name: p.name, role: p.role })),
+  };
+}
+
+onMounted(async () => {
+  try {
+    terms.value = keyTerms(await getAgreement(props.agreementId));
+  } catch (e) {
+    termsError.value = agreementUnavailable(e)
+      ? AGREEMENT_UNAVAILABLE_MESSAGE
+      : (busyMessage(e) ?? "Could not load the saved terms. Please try again.");
+  }
+});
+
 onMounted(async () => {
   try {
     const q = await getStampQuote(props.agreementId);
@@ -56,9 +114,10 @@ onMounted(async () => {
       q.options.find((o) => o.recommended) ?? q.options[0] ?? null;
     selectedValue.value = preselected?.stampValueMinorUnits ?? null;
   } catch (e) {
-    loadError.value =
-      busyMessage(e) ??
-      "Could not load the stamp duty for this agreement. Please try again.";
+    loadError.value = agreementUnavailable(e)
+      ? AGREEMENT_UNAVAILABLE_MESSAGE
+      : (busyMessage(e) ??
+        "Could not load the stamp duty for this agreement. Please try again.");
   } finally {
     loading.value = false;
   }
@@ -74,10 +133,19 @@ const selected = computed<StampQuoteOption | null>(
 const canPay = computed(
   () =>
     !!quote.value?.available &&
+    !!terms.value &&
     !!selected.value &&
     (!selected.value.belowDuty || acknowledged.value) &&
     !props.busy,
 );
+
+function shownDate(iso: string): string {
+  return formatIso(iso) || "—";
+}
+
+function months(n: number): string {
+  return n === 1 ? "1 month" : `${n} months`;
+}
 
 function choose(option: StampQuoteOption): void {
   selectedValue.value = option.stampValueMinorUnits;
@@ -172,11 +240,81 @@ function confirm(): void {
   >
     <h2 class="text-lg font-semibold text-slate-900">Stamp duty</h2>
 
+    <section
+      class="mt-3 rounded border border-slate-200 p-3 text-sm"
+      data-testid="key-terms"
+    >
+      <h3 class="font-medium text-slate-900">
+        You are paying to stamp and sign this
+      </h3>
+      <p
+        v-if="termsError"
+        class="mt-2 text-red-600"
+        role="alert"
+        data-testid="key-terms-error"
+      >
+        {{ termsError }}
+      </p>
+      <template v-else-if="terms">
+        <dl class="mt-2 space-y-2">
+          <div>
+            <dt class="text-slate-500">Property</dt>
+            <dd
+              class="whitespace-pre-line text-slate-900"
+              data-testid="key-terms-address"
+            >
+              {{ terms.propertyAddress }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Monthly rent</dt>
+            <dd class="text-slate-900" data-testid="key-terms-rent">
+              {{ formatRupees(terms.monthlyRent) }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Security deposit</dt>
+            <dd class="text-slate-900" data-testid="key-terms-deposit">
+              {{ formatRupees(terms.securityDeposit) }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Term</dt>
+            <dd class="text-slate-900" data-testid="key-terms-term">
+              {{ shownDate(terms.startDate) }} to
+              {{ shownDate(terms.endDate) }} ·
+              {{ months(terms.durationMonths) }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Parties</dt>
+            <dd class="text-slate-900">
+              <ul data-testid="key-terms-parties">
+                <li v-for="(party, i) in terms.parties" :key="i">
+                  {{ party.name }} ({{ roleLabel(party.role) }})
+                </li>
+              </ul>
+            </dd>
+          </div>
+        </dl>
+        <p class="mt-3 text-slate-700" data-testid="key-terms-go-back">
+          If anything here is wrong, don't pay. Go back.
+        </p>
+      </template>
+      <p v-else class="mt-2 text-slate-600" data-testid="key-terms-loading">
+        Loading the saved terms…
+      </p>
+    </section>
+
     <p v-if="loading" class="mt-3 text-sm text-slate-600">
       Calculating stamp duty…
     </p>
 
-    <p v-else-if="loadError" class="mt-3 text-sm text-red-600" role="alert">
+    <p
+      v-else-if="loadError && loadError !== termsError"
+      class="mt-3 text-sm text-red-600"
+      role="alert"
+    >
       {{ loadError }}
     </p>
 
@@ -249,7 +387,11 @@ function confirm(): void {
         payment.
       </p>
 
-      <fieldset class="space-y-2" :disabled="quote.frozen">
+      <fieldset
+        v-if="!termsError"
+        class="space-y-2"
+        :disabled="quote.frozen"
+      >
         <legend class="text-sm font-medium text-slate-900">
           {{ quote.frozen ? "Your stamp choice" : "Choose the stamp value" }}
         </legend>
@@ -293,7 +435,7 @@ function confirm(): void {
       </fieldset>
 
       <div
-        v-if="selected?.belowDuty && !quote.frozen"
+        v-if="selected?.belowDuty && !quote.frozen && !termsError"
         class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900"
         data-testid="under-stamp-warning"
       >
@@ -328,7 +470,7 @@ function confirm(): void {
         Back
       </button>
       <button
-        v-if="quote?.available"
+        v-if="quote?.available && !termsError"
         type="button"
         class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
         :disabled="!canPay"

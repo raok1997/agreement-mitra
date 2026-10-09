@@ -879,6 +879,46 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     );
   });
 
+  it("shows the stored terms on the stamp step, not the form's working values", async () => {
+    // pre-payment-key-terms-summary: the form says ₹24,000 but the server holds ₹25,000. The lock
+    // makes that divergence reachable only through mocks; the point is which source the step reads.
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    // The contact step reads the agreement too, so every call resolves the same stored record.
+    mockedGetAgreement.mockResolvedValue({
+      ...agreementWithContacts(),
+      monthlyRent: 25000,
+    });
+
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    await fillSection(wrapper, "financial-terms", { monthlyRent: "24000" });
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+    expect(mockedCreate.mock.calls[0][0].monthlyRent).toBe("24000");
+    await wrapper.find('[data-testid="finalise-and-pay"]').trigger("click");
+    await flushPromises();
+    const step = wrapper.findComponent(ContactConfirmation);
+    step.vm.$emit(
+      "confirm",
+      agreementWithContacts().signers.map((signer) => ({
+        id: signer.id,
+        name: signer.name,
+        role: signer.role,
+        email: signer.email ?? "",
+        mobile: signer.mobile ?? "",
+      })) as PartyContact[],
+    );
+    await flushPromises();
+
+    const terms = wrapper
+      .findComponent(StampQuoteStep)
+      .get('[data-testid="key-terms"]');
+    expect(terms.get('[data-testid="key-terms-rent"]').text()).toBe("₹25,000");
+    expect(terms.text()).not.toContain("24,000");
+    expect(mockedGetAgreement).toHaveBeenLastCalledWith("agr-1");
+  });
+
   it("says a paid agreement's contacts are frozen instead of 'please try again'", async () => {
     mockedCreate.mockResolvedValue(fakeAgreement());
     mockedGenerate.mockResolvedValue();

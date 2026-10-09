@@ -4,6 +4,8 @@ import { ServiceBusyError } from "../api/http";
 import AgreementStatus from "./AgreementStatus.vue";
 import * as payments from "../api/payments";
 import * as signing from "../api/signingProgress";
+import * as stampQuote from "../api/stampQuote";
+import * as agreements from "../api/agreements";
 import { LINK_UNAVAILABLE_MESSAGE } from "./linkCopy";
 import type { AgreementView } from "../api/client";
 import type { PaymentProgress } from "../api/payments";
@@ -52,6 +54,11 @@ vi.mock("../api/stampQuote", async (importOriginal) => {
     })),
   };
 });
+// The stamp step reads the stored agreement for its key-terms summary (pre-payment-key-terms-summary).
+vi.mock("../api/agreements", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/agreements")>();
+  return { ...actual, getAgreement: vi.fn() };
+});
 vi.mock("../api/signingProgress", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../api/signingProgress")>();
@@ -65,7 +72,7 @@ vi.mock("../api/signingProgress", async (importOriginal) => {
 // tests flip directly. Built inside the factory: vi.mock runs before module-level code.
 vi.mock("../api/authStore", async () => {
   const { ref } = await import("vue");
-  return { isSignedIn: ref(false) };
+  return { isSignedIn: ref(false), reconcile: async () => {} };
 });
 const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
 
@@ -73,6 +80,7 @@ const mockedPayment = vi.mocked(payments.getPaymentProgress);
 const mockedPay = vi.mocked(payments.payForAgreement);
 const mockedProgress = vi.mocked(signing.getSigningProgress);
 const mockedDownload = vi.mocked(signing.downloadSignedDocument);
+const mockedGetAgreement = vi.mocked(agreements.getAgreement);
 
 const OWNER = "aaaaaaaa-0a0a-4aaa-8aaa-aaaaaaaaaaa1";
 const TENANT = "bbbbbbbb-0b0b-4bbb-8bbb-bbbbbbbbbbb2";
@@ -216,6 +224,8 @@ beforeEach(() => {
   mockedProgress.mockReset();
   mockedPay.mockReset();
   mockedDownload.mockReset();
+  mockedGetAgreement.mockReset();
+  mockedGetAgreement.mockResolvedValue(agreement());
   signedIn.value = false;
 });
 afterEach(() => {
@@ -472,6 +482,31 @@ describe("AgreementStatus — payment is the server's word", () => {
     await wait.tick();
     expect(mockedPayment).toHaveBeenCalledTimes(1);
     expect(mockedProgress).toHaveBeenCalledTimes(3);
+  });
+
+  it("with no order to resume, shows the stored key terms on the stamp step before payment", async () => {
+    const { wrapper } = mountWith(UNPAID_WITH_ORDER(), progress());
+    await flushPromises();
+    const frozenQuote = await stampQuote.getStampQuote("ag-1");
+    vi.mocked(stampQuote.getStampQuote).mockResolvedValueOnce({
+      ...frozenQuote,
+      frozen: false,
+    });
+
+    await wrapper.get('[data-testid="status-pay"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedGetAgreement).toHaveBeenCalledWith("ag-1");
+    const terms = wrapper.get('[data-testid="key-terms"]');
+    expect(terms.get('[data-testid="key-terms-rent"]').text()).toBe("₹25,000");
+    expect(terms.text()).toContain("Asha Owner (Owner)");
+    // The status page itself also shows the deposit: on the frozen-order resume path it is the
+    // only place the terms are shown before payment (ToS §7).
+    expect(wrapper.get('[data-testid="status-deposit"]').text()).toBe("₹50,000");
+    expect(
+      wrapper.get('[data-testid="stamp-quote-pay"]').attributes("disabled"),
+    ).toBeUndefined();
+    expect(mockedPay).not.toHaveBeenCalled();
   });
 
   it("shows a generic message when payment cannot be started", async () => {

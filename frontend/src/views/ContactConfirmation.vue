@@ -33,6 +33,7 @@ export interface PartyContact {
 
 import LegalDisclaimer from "../components/LegalDisclaimer.vue";
 import { computed, ref, watch } from "vue";
+import { roleLabel } from "./agreementListFormat";
 
 const props = defineProps<{
   parties: PartyContact[];
@@ -90,11 +91,6 @@ const ready = computed(
 const nothingMissing = computed(() =>
   props.parties.every((p) => EMAIL.test(p.email.trim())),
 );
-
-function roleLabel(role: string): string {
-  if (!role) return "Party";
-  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
-}
 
 function confirm(): void {
   if (!ready.value || props.saving) return;

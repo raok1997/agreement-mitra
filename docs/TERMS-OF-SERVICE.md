@@ -4,7 +4,7 @@
 
 # AgreementMitra — Terms of Service (DRAFT)
 
-**Last updated:** 7 October 2026
+**Last updated:** 9 October 2026
 
 > This is a draft, published during a restricted beta and pending review by Indian counsel. Sections marked below are deliberately incomplete. We publish it in this state because a draft you can read beats terms that do not exist -- not because it is finished.
 
@@ -69,7 +69,7 @@ That total is INR 499 where the stamp value on your agreement is INR 100 or less
 
 We work out the stamp duty the law requires for your agreement and show it to you. Where the state's stamps allow it, we recommend a stamp of that value. In some states we can offer only a stamp of a fixed value, and that value can be below the duty. You can go ahead with a stamp below the duty only after we have shown you what that means: an under-stamped agreement cannot be relied on as evidence until the missing duty and a penalty are paid.
 
-You are shown the stamp, the duty and the total before you pay. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due. What we will not do is take payment and then come back to you for more.
+You are shown the stamp, the duty and the total before you pay, together with the main terms of your agreement as we have them saved: the property, the rent, the deposit, the dates and the parties. That is what you are paying to stamp and sign. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due. What we will not do is take payment and then come back to you for more.
 
 ## 8. Stamp duty
 

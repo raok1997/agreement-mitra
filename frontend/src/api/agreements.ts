@@ -73,7 +73,11 @@ export async function claimAgreement(id: string): Promise<AgreementView> {
   return res.json();
 }
 
-/** Read one owned agreement to prefill the edit form. 404 (as AgreementHttpError) if not the owner. */
+/**
+ * Read one agreement: to prefill the edit form, and on the pay path (contact step, the stamp step's
+ * key-terms summary). An unclaimed agreement is readable by anyone holding its id; a claimed one
+ * only by its owner. Anyone else gets 404 (as AgreementHttpError), the same as for an unknown id.
+ */
 export async function getAgreement(id: string): Promise<AgreementView> {
   const res = await apiFetch(`${BASE}/agreements/${id}`);
   if (!res.ok) throw await AgreementHttpError.from(res);

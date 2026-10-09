@@ -49,6 +49,11 @@ describe("formatRupees", () => {
     expect(formatRupees(125000)).toBe("₹1,25,000");
     expect(formatRupees(32000)).toBe("₹32,000");
   });
+
+  it("keeps paise rather than rounding them away", () => {
+    expect(formatRupees(15000.5)).toBe("₹15,000.50");
+    expect(formatRupees(15000.05)).toBe("₹15,000.05");
+  });
 });
 
 function summary(over: Partial<AgreementSummary>): AgreementSummary {

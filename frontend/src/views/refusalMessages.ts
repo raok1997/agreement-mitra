@@ -1,7 +1,10 @@
 // What a customer reads when a server refusal has a remedy other than "try again", and the one rule
 // for when an error's own message may be shown at all (agreement-error-problem-type-plumbing D4).
 
+import { reconcile } from "../api/authStore";
 import { CustomerFacingError } from "../api/http";
+import { hasProblemType, PROBLEM } from "../api/problems";
+import { StampQuoteHttpError } from "../api/stampQuote";
 
 /**
  * Stamping is limited by jurisdiction. Shown wherever payment is started, and by the stamp step
@@ -32,6 +35,21 @@ export const TERMS_FROZEN_MESSAGE =
 export const AGREEMENT_UNAVAILABLE_MESSAGE =
   "This agreement isn't available here. If it has been saved to an account, sign in with that " +
   "account to continue.";
+
+/**
+ * Whether a pay-path call was refused as not found: unknown, or claimed by an account this session
+ * is not signed in as. The stamp quote's error carries only a status, so its 404 counts too. A 404
+ * does not trip the client's 401/403 hook, so re-check the session here, or a header still showing
+ * an ended session would contradict AGREEMENT_UNAVAILABLE_MESSAGE. Signing in is the remedy.
+ */
+export function agreementUnavailable(e: unknown): boolean {
+  const notFound =
+    hasProblemType(e, PROBLEM.notFound) ||
+    (e instanceof StampQuoteHttpError && e.status === 404);
+  if (!notFound) return false;
+  void reconcile();
+  return true;
+}
 
 /**
  * The error's own message when it was written for customers, otherwise `fallback`. An allowlist:
