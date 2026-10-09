@@ -735,6 +735,13 @@ const missingHint = ref<string | null>(null);
 // (PUT), which an anonymous creator cannot use, so Save is closed instead of creating a duplicate --
 // and the sections lock with it, or an edit would reach the preview and PDF but never the payment.
 const createdOnce = computed(() => !editMode.value && saved.value);
+// A create that succeeded but whose draft generation then failed. Retrying with the same terms
+// regenerates that agreement instead of creating a second one. Changed terms still create anew,
+// since an anonymous creator cannot edit the first.
+let createdAwaitingDraft: {
+  input: string;
+  agreement: Awaited<ReturnType<typeof createAgreement>>;
+} | null = null;
 
 async function saveAndContinue(): Promise<void> {
   if (createdOnce.value) return; // a second create would be a duplicate agreement
@@ -761,8 +768,15 @@ async function saveAndContinue(): Promise<void> {
       savedTrackingNumber.value = updated.trackingNumber;
       void refreshPreview();
     } else {
-      const created = await createAgreement(buildAgreementInput());
+      const input = buildAgreementInput();
+      const inputKey = JSON.stringify(input);
+      const created =
+        createdAwaitingDraft?.input === inputKey
+          ? createdAwaitingDraft.agreement
+          : await createAgreement(input);
+      createdAwaitingDraft = { input: inputKey, agreement: created };
       await generateAgreementDocument(created.id);
+      createdAwaitingDraft = null;
       saved.value = true;
       savedId.value = created.id;
       savedTrackingNumber.value = created.trackingNumber; // now the client holds the reference

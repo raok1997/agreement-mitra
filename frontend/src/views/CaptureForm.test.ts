@@ -753,6 +753,42 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(mockedCreate).toHaveBeenCalledOnce();
   });
 
+  it("retries only the draft after a failed generate, so a second click does not duplicate the agreement", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockRejectedValueOnce(new Error("render down")).mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+
+    await save().trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="save-error"]').exists()).toBe(true);
+
+    await save().trigger("click");
+    await flushPromises();
+
+    expect(mockedCreate).toHaveBeenCalledOnce();
+    expect(mockedGenerate).toHaveBeenCalledTimes(2);
+    expect(mockedGenerate).toHaveBeenLastCalledWith("agr-1");
+    expect(wrapper.find('[data-testid="save-ok"]').exists()).toBe(true);
+  });
+
+  it("creates afresh after a failed generate when the terms were changed", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockRejectedValueOnce(new Error("render down")).mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+
+    await save().trigger("click");
+    await flushPromises();
+    await fillSection(wrapper, "property", { propertyAddress: "14 MG Road" });
+    await save().trigger("click");
+    await flushPromises();
+
+    expect(mockedCreate).toHaveBeenCalledTimes(2);
+  });
+
   it("Start over, once confirmed, clears the client-held working set and storage", async () => {
     const wrapper = await mountReady();
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
