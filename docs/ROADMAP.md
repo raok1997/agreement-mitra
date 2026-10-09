@@ -122,7 +122,11 @@ release, which takes `tg-commercial-statutory-section-optional` and the commerci
 `ka-stamp-duty-counsel-review` (the uncapped commercial rate) off the critical path. The rows
 stay on the register for the release that brings commercial back. That release should also
 consider a commercial-only "allowed to group companies / affiliates" sub-letting option beside the
-three residential ones (raised by `subletting-choice`).
+three residential ones (raised by `subletting-choice`). It also needs its own CAM model, not a copy of
+the residential maintenance choice (`maintenance-charge-basis`): a per-sq-ft basis, GST on CAM, a
+contractual yearly increase or an actuals reconciliation, a facility-management payee, and a
+`camBorneBy` / commercial `utilitiesBorneBy` with no `shared` option (it renders "borne by the
+Shared").
 
 - Terms-acceptance checkpoint (under "Other queued non-goals"; it records which terms
    version was accepted)

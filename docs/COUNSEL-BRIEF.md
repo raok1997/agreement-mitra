@@ -498,13 +498,12 @@ almost every agreement we issue, and should be reviewed as such.
 
 **Charges and utilities** *(opt-in: the whole group appears only if the user adds it; within it, clauses 10 and 12 appear only where an amount has been entered)*
 
-9. "Society and building maintenance charges shall be borne by the [owner / tenant /
-   shared]."
+9. "Society and building maintenance charges shall be borne by the [owner / tenant]."
 
 10. "The maintenance charges payable amount to INR [amount] per month."
 
 11. "Electricity, water, gas, internet, and other utility charges consumed at the Premises
-    shall be borne by the [owner / tenant / shared] as per actual usage during the tenancy."
+    shall be borne by the [owner / tenant] as per actual usage during the tenancy."
 
 12. "If the rent is not paid within [grace period] day(s) of the due date, the Tenant shall
     pay a late-payment charge of INR [penalty]."

@@ -77,7 +77,11 @@ meta:
   # v6 (2026-10-09): the fixtures/inventory annexure became one item per line, and its default is now
   # near-universal items only, with no quantities. The old default was a furnished-flat inventory that a
   # customer who did not edit it would sign as fact. Bumped because a deed carrying the annexure changes.
-  version: 6
+  #
+  # v7 (2026-10-09): `shared` was dropped from maintenanceBorneBy and utilitiesBorneBy. The clause
+  # renders the option label into "shall be borne by the {{...}}", so it printed "borne by the Shared"
+  # and never said how the cost was split. Bumped because the composed template changes.
+  version: 7
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -144,10 +148,10 @@ fields:
       options: [ bank_transfer, upi, cheque, cash ] }
   # --- Charges & utilities (optional add-on section) ---
   - { key: maintenanceBorneBy, label: "Maintenance borne by",           type: enum,     required: false,
-      default: tenant, options: [ tenant, owner, shared ] }
+      default: tenant, options: [ tenant, owner ] }
   - { key: maintenanceAmount, label: "Maintenance amount (INR / month)", type: money,    required: false }
   - { key: utilitiesBorneBy, label: "Utilities borne by",               type: enum,     required: false,
-      default: tenant, options: [ tenant, owner, shared ] }
+      default: tenant, options: [ tenant, owner ] }
   - { key: latePaymentPenalty, label: "Late-payment penalty (INR)",     type: money,    required: false }
   - { key: gracePeriodDays,  label: "Grace period (days)",               type: int,      required: false,
       default: 5, validation: { min: 0, max: 30 } }

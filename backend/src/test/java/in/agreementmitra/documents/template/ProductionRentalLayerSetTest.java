@@ -131,12 +131,40 @@ class ProductionRentalLayerSetTest {
   @Test
   void theBaseLayerPinsItsAuthoredVersion() {
     // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
-    // different deeds must never report one authored version. v6 is the bump that made the
-    // inventory
-    // annexure one item per line. Pinned explicitly because every other assertion in this
-    // suite reads the version dynamically, which would let a revert through silently.
+    // different deeds must never report one authored version. v7 is the bump that dropped
+    // `shared` from the maintenance and utilities borne-by choices. Pinned explicitly because
+    // every other assertion in this suite reads the version dynamically, which would let a revert
+    // through silently.
     assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
-        .isEqualTo(6);
+        .isEqualTo(7);
+  }
+
+  @Test
+  void chargesBorneByOffersOnlyOwnerOrTenant() {
+    // "borne by the {{x}}" renders the option label, so `shared` printed "borne by the Shared".
+    for (String state : List.of("IN", "TG", "KA")) {
+      EffectiveTemplate eff = resolve(state, "residential");
+      for (String key : List.of("maintenanceBorneBy", "utilitiesBorneBy")) {
+        assertThat(field(eff, key).options())
+            .as("%s %s", state, key)
+            .containsExactly("tenant", "owner");
+      }
+    }
+  }
+
+  @Test
+  void aStoredSharedChargeChoiceIsRejectedInBothModes() {
+    EffectiveTemplate eff = resolve("TG", "residential");
+    Map<String, Object> data = new LinkedHashMap<>(aggregateBackedData());
+    data.put("utilitiesBorneBy", "shared");
+    for (ProjectionMode mode : ProjectionMode.values()) {
+      DocumentDataInvalidException ex =
+          catchThrowableOfType(
+              DocumentDataInvalidException.class,
+              () -> SubmittedDataValidator.validateAndCoerce(eff, data, mode));
+      assertThat(ex).as("%s", mode).isNotNull();
+      assertThat(ex.errors()).contains(new FieldErrorDetail("utilitiesBorneBy", "enum"));
+    }
   }
 
   @Test
