@@ -244,9 +244,10 @@ the cost is invisible to whoever is only watching for the green tick.
     not postcss.
 - **Not yet covered (follow-up CRs):** CI that runs these gates automatically
   (today they run only on local `./gradlew` / `npm run security:scan`). The backend
-  `osv-scanner.toml` suppression baseline holds **one** entry: `spring-webmvc`
-  6.2.19 GHSA-pc63-qcmh-9cmg (XsltView, unused here; no OSS 6.2.x fix, only 7.0.9 /
-  Boot 4; expires 2026-12-06). CR-8 remediated the Spring Boot 3.4.2 CVEs by bumping
+  `osv-scanner.toml` suppression baseline holds **two** entries, both `spring-webmvc`
+  6.2.19 with no OSS 6.2.x fix (only 7.0.9 / Boot 4) and both expiring 2026-12-06:
+  GHSA-pc63-qcmh-9cmg (XsltView) and GHSA-j9f9-w8pj-32f8 (SSE view fragments), each
+  unused here. CR-8 remediated the Spring Boot 3.4.2 CVEs by bumping
   to 3.5.15, and CR-9 cleared the residual tool-classpath findings via the
   scan-scope policy above.
 - **Boot 3.5.15 is NOT clean on its own.** As of 2026-09-05 four of its BOM-managed

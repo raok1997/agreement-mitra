@@ -20,9 +20,12 @@ import java.util.Map;
  * reports it; a role with no signer maps to {@code null}. Every OTHER declared field the aggregate
  * lacks (furnishing, charges, etc.) is filled from the effective template's system-authored
  * defaults inside the projection service, not here -- so the signed draft (generate) stays in
- * parity with the live preview. {@code LocalDate} values are emitted as ISO strings, the operand
- * form the projection's date validator/coercer and {@code showWhen} evaluation expect. Multi-party
- * rendering beyond the first party per role is out of scope (a catalog/definition concern).
+ * parity with the live preview. A <b>user-answered</b> field (required, no default -- today {@code
+ * subletting}) is never emitted here: it comes from the stored capture map alone, and generate
+ * refuses an agreement that lacks it. {@code LocalDate} values are emitted as ISO strings, the
+ * operand form the projection's date validator/coercer and {@code showWhen} evaluation expect.
+ * Multi-party rendering beyond the first party per role is out of scope (a catalog/definition
+ * concern).
  */
 final class AgreementDocumentMapper {
 

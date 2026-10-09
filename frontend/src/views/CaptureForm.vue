@@ -30,17 +30,19 @@ import PaymentConfirmation from "./PaymentConfirmation.vue";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import type { StampSelection } from "../api/stampQuote";
 import LegalDisclaimer from "../components/LegalDisclaimer.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import { fetchEligibleOrNone } from "../api/jurisdictions";
 import {
   formatMinorUnits,
   getPaymentProgress,
   payForAgreement,
 } from "../api/payments";
-import { isSignedIn, reconcile, whenReady } from "../api/authStore";
+import { isSignedIn, whenReady } from "../api/authStore";
 import { busyMessage } from "../api/http";
 import { hasProblemType, PROBLEM } from "../api/problems";
 import {
   AGREEMENT_UNAVAILABLE_MESSAGE,
+  agreementUnavailable,
   customerMessage,
   JURISDICTION_UNSUPPORTED_MESSAGE,
   TERMS_FROZEN_MESSAGE,
@@ -142,6 +144,8 @@ const emit = defineEmits<{
   // Fired after a successful Save-to-account (claim) or an edit save, so the shell can return to the
   // "My Agreements" list.
   (e: "saved-to-account"): void;
+  // A created + claimed agreement is locked here; editing it goes through the shell's edit mode.
+  (e: "edit-saved", id: string): void;
 }>();
 
 // True while editing an existing owned agreement (vs. drafting a new one).
@@ -178,7 +182,14 @@ interface UiSection {
   // field-level required-ness. Mandatory sections always render + count toward completeness; optional
   // sections are opt-in via the Add-optional catalog and never block save.
   optional: boolean;
+  hint?: string;
 }
+
+// The annexure's inventory is free text, one item per line. Its default lists only near-universal
+// fixtures; furniture and appliances are suggested here, never prefilled, because whatever is left
+// in the box is signed as fact.
+const ANNEXURE_HINT =
+  "One item per line. If the property is furnished, add furniture and appliances too - e.g. Bed, Sofa, Wardrobe, Fridge, Washing machine, AC, Geyser.";
 
 // M5 (agreement-capture-persistence) retired the STOPGAP: the agreement now persists its FULL capture
 // state (the flat working-set map + added optional sections), and generate-as-draft renders from that
@@ -201,6 +212,7 @@ const uiSections = computed<UiSection[]>(() =>
         icon: sectionIcon(s.title),
         fields,
         optional: !isSectionMandatory(s),
+        hint: s.renderKind === "annexure" ? ANNEXURE_HINT : undefined,
       };
     })
     .filter((s) => s.fields.length > 0),
@@ -227,7 +239,7 @@ const availableOptionalSections = computed(() =>
 );
 
 function addOptionalSection(title: string): void {
-  if (activeSections.value.includes(title)) return;
+  if (createdOnce.value || activeSections.value.includes(title)) return;
   activeSections.value = [...activeSections.value, title];
   persistDraft();
   schedulePreview();
@@ -236,7 +248,7 @@ function addOptionalSection(title: string): void {
 function removeOptionalSection(title: string): void {
   // Non-destructive: drop the title from the active set (so it stops rendering) but keep any entered
   // field data in the client draft in case the user re-adds it.
-  if (!activeSections.value.includes(title)) return;
+  if (createdOnce.value || !activeSections.value.includes(title)) return;
   activeSections.value = activeSections.value.filter((t) => t !== title);
   persistDraft();
   schedulePreview();
@@ -423,6 +435,7 @@ const dialogRef = ref<HTMLElement | null>(null);
 let lastFocused: HTMLElement | null = null;
 
 function openSection(id: string): void {
+  if (createdOnce.value) return;
   const s = sectionById(id);
   if (!s) return;
   lastFocused = document.activeElement as HTMLElement | null;
@@ -540,7 +553,10 @@ function purgeLegacyGlobalDraft(): void {
   }
 }
 
+// The slot holds an UNSAVED NEW agreement only. Writing it from an edit, or after a create succeeded,
+// resumes that agreement's terms (and its parties' PII) into the next "Create new" for this template.
 function persistDraft(): void {
+  if (editMode.value || saved.value) return;
   try {
     localStorage.setItem(
       draftKey(),
@@ -678,6 +694,17 @@ function resetDraft(): void {
   schedulePreview();
 }
 
+// "Start over" wipes everything typed with no undo, so it asks first; focus returns to the button.
+const confirmingReset = ref(false);
+const startOverButton = ref<HTMLButtonElement | null>(null);
+
+async function closeResetConfirm(reset: boolean): Promise<void> {
+  if (reset) resetDraft();
+  confirmingReset.value = false;
+  await nextTick();
+  startOverButton.value?.focus();
+}
+
 // ---------------------------------------------------------------------------
 // Final action: create + generate-as-draft via the EXISTING endpoints, then clear the client-held
 // draft (Save & continue is the only thing that persists server-side).
@@ -704,8 +731,13 @@ const savedTrackingNumber = ref<string | null>(
 );
 const saveError = ref<string | null>(null);
 const missingHint = ref<string | null>(null);
+// A new agreement is created exactly once. Re-saving it would need the authenticated full-edit path
+// (PUT), which an anonymous creator cannot use, so Save is closed instead of creating a duplicate --
+// and the sections lock with it, or an edit would reach the preview and PDF but never the payment.
+const createdOnce = computed(() => !editMode.value && saved.value);
 
 async function saveAndContinue(): Promise<void> {
+  if (createdOnce.value) return; // a second create would be a duplicate agreement
   missingHint.value = null;
   saveError.value = null;
   // Defence-in-depth: the button is already :disabled while any mandatory section is incomplete, but a
@@ -864,22 +896,11 @@ async function openContactStep(): Promise<void> {
     }));
     contactStep.value = true;
   } catch (e) {
-    payError.value = unavailable(e)
+    payError.value = agreementUnavailable(e)
       ? AGREEMENT_UNAVAILABLE_MESSAGE
       : (busyMessage(e) ??
         "Could not load the party details. Please try again.");
   }
-}
-
-/**
- * Whether a pay-path call was refused as not found: unknown, or claimed by an account this session
- * is not signed in as. A 404 does not trip the client's 401/403 hook, so re-check the session here,
- * or a header still showing an ended session would contradict the message.
- */
-function unavailable(e: unknown): boolean {
-  if (!hasProblemType(e, PROBLEM.notFound)) return false;
-  void reconcile();
-  return true;
 }
 
 /**
@@ -933,7 +954,7 @@ async function confirmContacts(parties: PartyContact[]): Promise<void> {
     // and retrying refuses forever, so the message has to name the real condition instead.
     contactError.value = hasProblemType(e, PROBLEM.contactsFrozen)
       ? "This agreement is already paid for, so the contact details can no longer be changed here. Contact support if an address is wrong."
-      : unavailable(e)
+      : agreementUnavailable(e)
         ? AGREEMENT_UNAVAILABLE_MESSAGE
         : customerMessage(
           e,
@@ -987,7 +1008,7 @@ async function finaliseAndPay(selection: StampSelection): Promise<void> {
     // retry can never succeed, so do not invite one: say what this agreement CAN still do.
     payError.value = hasProblemType(e, PROBLEM.jurisdictionUnsupported)
       ? JURISDICTION_UNSUPPORTED_MESSAGE
-      : unavailable(e)
+      : agreementUnavailable(e)
         ? AGREEMENT_UNAVAILABLE_MESSAGE
         : customerMessage(e, "Could not start payment. Please try again.");
   } finally {
@@ -1126,7 +1147,19 @@ onBeforeUnmount(() => {
           Complete {{ remainingRequired }} more required section(s)
         </span>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
+        <!-- Start over sits furthest from Save & continue: destructive, rare, and confirmed. An edit
+             or a created agreement has nothing to start over from (the draft slot is not theirs). -->
+        <button
+          v-if="schema && !editMode && !saved"
+          ref="startOverButton"
+          type="button"
+          class="rounded px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          data-testid="reset"
+          @click="confirmingReset = true"
+        >
+          Start over
+        </button>
         <button
           type="button"
           class="rounded border border-slate-300 px-3 py-2 text-sm font-medium"
@@ -1155,7 +1188,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-          :disabled="saving || !allRequiredDone"
+          :disabled="saving || !allRequiredDone || createdOnce"
           data-testid="save-continue"
           @click="saveAndContinue"
         >
@@ -1200,7 +1233,8 @@ onBeforeUnmount(() => {
               v-for="s in mandatorySections"
               :key="s.id"
               type="button"
-              class="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-left hover:border-slate-400 hover:bg-slate-50"
+              class="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-left hover:border-slate-400 hover:bg-slate-50 disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:bg-transparent"
+              :disabled="createdOnce"
               :data-testid="`section-${s.id}`"
               @click="openSection(s.id)"
             >
@@ -1259,7 +1293,8 @@ onBeforeUnmount(() => {
             >
               <button
                 type="button"
-                class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                class="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
+                :disabled="createdOnce"
                 :data-testid="`section-${s.id}`"
                 @click="openSection(s.id)"
               >
@@ -1284,7 +1319,8 @@ onBeforeUnmount(() => {
               </button>
               <button
                 type="button"
-                class="flex-none rounded-full px-2 py-0.5 text-xs font-semibold text-slate-500 hover:text-red-600"
+                class="flex-none rounded-full px-2 py-0.5 text-xs font-semibold text-slate-500 hover:text-red-600 disabled:hidden"
+                :disabled="createdOnce"
                 :data-testid="`remove-optional-${s.id}`"
                 @click="removeOptionalSection(s.title)"
               >
@@ -1324,7 +1360,8 @@ onBeforeUnmount(() => {
               </span>
               <button
                 type="button"
-                class="flex-none rounded-full border border-slate-300 px-3 py-0.5 text-xs font-semibold text-slate-700 hover:border-slate-500 hover:bg-slate-50"
+                class="flex-none rounded-full border border-slate-300 px-3 py-0.5 text-xs font-semibold text-slate-700 hover:border-slate-500 hover:bg-slate-50 disabled:hidden"
+                :disabled="createdOnce"
                 :data-testid="`add-optional-${s.id}`"
                 @click="addOptionalSection(s.title)"
               >
@@ -1332,17 +1369,6 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
-        </div>
-
-        <div v-if="schema" class="px-4 py-3">
-          <button
-            type="button"
-            class="text-xs text-slate-400 underline"
-            data-testid="reset"
-            @click="resetDraft"
-          >
-            Reset draft
-          </button>
         </div>
       </aside>
 
@@ -1449,6 +1475,44 @@ onBeforeUnmount(() => {
         {{ paying ? "Opening payment..." : "Finalise and pay" }}
       </button>
     </div>
+    <!-- Once created, the form is locked: the preview and Download PDF render the screen, payment
+         uses the stored draft, so an edit here would be shown but never paid for. The way forward
+         depends on ownership -- an anonymous creator cannot sign in to keep this agreement, because
+         sign-in is a full-page redirect and the id lives only in this component. -->
+    <p
+      v-if="createdOnce && canPay"
+      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700"
+      data-testid="locked-notice"
+    >
+      <template v-if="claimed">
+        <span>This agreement is saved. To change it, open it for editing.</span>
+        <button
+          type="button"
+          class="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold"
+          data-testid="edit-saved"
+          @click="emit('edit-saved', savedId!)"
+        >
+          Edit agreement
+        </button>
+      </template>
+      <span v-else-if="isSignedIn">
+        This agreement is saved. Save it to your account to change it.
+      </span>
+      <template v-else>
+        <span>
+          This agreement is saved and can't be changed. To change something,
+          start a new one.
+        </span>
+        <button
+          type="button"
+          class="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold"
+          data-testid="start-new"
+          @click="emit('change-template')"
+        >
+          Start a new agreement
+        </button>
+      </template>
+    </p>
     <!-- Payment status. This reflects the SERVER's payment state, never what happened in the
          checkout window: "Payment received" appears only once the server has confirmed it. -->
     <p
@@ -1494,6 +1558,20 @@ onBeforeUnmount(() => {
     <LegalDisclaimer variant="bar" />
   </div>
 
+  <ConfirmDialog
+    v-if="confirmingReset"
+    title="Clear all entered details?"
+    confirm-label="Clear"
+    cancel-label="Keep editing"
+    @confirm="closeResetConfirm(true)"
+    @cancel="closeResetConfirm(false)"
+  >
+    <p>
+      This removes everything you've typed for this agreement. It can't be
+      undone.
+    </p>
+  </ConfirmDialog>
+
   <!-- Section modal (focus-trapped; full-screen bottom sheet on phone) -->
   <div
     v-if="activeSection"
@@ -1506,7 +1584,7 @@ onBeforeUnmount(() => {
       role="dialog"
       aria-modal="true"
       :aria-label="activeSection.title"
-      class="max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white shadow-xl sm:max-w-lg sm:rounded-xl"
+      class="max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white shadow-xl sm:max-w-2xl sm:rounded-xl"
     >
       <header
         class="flex items-start gap-3 border-b border-slate-200 px-5 py-4"
@@ -1539,6 +1617,13 @@ onBeforeUnmount(() => {
         </button>
       </header>
       <div class="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2">
+        <p
+          v-if="activeSection.hint"
+          class="text-xs text-slate-500 sm:col-span-2"
+          data-testid="section-hint"
+        >
+          {{ activeSection.hint }}
+        </p>
         <div
           v-for="f in activeSection.fields"
           :key="f.key"

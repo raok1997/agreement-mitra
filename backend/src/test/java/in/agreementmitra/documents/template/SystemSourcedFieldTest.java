@@ -9,6 +9,7 @@ import in.agreementmitra.documents.api.DocumentProjectionRequest;
 import in.agreementmitra.documents.api.DocumentProjectionResult;
 import in.agreementmitra.documents.api.FormField;
 import in.agreementmitra.documents.api.FormSchema;
+import in.agreementmitra.support.TemplateParity;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -191,7 +192,7 @@ class SystemSourcedFieldTest {
   @Test
   void aTelanganaDraftShowsTheStampDutyProvisionNeverASubmittedAmount() {
     DocumentProjectionService service = service(RENTAL);
-    Map<String, Object> data = aggregateBackedData();
+    Map<String, Object> data = TemplateParity.withUserAnswers(aggregateBackedData());
     data.put("stampDutyAmount", "98765"); // what a client might still send
 
     String preview = service.previewHtml(tgRequest(data));
@@ -214,7 +215,7 @@ class SystemSourcedFieldTest {
     DocumentProjectionResult result =
         service(RENTAL)
             .generate(
-                tgRequest(aggregateBackedData()),
+                tgRequest(TemplateParity.withUserAnswers(aggregateBackedData())),
                 Map.of("stampDutyAmount", new BigDecimal("100.00")));
 
     assertThat(lastHtml)
@@ -268,6 +269,11 @@ class SystemSourcedFieldTest {
   private static DocumentProjectionRequest tgRequest(Map<String, Object> data) {
     return new DocumentProjectionRequest(
         new DocumentDimensions("TG", "residential"), data, List.of(), "AMPSFTXU5KV");
+  }
+
+  @Test
+  void theLocalAggregateDataIsExactlyTheMapperKeys() {
+    assertThat(aggregateBackedData().keySet()).isEqualTo(TemplateParity.AGGREGATE_KEYS);
   }
 
   private static Map<String, Object> aggregateBackedData() {

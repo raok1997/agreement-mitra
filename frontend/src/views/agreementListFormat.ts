@@ -2,6 +2,7 @@
 // relative-time bands are testable without a fake clock.
 
 import type { AgreementSummary } from "../api/agreements";
+import type { Role } from "../api/client";
 import { formatIso } from "./dateEntry";
 
 const RUPEES = new Intl.NumberFormat("en-IN", {
@@ -9,14 +10,23 @@ const RUPEES = new Intl.NumberFormat("en-IN", {
   currency: "INR",
   maximumFractionDigits: 0,
 });
+const RUPEES_AND_PAISE = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
-/** Rupees with Indian digit grouping and no paise: 125000 -> "₹1,25,000". */
+/**
+ * Rupees with Indian digit grouping: 125000 -> "₹1,25,000". Paise show only when there are any
+ * (15000.5 -> "₹15,000.50"); the server accepts two decimals, so rounding would misstate a term.
+ */
 export function formatRupees(amount: number): string {
-  return RUPEES.format(amount);
+  return (Number.isInteger(amount) ? RUPEES : RUPEES_AND_PAISE).format(amount);
 }
 
 function localMidnight(date: Date): number {
@@ -31,6 +41,11 @@ function localIsoDate(date: Date): string {
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+/** A party's role as the customer reads it; an unknown or missing role reads "Party". */
+export function roleLabel(role: Role | string | null | undefined): string {
+  return role === "OWNER" ? "Owner" : role === "TENANT" ? "Tenant" : "Party";
 }
 
 /** The local calendar date of an instant as dd/mm/yyyy. */

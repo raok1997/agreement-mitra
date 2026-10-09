@@ -706,6 +706,37 @@ describe("App reload (cookie session)", () => {
     wrapper.unmount();
   });
 
+  it("Edit agreement on a just-created, claimed agreement opens it in edit mode", async () => {
+    const { auth, ReloadedApp } = await reloadApp("/start");
+    const agreements = await import("./api/agreements");
+    vi.mocked(auth.fetchMe).mockResolvedValue(ME_R);
+    vi.mocked(agreements.getAgreement).mockResolvedValue({
+      id: "agr-9",
+      state: "TG",
+      type: "residential",
+    } as Awaited<ReturnType<typeof agreements.getAgreement>>);
+    const wrapper = mount(ReloadedApp, {
+      global: { stubs: { TemplatePicker: true, CaptureForm: true } },
+    });
+    await flushPromises();
+    wrapper
+      .findComponent({ name: "TemplatePicker" })
+      .vm.$emit("select", { state: "TG", type: "residential" });
+    await flushPromises();
+
+    wrapper
+      .findComponent({ name: "CaptureForm" })
+      .vm.$emit("edit-saved", "agr-9");
+    await flushPromises();
+
+    expect(agreements.getAgreement).toHaveBeenCalledWith("agr-9");
+    expect(wrapper.text()).toContain("Edit agreement");
+    expect(
+      wrapper.findComponent({ name: "CaptureForm" }).props("agreementId"),
+    ).toBe("agr-9");
+    wrapper.unmount();
+  });
+
   it("an agreement link opened while /me is pending does not ask a signed-in user to sign in", async () => {
     const { auth, ReloadedApp } = await reloadApp(
       "/agreement/3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",

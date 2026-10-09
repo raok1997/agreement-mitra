@@ -2,11 +2,16 @@ package in.agreementmitra.documents.template;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import in.agreementmitra.DocumentDataInvalidException;
+import in.agreementmitra.FieldErrorDetail;
 import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.FormSection;
+import in.agreementmitra.support.TemplateParity;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +34,9 @@ import org.junit.jupiter.api.Test;
  * clauses in, the generic national stamp clause out, Hyderabad jurisdiction default, nothing
  * dangling); (4) optional add-on sections are gated by {@code activeSections} (M2); (5) the
  * field-less witnesseth section is omitted from the capture {@link FormSchema} (M3) while still
- * rendering; and (6) the PARITY CONTRACT holds -- a generate projection fed only the
- * aggregate-backed field keys validates and compiles without a missing-required error.
+ * rendering; and (6) the PARITY CONTRACT holds -- a generate projection fed the aggregate-backed
+ * field keys plus the user-answered {@code subletting} validates and compiles without a
+ * missing-required error; and (7) the sub-letting choice renders exactly one covenant per option.
  */
 class ProductionRentalLayerSetTest {
 
@@ -94,7 +100,9 @@ class ProductionRentalLayerSetTest {
           "Now This Agreement Witnesseth",
           "In Witness Whereof");
 
-  // Exactly the keys AgreementDocumentMapper.toTemplateData emits from the persisted aggregate.
+  // Exactly the keys AgreementDocumentMapper.toTemplateData emits from the persisted aggregate
+  // (asserted equal to TemplateParity.AGGREGATE_KEYS). Generate also needs the user-answered
+  // fields: see generateReadyData().
   private static Map<String, Object> aggregateBackedData() {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("ownerName", "Asha Owner");
@@ -116,34 +124,33 @@ class ProductionRentalLayerSetTest {
     return data;
   }
 
-  @Test
-  void theBaseLayerPinsItsAuthoredVersion() {
-    // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
-    // different deeds must never report one authored version. v4 is the bump that made the party
-    // father's name and address required. Pinned explicitly because every other assertion in this
-    // suite reads the version dynamically, which would let a revert through silently.
-    assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
-        .isEqualTo(4);
+  private static Map<String, Object> generateReadyData() {
+    return TemplateParity.withUserAnswers(aggregateBackedData());
   }
 
   @Test
-  void onlyAggregateBackedOrDefaultedFieldsAreRequiredAndEveryPartyFieldIs() {
+  void theBaseLayerPinsItsAuthoredVersion() {
+    // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
+    // different deeds must never report one authored version. v6 is the bump that made the
+    // inventory
+    // annexure one item per line. Pinned explicitly because every other assertion in this
+    // suite reads the version dynamically, which would let a revert through silently.
+    assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
+        .isEqualTo(6);
+  }
+
+  @Test
+  void onlyAggregateBackedDefaultedOrUserAnsweredFieldsAreRequiredAndEveryPartyFieldIs() {
     // PARITY CONTRACT, both directions, for every published residential dimension. A required
-    // field must be aggregate-backed or defaulted (so generate-with-aggregate-keys validates), and
-    // every aggregate-backed key except the derived durationMonths must be required -- in
+    // undefaulted field must be aggregate-backed or user-answered (TemplateParity holds the rule),
+    // and every aggregate-backed key except the derived durationMonths must be required -- in
     // particular the party fields the agreement API already requires non-blank, so the capture
     // form and the server agree.
-    Set<String> aggregateBacked = aggregateBackedData().keySet();
+    assertThat(aggregateBackedData().keySet()).isEqualTo(TemplateParity.AGGREGATE_KEYS);
     for (String state : List.of("IN", "TG", "KA")) {
       EffectiveTemplate eff = resolve(state, "residential");
-      for (Field f : eff.template().fields()) {
-        if (f.required()) {
-          assertThat(aggregateBacked.contains(f.key()) || f.defaultValue() != null)
-              .as("%s: required field '%s' is aggregate-backed or defaulted", state, f.key())
-              .isTrue();
-        }
-      }
-      for (String key : aggregateBacked) {
+      assertThat(SublettingCovenants.parityViolations(eff)).as("%s parity", state).isEmpty();
+      for (String key : TemplateParity.AGGREGATE_KEYS) {
         if (!key.equals("durationMonths")) {
           assertThat(field(eff, key).required())
               .as("%s: aggregate-backed '%s' is required", state, key)
@@ -154,11 +161,80 @@ class ProductionRentalLayerSetTest {
   }
 
   @Test
+  void theSublettingChoiceIsARequiredTermFieldWithNoDefault() {
+    for (String state : List.of("IN", "TG", "KA")) {
+      SublettingCovenants.assertRequiredTermFieldWithNoDefault(
+          resolve(state, "residential"), "noticePeriodMonths");
+    }
+  }
+
+  @Test
+  void eachSublettingOptionRendersItsOwnCovenantAndOnlyThatOne() {
+    for (String state : List.of("IN", "TG")) {
+      EffectiveTemplate eff = resolve(state, "residential");
+      SublettingCovenants.assertTheWitnessethListsAllThreeCovenants(eff);
+      assertThat(clauseIds(eff))
+          .containsAll(SublettingCovenants.CLAUSE_IDS)
+          .doesNotContain("noSublettingClause");
+      SublettingCovenants.assertEachOptionRendersItsOwnCovenant(
+          eff, aggregateBackedData(), "Tenant", "Owner");
+    }
+  }
+
+  @Test
+  void aBlankSublettingChoicePreviewsWithAPlaceholderAndNoCovenant() {
+    EffectiveTemplate eff = resolve("KA", "residential");
+    for (Object blank : Arrays.asList(null, "")) {
+      Map<String, Object> data = new LinkedHashMap<>(aggregateBackedData());
+      data.put("subletting", blank);
+      String html =
+          new TemplateCompiler()
+              .compile(
+                  eff, SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.PREVIEW));
+      assertThat(html).contains("[ Sub-letting ]");
+      assertThat(SublettingCovenants.covenantCount(html)).isZero();
+    }
+  }
+
+  @Test
+  void generateRefusesABlankSublettingChoice() {
+    EffectiveTemplate eff = resolve("TG", "residential");
+    DocumentDataInvalidException ex =
+        catchThrowableOfType(
+            DocumentDataInvalidException.class,
+            () ->
+                SubmittedDataValidator.validateAndCoerce(
+                    eff, aggregateBackedData(), ProjectionMode.GENERATE));
+    assertThat(ex).isNotNull();
+    assertThat(ex.errors()).containsExactly(new FieldErrorDetail("subletting", "required"));
+  }
+
+  @Test
+  void aSublettingValueOutsideTheOptionsIsRejectedInBothModes() {
+    EffectiveTemplate eff = resolve("TG", "residential");
+    for (String bogus : List.of("Allowed", "sometimes")) {
+      Map<String, Object> data = new LinkedHashMap<>(aggregateBackedData());
+      data.put("subletting", bogus);
+      for (ProjectionMode mode : ProjectionMode.values()) {
+        DocumentDataInvalidException ex =
+            catchThrowableOfType(
+                DocumentDataInvalidException.class,
+                () -> SubmittedDataValidator.validateAndCoerce(eff, data, mode));
+        assertThat(ex).as("%s in %s", bogus, mode).isNotNull();
+        assertThat(ex.errors()).contains(new FieldErrorDetail("subletting", "enum"));
+      }
+      // Compiled directly (bypassing validation), the bogus value matches no covenant either.
+      assertThat(SublettingCovenants.covenantCount(new TemplateCompiler().compile(eff, data)))
+          .isZero();
+    }
+  }
+
+  @Test
   void theRenderedTermFollowsTheDatesNotTheSubmittedDuration() {
     EffectiveTemplate eff = resolve("IN", "residential");
 
     Map<String, Object> data =
-        DocumentProjectionService.withSystemValues(eff, aggregateBackedData(), Map.of());
+        DocumentProjectionService.withSystemValues(eff, generateReadyData(), Map.of());
     String html =
         new TemplateCompiler()
             .compile(
@@ -270,16 +346,16 @@ class ProductionRentalLayerSetTest {
   }
 
   @Test
-  void generateParityHoldsWithOnlyTheAggregateBackedDataForBothDimensions() {
-    // The generate projection fed ONLY the mapper's keys must validate (defaults cover the rest)
-    // and
-    // compile for BOTH dimensions -- so a signed draft renders without a missing-required error.
+  void generateParityHoldsWithTheAggregateKeysAndTheUserAnswersForBothDimensions() {
+    // The generate projection fed the mapper's keys plus the user-answered subletting must
+    // validate (defaults cover the rest) and compile for BOTH dimensions -- so a signed draft
+    // renders without a missing-required error.
     for (String state : List.of("IN", "TG")) {
       EffectiveTemplate eff = resolve(state, "residential");
 
       Map<String, Object> coerced =
           SubmittedDataValidator.validateAndCoerce(
-              eff, aggregateBackedData(), ProjectionMode.GENERATE);
+              eff, generateReadyData(), ProjectionMode.GENERATE);
 
       // Defaulted fields the aggregate never supplied are filled from the template.
       assertThat(coerced).containsEntry("permittedUse", "residential");
@@ -293,8 +369,7 @@ class ProductionRentalLayerSetTest {
     // decision).
     EffectiveTemplate tg = resolve("TG", "residential");
     Map<String, Object> coerced =
-        SubmittedDataValidator.validateAndCoerce(
-            tg, aggregateBackedData(), ProjectionMode.GENERATE);
+        SubmittedDataValidator.validateAndCoerce(tg, generateReadyData(), ProjectionMode.GENERATE);
     assertThat(coerced).containsEntry("registrationChargesBorneBy", "tenant");
     String html =
         new TemplateCompiler().compile(tg, coerced, null, Set.of("Statutory (Telangana)"));
@@ -309,8 +384,7 @@ class ProductionRentalLayerSetTest {
   void optionalAddOnSectionsAreGatedByTheActiveSet() {
     EffectiveTemplate eff = resolve("TG", "residential");
     Map<String, Object> coerced =
-        SubmittedDataValidator.validateAndCoerce(
-            eff, aggregateBackedData(), ProjectionMode.GENERATE);
+        SubmittedDataValidator.validateAndCoerce(eff, generateReadyData(), ProjectionMode.GENERATE);
     TemplateCompiler compiler = new TemplateCompiler();
 
     // Empty active set: mandatory sections render, optional add-ons do not. For Telangana the
@@ -377,7 +451,7 @@ class ProductionRentalLayerSetTest {
       EffectiveTemplate eff = resolve(state, "residential");
       Map<String, Object> coerced =
           SubmittedDataValidator.validateAndCoerce(
-              eff, aggregateBackedData(), ProjectionMode.GENERATE);
+              eff, generateReadyData(), ProjectionMode.GENERATE);
       // Compile with the bean-wired faces so this covers the one document actually handed to
       // Gotenberg (a resolved execution date threads through unchanged).
       String html =
@@ -430,7 +504,7 @@ class ProductionRentalLayerSetTest {
       EffectiveTemplate eff = resolve(state, "residential");
       Map<String, Object> coerced =
           SubmittedDataValidator.validateAndCoerce(
-              eff, aggregateBackedData(), ProjectionMode.GENERATE);
+              eff, generateReadyData(), ProjectionMode.GENERATE);
       String html = new TemplateCompiler().compile(eff, coerced);
 
       assertThat(html)
@@ -473,7 +547,7 @@ class ProductionRentalLayerSetTest {
             .compile(
                 national,
                 SubmittedDataValidator.validateAndCoerce(
-                    national, aggregateBackedData(), ProjectionMode.GENERATE));
+                    national, generateReadyData(), ProjectionMode.GENERATE));
     assertThat(nationalHtml)
         .as("national deed leaves the jurisdiction covenant unfilled")
         .contains("exclusive jurisdiction of the courts at [ Jurisdiction city ]");
@@ -485,7 +559,7 @@ class ProductionRentalLayerSetTest {
             .compile(
                 telangana,
                 SubmittedDataValidator.validateAndCoerce(
-                    telangana, aggregateBackedData(), ProjectionMode.GENERATE));
+                    telangana, generateReadyData(), ProjectionMode.GENERATE));
     assertThat(telanganaHtml)
         .as("Telangana names a court")
         .contains("exclusive jurisdiction of the courts at Hyderabad.")
@@ -500,7 +574,7 @@ class ProductionRentalLayerSetTest {
             .compile(
                 karnataka,
                 SubmittedDataValidator.validateAndCoerce(
-                    karnataka, aggregateBackedData(), ProjectionMode.GENERATE));
+                    karnataka, generateReadyData(), ProjectionMode.GENERATE));
     assertThat(karnatakaHtml)
         .as("Karnataka names a court")
         .contains("exclusive jurisdiction of the courts at Bengaluru.")
@@ -512,7 +586,7 @@ class ProductionRentalLayerSetTest {
     EffectiveTemplate eff = resolve("IN", "residential");
     assertThat(section(eff, "Witnesses").optional()).isTrue();
 
-    Map<String, Object> data = new LinkedHashMap<>(aggregateBackedData());
+    Map<String, Object> data = new LinkedHashMap<>(generateReadyData());
     data.put("witness1Name", "Wit Ness");
     Map<String, Object> coerced =
         SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.GENERATE);

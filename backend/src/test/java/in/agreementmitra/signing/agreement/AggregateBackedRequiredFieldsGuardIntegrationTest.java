@@ -4,15 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import in.agreementmitra.documents.api.FormField;
 import in.agreementmitra.documents.api.FormSchema;
-import in.agreementmitra.documents.api.FormSection;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateFormApi;
 import in.agreementmitra.documents.api.TemplateSummary;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.TemplateParity;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,13 +24,16 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * Guard for the parity contract from the {@code signing} side: every field a published production
  * form schema marks {@code required} with no default must be a key {@link
- * AgreementDocumentMapper#toTemplateData} emits. Otherwise a generate fed from the aggregate trips
- * a missing-required error -- or, as with the party father's name and address before
- * capture-required-fields-drift, the capture form and the server disagree on what is mandatory.
+ * AgreementDocumentMapper#toTemplateData} emits, or a user-answered field the capture form asks in
+ * a mandatory section ({@link TemplateParity}). Otherwise a generate fed from the aggregate trips a
+ * missing-required error the user could never clear -- or, as with the party father's name and
+ * address before capture-required-fields-drift, the capture form and the server disagree on what is
+ * mandatory.
  *
- * <p>The aggregate-backed key list is copied into the mapper javadoc, the layer-set test helpers
- * and the set YAML headers; this test is what makes the next required field the mapper does not
- * supply fail in one place instead of drifting. It reads the schema through the public {@link
+ * <p>It also pins {@link TemplateParity#AGGREGATE_KEYS} to the live mapper, so the shared copy the
+ * documents-side guards read can never become the authority. Its required set comes from the
+ * projected schema, so a required field listed in NO section is invisible here -- only the
+ * documents-side guards enforce that branch. It reads the schema through the public {@link
  * TemplateFormApi} under {@code test,sandbox} -- the plain {@code test} profile resolves the
  * fixture set, not the production one. Skips (not fails) without Docker.
  */
@@ -43,8 +47,9 @@ class AggregateBackedRequiredFieldsGuardIntegrationTest {
   @Autowired private TemplateFormApi templateForm;
 
   @Test
-  void everyRequiredFieldWithoutADefaultIsSuppliedByTheMapper() {
+  void everyRequiredFieldWithoutADefaultIsSuppliedByTheMapperOrAskedOfTheUser() {
     Set<String> mapped = AgreementDocumentMapper.toTemplateData(anAgreement()).keySet();
+    assertThat(TemplateParity.AGGREGATE_KEYS).isEqualTo(mapped);
 
     // Every published (state, type), read from the catalog rather than copied here, so a newly
     // published state is guarded without touching this test.
@@ -55,17 +60,15 @@ class AggregateBackedRequiredFieldsGuardIntegrationTest {
 
     for (TemplateSummary template : published) {
       FormSchema schema = templateForm.formFor(template.state(), template.type());
-      for (FormSection section : schema.sections()) {
-        for (FormField field : section.fields()) {
-          if (field.required() && field.defaultValue() == null) {
-            assertThat(mapped)
-                .as(
-                    "%s/%s required field '%s' is aggregate-backed",
-                    template.state(), template.type(), field.key())
-                .contains(field.key());
-          }
-        }
-      }
+      Set<String> requiredUndefaulted =
+          schema.sections().stream()
+              .flatMap(section -> section.fields().stream())
+              .filter(field -> field.required() && field.defaultValue() == null)
+              .map(FormField::key)
+              .collect(Collectors.toSet());
+      assertThat(TemplateParity.violations(schema, requiredUndefaulted, mapped))
+          .as("%s/%s parity", template.state(), template.type())
+          .isEmpty();
     }
   }
 

@@ -511,6 +511,44 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
+  it("keeps Save & continue disabled until a required enum with no default is chosen", async () => {
+    // The sub-letting shape: required, no default, so the select opens on "Select..." and the Term
+    // section stays incomplete until an option is picked (subletting-choice).
+    const schema = sampleSchema();
+    schema.sections
+      .find((s) => s.title === "Term")!
+      .fields.push({
+        key: "subletting",
+        label: "Sub-letting",
+        widget: "select",
+        type: "enum",
+        required: true,
+        options: [
+          { value: "with_owner_consent", label: "With Owner Consent" },
+          { value: "not_allowed", label: "Not Allowed" },
+          { value: "allowed", label: "Allowed" },
+        ],
+      });
+    mockedGetForm.mockResolvedValue(schema);
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+    expect(save().attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[data-testid="required-remaining"]').text()).toContain(
+      "1",
+    );
+
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    const select = wrapper.find('[data-testid="field-subletting"]');
+    expect((select.element as HTMLSelectElement).value).toBe("");
+    expect(select.find("option").text()).toBe("Select...");
+    await select.setValue("not_allowed");
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+
+    expect(save().attributes("disabled")).toBeUndefined();
+  });
+
   it("Save & continue creates then generates the draft via the existing endpoints", async () => {
     mockedCreate.mockResolvedValue(fakeAgreement());
     mockedGenerate.mockResolvedValue();
@@ -617,7 +655,105 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     ).toBeNull();
   });
 
-  it("Reset draft clears the client-held working set and storage", async () => {
+  it("never writes the new-agreement draft while editing a saved agreement", async () => {
+    // The leak this guards: edit AM-1042, then "Create new" for the same template resumed
+    // AM-1042's parties and rent from the shared draft slot.
+    const wrapper = mount(CaptureForm, {
+      props: {
+        agreementId: "agr-1",
+        initialAgreement: fakeAgreement(),
+        state: "IN",
+        type: "residential",
+      },
+    });
+    await flushPromises();
+
+    await fillSection(wrapper, "parties", { tenantName: "Tara Sen" });
+
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).toBeNull();
+  });
+
+  it("locks the sections once created, so no edit reaches the preview but not the payment", async () => {
+    // Save at one rent, edit to another: the preview and Download PDF would show the edit under the
+    // real reference while Finalise and pay charged for the stored draft.
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    const parties = wrapper.find('[data-testid="section-parties"]');
+    expect(parties.attributes("disabled")).toBeDefined();
+    parties.element.removeAttribute("disabled");
+    await parties.trigger("click");
+
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).toBeNull();
+  });
+
+  it("offers an anonymous creator a new agreement as the way to change a locked one", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="locked-notice"]').text()).toContain(
+      "can't be changed",
+    );
+    expect(wrapper.find('[data-testid="edit-saved"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="start-new"]').trigger("click");
+    expect(wrapper.emitted("change-template")).toHaveLength(1);
+  });
+
+  it("offers a signed-in creator Edit agreement once the new agreement is claimed", async () => {
+    const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
+    signedIn.value = true;
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    vi.mocked(agreements.claimAgreement)
+      .mockReset()
+      .mockResolvedValue(fakeAgreement());
+    try {
+      const wrapper = await mountReady();
+      await fillAllRequired(wrapper);
+      await wrapper.find('[data-testid="save-continue"]').trigger("click");
+      await flushPromises();
+
+      expect(wrapper.find('[data-testid="start-new"]').exists()).toBe(false);
+      await wrapper.find('[data-testid="edit-saved"]').trigger("click");
+      expect(wrapper.emitted("edit-saved")).toEqual([[fakeAgreement().id]]);
+      wrapper.unmount();
+    } finally {
+      signedIn.value = false;
+    }
+  });
+
+  it("closes Save & continue after a create so a second click cannot duplicate the agreement", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+
+    await save().trigger("click");
+    await flushPromises();
+    expect(save().attributes("disabled")).toBeDefined();
+
+    // :disabled is only the first line: with it stripped, the handler must still refuse.
+    save().element.removeAttribute("disabled");
+    await save().trigger("click");
+    await flushPromises();
+    expect(mockedCreate).toHaveBeenCalledOnce();
+  });
+
+  it("Start over, once confirmed, clears the client-held working set and storage", async () => {
     const wrapper = await mountReady();
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
     expect(
@@ -628,6 +764,7 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     );
 
     await wrapper.find('[data-testid="reset"]').trigger("click");
+    await wrapper.find('[data-testid="confirm-ok"]').trigger("click");
     await flushPromises();
 
     expect(
@@ -636,6 +773,46 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(wrapper.find('[data-testid="status-property"]').text()).toBe(
       "Needs input",
     );
+  });
+
+  it("Start over, when cancelled, keeps everything typed", async () => {
+    const wrapper = await mountReady();
+    await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
+
+    await wrapper.find('[data-testid="reset"]').trigger("click");
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="confirm-cancel"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(false);
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).not.toBeNull();
+    expect(wrapper.find('[data-testid="status-property"]').text()).toBe(
+      "Ready",
+    );
+  });
+
+  it("offers no Start over while editing a saved agreement", async () => {
+    const wrapper = mount(CaptureForm, {
+      props: { agreementId: "agr-1", initialAgreement: fakeAgreement() },
+    });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="reset"]').exists()).toBe(false);
+  });
+
+  it("withdraws Start over once the new agreement is created", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    expect(wrapper.find('[data-testid="reset"]').exists()).toBe(true);
+
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="reset"]').exists()).toBe(false);
   });
 
   it("surfaces a schema-load failure without rendering a section rail", async () => {
@@ -700,6 +877,46 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
       "agr-1",
       expect.objectContaining({ selection: { stampValueMinorUnits: 130000 } }),
     );
+  });
+
+  it("shows the stored terms on the stamp step, not the form's working values", async () => {
+    // pre-payment-key-terms-summary: the form says ₹24,000 but the server holds ₹25,000. The lock
+    // makes that divergence reachable only through mocks; the point is which source the step reads.
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    // The contact step reads the agreement too, so every call resolves the same stored record.
+    mockedGetAgreement.mockResolvedValue({
+      ...agreementWithContacts(),
+      monthlyRent: 25000,
+    });
+
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    await fillSection(wrapper, "financial-terms", { monthlyRent: "24000" });
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+    expect(mockedCreate.mock.calls[0][0].monthlyRent).toBe("24000");
+    await wrapper.find('[data-testid="finalise-and-pay"]').trigger("click");
+    await flushPromises();
+    const step = wrapper.findComponent(ContactConfirmation);
+    step.vm.$emit(
+      "confirm",
+      agreementWithContacts().signers.map((signer) => ({
+        id: signer.id,
+        name: signer.name,
+        role: signer.role,
+        email: signer.email ?? "",
+        mobile: signer.mobile ?? "",
+      })) as PartyContact[],
+    );
+    await flushPromises();
+
+    const terms = wrapper
+      .findComponent(StampQuoteStep)
+      .get('[data-testid="key-terms"]');
+    expect(terms.get('[data-testid="key-terms-rent"]').text()).toBe("₹25,000");
+    expect(terms.text()).not.toContain("24,000");
+    expect(mockedGetAgreement).toHaveBeenLastCalledWith("agr-1");
   });
 
   it("says a paid agreement's contacts are frozen instead of 'please try again'", async () => {
@@ -841,6 +1058,43 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     expect(wrapper.find('[data-testid="catalog-pets"]').exists()).toBe(true);
     const [, , afterRemove] = mockedPreviewHtml.mock.calls.at(-1) ?? [];
     expect(afterRemove).not.toContain("Pets");
+  });
+
+  it("the annexure dialog explains one item per line; other sections carry no hint", async () => {
+    const schema = schemaWithOptional();
+    schema.sections.push({
+      title: "Annexure",
+      optional: true,
+      renderKind: "annexure",
+      fields: [
+        {
+          key: "fixturesInventory",
+          label: "Fixtures and inventory schedule",
+          widget: "textarea",
+          type: "longtext",
+          required: false,
+          default: "Ceiling fans\nWater meter",
+        },
+      ],
+    });
+    mockedGetForm.mockResolvedValue(schema);
+    const wrapper = await mountReady();
+
+    await wrapper.find('[data-testid="add-optional-annexure"]').trigger("click");
+    await wrapper.find('[data-testid="section-annexure"]').trigger("click");
+    expect(wrapper.find('[data-testid="section-hint"]').text()).toMatch(
+      /One item per line/,
+    );
+    const inventory = wrapper.find('[data-testid="field-fixturesInventory"]');
+    expect((inventory.element as HTMLTextAreaElement).value).toBe(
+      "Ceiling fans\nWater meter",
+    );
+    await wrapper.find('[data-testid="modal-close"]').trigger("click");
+
+    await wrapper.find('[data-testid="add-optional-pets"]').trigger("click");
+    await wrapper.find('[data-testid="section-pets"]').trigger("click");
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="section-hint"]').exists()).toBe(false);
   });
 
   it("4.3: Save is disabled until every mandatory section is complete; optional never gates it", async () => {

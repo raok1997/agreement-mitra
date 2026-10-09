@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.FormSection;
+import in.agreementmitra.support.TemplateParity;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,9 +26,10 @@ import org.junit.jupiter.api.Test;
  * with split Lessor/Lessee party cards; (3) the commercial covenants render (permitted business use
  * with an explicit no-residential covenant, CAM, GST); (4) the Telangana overlay applies last
  * (statutory section, TG law/stamp clauses in, the generic national stamp clause out, Hyderabad
- * jurisdiction default); and (5) the PARITY CONTRACT holds -- a generate projection fed ONLY the
- * twelve aggregate-backed field keys validates + compiles without a missing-required error, with
- * the same keys the residential base uses (relabelled for commercial).
+ * jurisdiction default); (5) the PARITY CONTRACT holds -- a generate projection fed the twelve
+ * aggregate-backed field keys plus the user-answered {@code subletting} validates + compiles
+ * without a missing-required error, with the same keys the residential base uses (relabelled for
+ * commercial); and (6) the sub-letting choice renders one Lessor/Lessee covenant per option.
  */
 class ProductionCommercialLayerSetTest {
 
@@ -97,14 +99,18 @@ class ProductionCommercialLayerSetTest {
     return data;
   }
 
+  private static Map<String, Object> generateReadyData() {
+    return TemplateParity.withUserAnswers(aggregateBackedData());
+  }
+
   @Test
   void theBaseLayerPinsItsAuthoredVersion() {
     // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
-    // different deeds must never report one authored version. v3 is the bump that made the party
-    // father's-name / address keys required. Pinned explicitly because every other assertion in
+    // different deeds must never report one authored version. v5 is the bump that made the
+    // inventory annexure one item per line. Pinned explicitly because every other assertion in
     // this suite reads the version dynamically, which would let a revert through silently.
     assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
-        .isEqualTo(3);
+        .isEqualTo(5);
   }
 
   @Test
@@ -112,7 +118,7 @@ class ProductionCommercialLayerSetTest {
     EffectiveTemplate eff = resolve("IN", "commercial");
 
     Map<String, Object> data =
-        DocumentProjectionService.withSystemValues(eff, aggregateBackedData(), Map.of());
+        DocumentProjectionService.withSystemValues(eff, generateReadyData(), Map.of());
     String html =
         new TemplateCompiler()
             .compile(
@@ -152,32 +158,36 @@ class ProductionCommercialLayerSetTest {
   }
 
   @Test
-  void everyRequiredFieldIsAggregateBackedOrDefaultedSoGenerateParityHolds() {
-    // The parity contract: at generate the aggregate supplies only these twelve keys; every OTHER
+  void everyRequiredFieldIsAggregateBackedDefaultedOrUserAnsweredSoGenerateParityHolds() {
+    // The parity contract: at generate the aggregate supplies only the twelve keys; every OTHER
     // required field must carry a default (e.g. permittedUse, pinned required by type-commercial
-    // but
-    // defaulted to commercial), so a generated draft never trips a missing-required error.
-    Set<String> aggregateKeys =
-        Set.of(
-            "ownerName",
-            "ownerFatherName",
-            "ownerAddress",
-            "tenantName",
-            "tenantFatherName",
-            "tenantAddress",
-            "propertyAddress",
-            "monthlyRent",
-            "securityDeposit",
-            "durationMonths",
-            "startDate",
-            "endDate");
-    EffectiveTemplate eff = resolve("IN", "commercial");
-    for (Field f : eff.template().fields()) {
-      if (f.required()) {
-        assertThat(aggregateKeys.contains(f.key()) || f.defaultValue() != null)
-            .as("required field '%s' must be aggregate-backed or defaulted", f.key())
-            .isTrue();
-      }
+    // but defaulted to commercial) or be user-answered (subletting) in a mandatory capture section.
+    assertThat(aggregateBackedData().keySet()).isEqualTo(TemplateParity.AGGREGATE_KEYS);
+    for (String state : List.of("IN", "TG")) {
+      assertThat(SublettingCovenants.parityViolations(resolve(state, "commercial")))
+          .as("%s parity", state)
+          .isEmpty();
+    }
+  }
+
+  @Test
+  void theSublettingChoiceIsARequiredTermFieldWithNoDefault() {
+    for (String state : List.of("IN", "TG")) {
+      SublettingCovenants.assertRequiredTermFieldWithNoDefault(
+          resolve(state, "commercial"), "fitOutMonths");
+    }
+  }
+
+  @Test
+  void eachSublettingOptionRendersItsOwnLessorLesseeCovenant() {
+    for (String state : List.of("IN", "TG")) {
+      EffectiveTemplate eff = resolve(state, "commercial");
+      SublettingCovenants.assertTheWitnessethListsAllThreeCovenants(eff);
+      assertThat(clauseIds(eff))
+          .containsAll(SublettingCovenants.CLAUSE_IDS)
+          .doesNotContain("noSublettingClause");
+      SublettingCovenants.assertEachOptionRendersItsOwnCovenant(
+          eff, aggregateBackedData(), "Lessee", "Lessor");
     }
   }
 
@@ -241,13 +251,13 @@ class ProductionCommercialLayerSetTest {
   }
 
   @Test
-  void generateParityHoldsWithOnlyTheAggregateBackedDataForBothDimensions() {
+  void generateParityHoldsWithTheAggregateKeysAndTheUserAnswersForBothDimensions() {
     for (String state : List.of("IN", "TG")) {
       EffectiveTemplate eff = resolve(state, "commercial");
 
       Map<String, Object> coerced =
           SubmittedDataValidator.validateAndCoerce(
-              eff, aggregateBackedData(), ProjectionMode.GENERATE);
+              eff, generateReadyData(), ProjectionMode.GENERATE);
 
       // Defaulted fields the aggregate never supplied are filled from the template.
       assertThat(coerced).containsEntry("permittedUse", "commercial");
@@ -260,8 +270,7 @@ class ProductionCommercialLayerSetTest {
   void commercialCovenantsRenderInAGeneratedDraft() {
     EffectiveTemplate eff = resolve("TG", "commercial");
     Map<String, Object> coerced =
-        SubmittedDataValidator.validateAndCoerce(
-            eff, aggregateBackedData(), ProjectionMode.GENERATE);
+        SubmittedDataValidator.validateAndCoerce(eff, generateReadyData(), ProjectionMode.GENERATE);
 
     // Mandatory covenants (witnesseth + Financial) render by default.
     String html = new TemplateCompiler().compile(eff, coerced);
@@ -293,7 +302,7 @@ class ProductionCommercialLayerSetTest {
       EffectiveTemplate eff = resolve(state, "commercial");
       Map<String, Object> coerced =
           SubmittedDataValidator.validateAndCoerce(
-              eff, aggregateBackedData(), ProjectionMode.GENERATE);
+              eff, generateReadyData(), ProjectionMode.GENERATE);
       String html =
           new TemplateCompiler(DocumentFonts.faceCss()).compile(eff, coerced, "1 September 2026");
 

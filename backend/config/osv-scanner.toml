@@ -70,6 +70,10 @@
 #   outside the accepted version line. Not reachable: nothing in src/main uses
 #   XsltView. Remediate by upgrade (a 6.2.x OSS patch, or the Boot 4 move) — do
 #   not renew the expiry on the same version.
+# - 2026-10-09 (separate change set during subletting-choice): a SECOND suppression,
+#   GHSA-j9f9-w8pj-32f8 (CVE-2026-47890), same shape as the first: 6.2.19 is
+#   last_affected, the fix is 7.0.9 only. Not reachable: src/main uses no SseEmitter,
+#   ServerSentEvent or fragment rendering. Same expiry and same remediation (upgrade).
 #
 # Add an entry only for a genuine, in-scope, currently-unremediable finding, with a
 # reason and a short expiry.
@@ -78,3 +82,8 @@
 id = "GHSA-pc63-qcmh-9cmg"
 ignoreUntil = 2026-12-06
 reason = "CVE-2026-47884 (CVSS 9.8), XsltView improper path limitation in spring-webmvc 6.2.19. No open-source 6.2.x fix exists (fixed only in 7.0.9, which requires Spring Boot 4). Not reachable: the app uses no XsltView. Remediate by upgrade when a fix lands on the accepted line."
+
+[[IgnoredVulns]]
+id = "GHSA-j9f9-w8pj-32f8"
+ignoreUntil = 2026-12-06
+reason = "CVE-2026-47890 (CVSS 9.8), Server-Sent Event stream corruption when rendering view fragments in spring-webmvc 6.2.19. No open-source 6.2.x fix exists (fixed only in 7.0.9, which requires Spring Boot 4). Not reachable: the app uses no SseEmitter, ServerSentEvent or fragment rendering. Remediate by upgrade when a fix lands on the accepted line."

@@ -46,7 +46,8 @@ ops:
   # decision, not a drift fix: it is in the follow-up register (docs/ROADMAP.md) with counsel.
   - { op: replaceSection, title: "Now This Agreement Witnesseth",
       section: { title: "Now This Agreement Witnesseth", render: clauses, optional: false,
-                 entries: [ recital, useClause, careOfPremisesClause, noSublettingClause,
+                 entries: [ recital, useClause, careOfPremisesClause, sublettingWithConsentClause,
+                            sublettingProhibitedClause, sublettingPermittedClause,
                             inspectionClause, handoverClause, disputeClause, disputeAlternativeClause,
                             serviceOfNoticeClause, governingLawClause, severabilityClause,
                             entireAgreementClause ] } }

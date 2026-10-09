@@ -493,8 +493,9 @@ final class TemplateCompiler {
 
   /**
    * {@code ANNEXURE} body: a bulleted list of the section's entries. A field entry renders its
-   * escaped label and value; a clause entry (still {@code showWhen}-gated) renders its escaped
-   * text. Every label, value, and clause text is HTML-escaped.
+   * escaped label and value; a multi-line value renders one nested bullet per non-blank line (the
+   * inventory is captured one item per line); a clause entry (still {@code showWhen}-gated) renders
+   * its escaped text. Every label, value, and clause text is HTML-escaped.
    */
   private static void appendAnnexure(
       StringBuilder html,
@@ -509,11 +510,23 @@ final class TemplateCompiler {
         if (omitted(field, values)) {
           continue; // an unset system-sourced field renders nothing
         }
+        String value = valueOrPlaceholder(field, values.get(field.key()));
+        List<String> items = annexureItems(value);
+        if (items.size() < 2) {
+          html.append("<li>")
+              .append(escape(field.label()))
+              .append(": ")
+              .append(escape(value))
+              .append("</li>\n");
+          continue;
+        }
         html.append("<li>")
             .append(escape(field.label()))
-            .append(": ")
-            .append(escape(valueOrPlaceholder(field, values.get(field.key()))))
-            .append("</li>\n");
+            .append(":\n<ul class=\"annexure-items\">\n");
+        for (String item : items) {
+          html.append("<li>").append(escape(item)).append("</li>\n");
+        }
+        html.append("</ul></li>\n");
         continue;
       }
       Clause.Inline clause = clausesById.get(entry);
@@ -523,6 +536,11 @@ final class TemplateCompiler {
       html.append("<li>").append(renderClauseText(clause, fieldsByKey, values)).append("</li>\n");
     }
     html.append("</ul>\n");
+  }
+
+  /** The non-blank lines of an annexure value: one inventory item per line. */
+  private static List<String> annexureItems(String value) {
+    return value.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
   }
 
   /**
@@ -707,6 +725,8 @@ final class TemplateCompiler {
       ol.clauses > li { margin: 7px 0; text-align: justify; }
       ul.annexure { margin: 4px 0 0; padding-left: 20px; }
       ul.annexure > li { margin: 5px 0; }
+      ul.annexure-items { margin: 4px 0 0; padding-left: 20px; list-style: circle; }
+      ul.annexure-items > li { margin: 2px 0; }
       .signatures { margin-top: 26px; }
       .sign-line { margin-top: 34px; border-top: 1px solid #333; padding-top: 3px; font-size: 11px; width: 48%; }
       .sign-grid { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 22px; }

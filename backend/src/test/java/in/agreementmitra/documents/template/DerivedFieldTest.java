@@ -8,6 +8,7 @@ import in.agreementmitra.documents.api.DocumentDimensions;
 import in.agreementmitra.documents.api.DocumentProjectionRequest;
 import in.agreementmitra.documents.api.FormField;
 import in.agreementmitra.documents.api.FormSchema;
+import in.agreementmitra.support.TemplateParity;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -321,7 +322,7 @@ class DerivedFieldTest {
   @Test
   void previewAndGenerateStateTheSameTerm() {
     DocumentProjectionService service = service(RENTAL);
-    Map<String, Object> data = aggregateBackedData();
+    Map<String, Object> data = TemplateParity.withUserAnswers(aggregateBackedData());
     data.put("startDate", "2026-01-08");
     data.put("endDate", "2028-01-08"); // 24 months
     data.put("durationMonths", 11); // what the form used to send
@@ -368,6 +369,12 @@ class DerivedFieldTest {
   private static DocumentProjectionRequest request(Map<String, Object> data) {
     return new DocumentProjectionRequest(
         new DocumentDimensions("IN", "residential"), data, List.of(), "AMPSFTXU5KV");
+  }
+
+  @Test
+  void theLocalAggregateDataIsDrawnFromTheMapperKeys() {
+    // A subset by design: each test here sets the dates (and a stale term) itself.
+    assertThat(aggregateBackedData().keySet()).isSubsetOf(TemplateParity.AGGREGATE_KEYS);
   }
 
   private static Map<String, Object> aggregateBackedData() {

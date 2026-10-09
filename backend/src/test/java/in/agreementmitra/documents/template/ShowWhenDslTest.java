@@ -38,6 +38,23 @@ class ShowWhenDslTest {
         .hasMessageContaining("c");
   }
 
+  @Test
+  void validationAcceptsAnEnumComparedWithOneOfItsOptions() {
+    // Does not throw, on either side of the operator.
+    ShowWhenValidator.validate(templateWithEnumCondition("mode == \"courts\""));
+    ShowWhenValidator.validate(templateWithEnumCondition("\"arbitration\" != mode"));
+  }
+
+  @Test
+  void validationRejectsAnEnumComparedWithALiteralThatIsNotAnOption() {
+    // At render time such a clause would never show -- a silently missing term, not an error.
+    assertThatThrownBy(
+            () -> ShowWhenValidator.validate(templateWithEnumCondition("mode == \"Courts\"")))
+        .isInstanceOf(ResolutionException.class)
+        .hasMessageContaining("mode")
+        .hasMessageContaining("Courts");
+  }
+
   // --- evaluator (pure; delivered but unwired) -------------------------------
 
   @Test
@@ -108,6 +125,22 @@ class ShowWhenDslTest {
 
   private static boolean eval(String source, Map<String, Object> values) {
     return ShowWhenEvaluator.evaluate(ShowWhenParser.parse(source), values);
+  }
+
+  private static TemplateDefinition templateWithEnumCondition(String showWhen) {
+    String yaml =
+        """
+        meta: { id: t, dimensions: { state: IN, type: residential }, version: 1, status: draft }
+        fields:
+          - { key: mode, label: Mode, type: enum, required: false, default: courts,
+              options: [ courts, arbitration ] }
+        clauses:
+          - { id: c, text: "A note.", showWhen: '%s' }
+        sections:
+          - { title: S, entries: [ mode, c ] }
+        """
+            .formatted(showWhen);
+    return new TemplateDefinitionLoader().load(yaml);
   }
 
   private static TemplateDefinition templateWithCondition(String showWhen) {

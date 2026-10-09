@@ -3,6 +3,11 @@ import { flushPromises, mount } from "@vue/test-utils";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import * as stampQuote from "../api/stampQuote";
 import type { StampQuote } from "../api/stampQuote";
+import * as agreements from "../api/agreements";
+import { AgreementHttpError } from "../api/agreements";
+import type { AgreementView, PartyView } from "../api/client";
+import { PROBLEM } from "../api/problems";
+import { AGREEMENT_UNAVAILABLE_MESSAGE } from "./refusalMessages";
 
 // The stamp duty step (state-stamp-duty-quoting). Every amount it shows must be the server's; the
 // recommended option is pre-selected; a below-duty choice cannot be paid for until the warning is
@@ -13,7 +18,61 @@ vi.mock("../api/stampQuote", async (importOriginal) => {
   return { ...actual, getStampQuote: vi.fn() };
 });
 
+vi.mock("../api/agreements", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/agreements")>();
+  return { ...actual, getAgreement: vi.fn() };
+});
+
+vi.mock("../api/authStore", () => ({ reconcile: vi.fn(async () => {}) }));
+
 const mockedQuote = vi.mocked(stampQuote.getStampQuote);
+const mockedAgreement = vi.mocked(agreements.getAgreement);
+
+function party(over: Partial<PartyView>): PartyView {
+  return {
+    id: "p",
+    name: "",
+    firstName: "",
+    lastName: "",
+    fatherName: "Fathername Zeta",
+    currentAddress: "77 Elsewhere Lane, Mysuru",
+    email: "secret.party@example.test",
+    mobile: "9000012345",
+    role: "OWNER",
+    ...over,
+  };
+}
+
+// Every field the step must NOT show carries a value distinctive enough to search the HTML for.
+function stored(over: Partial<AgreementView> = {}): AgreementView {
+  return {
+    id: "agr-1",
+    trackingNumber: "AMTRACK0001",
+    propertyAddress: "12 MG Road\nBengaluru 560001",
+    monthlyRent: 25000,
+    securityDeposit: 100000,
+    startDate: "2026-11-01",
+    endDate: "2027-10-31",
+    durationMonths: 12,
+    createdAt: "2026-10-01T10:00:00Z",
+    signers: [
+      party({ id: "o", name: "Ravi Kumar", role: "OWNER" }),
+      party({ id: "t", name: "Asha Rao", role: "TENANT" }),
+      party({ id: "x", name: "Mohan Das", role: null as unknown as "OWNER" }),
+    ],
+    captureData: { "lease.lockInMonths": "CAPTUREMARKER" },
+    activeSections: [],
+    state: "KA",
+    type: "residential",
+    ...over,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
 
 function quote(over: Partial<StampQuote> = {}): StampQuote {
   return {
@@ -63,7 +122,11 @@ async function mountStep(q: StampQuote = quote()) {
 }
 
 describe("StampQuoteStep", () => {
-  beforeEach(() => mockedQuote.mockReset());
+  beforeEach(() => {
+    mockedQuote.mockReset();
+    mockedAgreement.mockReset();
+    mockedAgreement.mockResolvedValue(stored());
+  });
 
   it("shows the server's duty, registration notice and totals, with the recommended option pre-selected", async () => {
     const wrapper = await mountStep();
@@ -276,5 +339,172 @@ describe("StampQuoteStep", () => {
 
     const amounts = wrapper.findAll('[data-testid="breakdown-amount"]').map((a) => a.text());
     expect(amounts).toEqual(["₹10.00", "+₹10.00"]);
+  });
+
+  describe("key terms (pre-payment-key-terms-summary)", () => {
+    it("shows the stored terms, the server's term in months and every party's role", async () => {
+      const wrapper = await mountStep();
+      const terms = wrapper.get('[data-testid="key-terms"]');
+
+      expect(mockedAgreement).toHaveBeenCalledWith("agr-1");
+      expect(terms.text()).toContain("You are paying to stamp and sign this");
+      expect(terms.get('[data-testid="key-terms-address"]').text()).toBe(
+        "12 MG Road\nBengaluru 560001",
+      );
+      expect(terms.get('[data-testid="key-terms-rent"]').text()).toBe("₹25,000");
+      expect(terms.get('[data-testid="key-terms-deposit"]').text()).toBe(
+        "₹1,00,000",
+      );
+      expect(terms.get('[data-testid="key-terms-term"]').text()).toMatch(
+        /01\/11\/2026 to\s+31\/10\/2027 ·\s+12 months/,
+      );
+      const parties = terms
+        .findAll('[data-testid="key-terms-parties"] li')
+        .map((li) => li.text());
+      expect(parties).toEqual([
+        "Ravi Kumar (Owner)",
+        "Asha Rao (Tenant)",
+        "Mohan Das (Party)",
+      ]);
+    });
+
+    it("says 1 month in the singular, from the server's figure", async () => {
+      mockedAgreement.mockResolvedValue(stored({ durationMonths: 1 }));
+      const wrapper = await mountStep();
+
+      expect(wrapper.get('[data-testid="key-terms-term"]').text()).toMatch(
+        /· 1 month$/,
+      );
+    });
+
+    it("never shows a party's contact, address, father's name or captured values", async () => {
+      const html = (await mountStep()).html();
+
+      for (const hidden of [
+        "secret.party@example.test",
+        "9000012345",
+        "77 Elsewhere Lane",
+        "Fathername Zeta",
+        "CAPTUREMARKER",
+        "AMTRACK0001",
+      ]) {
+        expect(html).not.toContain(hidden);
+      }
+    });
+
+    it("keeps payment disabled while the terms load, then enables it", async () => {
+      const pending = deferred<AgreementView>();
+      mockedAgreement.mockReturnValue(pending.promise);
+      const wrapper = await mountStep();
+
+      expect(wrapper.get('[data-testid="key-terms-loading"]').text()).toBe(
+        "Loading the saved terms…",
+      );
+      const pay = () => wrapper.get('[data-testid="stamp-quote-pay"]');
+      expect(pay().attributes("disabled")).toBeDefined();
+      await pay().trigger("click");
+      expect(wrapper.emitted("confirm")).toBeUndefined();
+
+      pending.resolve(stored());
+      await flushPromises();
+
+      expect(wrapper.find('[data-testid="key-terms-loading"]').exists()).toBe(
+        false,
+      );
+      expect(wrapper.get('[data-testid="key-terms-rent"]').text()).toBe("₹25,000");
+      expect(pay().attributes("disabled")).toBeUndefined();
+    });
+
+    it("offers no stamp option or payment when the terms cannot be read, but keeps Back", async () => {
+      mockedAgreement.mockRejectedValue(new AgreementHttpError(500));
+      const wrapper = await mountStep();
+
+      const error = wrapper.get('[data-testid="key-terms-error"]');
+      expect(error.attributes("role")).toBe("alert");
+      expect(error.text()).toBe(
+        "Could not load the saved terms. Please try again.",
+      );
+      expect(wrapper.text()).not.toContain("500");
+      expect(wrapper.find('[data-testid="stamp-option-130000"]').exists()).toBe(
+        false,
+      );
+      expect(wrapper.find('[data-testid="stamp-quote-pay"]').exists()).toBe(
+        false,
+      );
+
+      await wrapper.get("button").trigger("click");
+      expect(wrapper.emitted("cancel")).toHaveLength(1);
+    });
+
+    it("reads a not-found refusal as the agreement being unavailable, with no status", async () => {
+      mockedAgreement.mockRejectedValue(
+        new AgreementHttpError(404, PROBLEM.notFound),
+      );
+      const wrapper = await mountStep();
+
+      expect(wrapper.get('[data-testid="key-terms-error"]').text()).toBe(
+        AGREEMENT_UNAVAILABLE_MESSAGE,
+      );
+      expect(wrapper.text()).not.toContain("404");
+    });
+
+    it("treats a response missing a key term as a failure", async () => {
+      mockedAgreement.mockResolvedValue({
+        ...stored(),
+        securityDeposit: undefined,
+      } as unknown as AgreementView);
+      const wrapper = await mountStep();
+
+      expect(wrapper.find('[data-testid="key-terms-error"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="stamp-quote-pay"]').exists()).toBe(
+        false,
+      );
+    });
+
+    it("treats a record with no parties, or a blank name, as a failure", async () => {
+      mockedAgreement.mockResolvedValue(stored({ signers: [] }));
+      const empty = await mountStep();
+      expect(empty.find('[data-testid="key-terms-error"]').exists()).toBe(true);
+      expect(empty.find('[data-testid="stamp-quote-pay"]').exists()).toBe(false);
+
+      mockedAgreement.mockResolvedValue(
+        stored({ signers: [party({ name: "  ", role: "OWNER" })] }),
+      );
+      const blank = await mountStep();
+      expect(blank.find('[data-testid="key-terms-error"]').exists()).toBe(true);
+    });
+
+    it("shows paise in a stored rent instead of rounding them away", async () => {
+      mockedAgreement.mockResolvedValue(stored({ monthlyRent: 15000.5 }));
+      const wrapper = await mountStep();
+
+      expect(wrapper.get('[data-testid="key-terms-rent"]').text()).toBe(
+        "₹15,000.50",
+      );
+    });
+
+    it("says an unavailable agreement once, not 'try again' beside it, when both reads are refused", async () => {
+      mockedAgreement.mockRejectedValue(
+        new AgreementHttpError(404, PROBLEM.notFound),
+      );
+      mockedQuote.mockRejectedValue(new stampQuote.StampQuoteHttpError(404));
+      const wrapper = mount(StampQuoteStep, { props: { agreementId: "agr-1" } });
+      await flushPromises();
+
+      const alerts = wrapper.findAll('[role="alert"]').map((a) => a.text());
+      expect(alerts).toEqual([AGREEMENT_UNAVAILABLE_MESSAGE]);
+      expect(wrapper.text()).not.toContain("try again");
+    });
+
+    it("sends the customer back to fix a wrong term and offers no way to edit it here", async () => {
+      const wrapper = await mountStep();
+
+      expect(wrapper.get('[data-testid="key-terms-go-back"]').text()).toBe(
+        "If anything here is wrong, don't pay. Go back.",
+      );
+      const terms = wrapper.get('[data-testid="key-terms"]');
+      expect(terms.findAll("input, textarea, select, button")).toHaveLength(0);
+      expect(wrapper.text()).not.toMatch(/edit agreement/i);
+    });
   });
 });

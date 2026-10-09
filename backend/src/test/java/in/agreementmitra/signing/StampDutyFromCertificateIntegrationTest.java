@@ -153,6 +153,8 @@ class StampDutyFromCertificateIntegrationTest {
             "securityDeposit", "50000.00",
             "startDate", "2026-01-01",
             "endDate", "2026-12-01",
+            // The production set's user-answered field: generate refuses without it.
+            "captureData", Map.of("subletting", "with_owner_consent"),
             "signers",
                 List.of(
                     Map.of(
