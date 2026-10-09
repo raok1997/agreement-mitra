@@ -456,6 +456,7 @@ function onSavedToAccount(): void {
           :type="selection.type"
           @change-template="onChangeTemplate"
           @saved-to-account="onSavedToAccount"
+          @edit-saved="openForEdit"
         />
       </template>
     </main>

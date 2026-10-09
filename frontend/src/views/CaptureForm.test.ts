@@ -675,7 +675,9 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     ).toBeNull();
   });
 
-  it("does not re-write the draft from section edits after a successful create", async () => {
+  it("locks the sections once created, so no edit reaches the preview but not the payment", async () => {
+    // Save at one rent, edit to another: the preview and Download PDF would show the edit under the
+    // real reference while Finalise and pay charged for the stored draft.
     mockedCreate.mockResolvedValue(fakeAgreement());
     mockedGenerate.mockResolvedValue();
     const wrapper = await mountReady();
@@ -683,11 +685,54 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     await wrapper.find('[data-testid="save-continue"]').trigger("click");
     await flushPromises();
 
-    await fillSection(wrapper, "parties", { tenantName: "Tara Sen-Rao" });
+    const parties = wrapper.find('[data-testid="section-parties"]');
+    expect(parties.attributes("disabled")).toBeDefined();
+    parties.element.removeAttribute("disabled");
+    await parties.trigger("click");
 
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
     expect(
       localStorage.getItem("am.preview.draft.v1.IN.residential"),
     ).toBeNull();
+  });
+
+  it("offers an anonymous creator a new agreement as the way to change a locked one", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="locked-notice"]').text()).toContain(
+      "can't be changed",
+    );
+    expect(wrapper.find('[data-testid="edit-saved"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="start-new"]').trigger("click");
+    expect(wrapper.emitted("change-template")).toHaveLength(1);
+  });
+
+  it("offers a signed-in creator Edit agreement once the new agreement is claimed", async () => {
+    const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
+    signedIn.value = true;
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    vi.mocked(agreements.claimAgreement)
+      .mockReset()
+      .mockResolvedValue(fakeAgreement());
+    try {
+      const wrapper = await mountReady();
+      await fillAllRequired(wrapper);
+      await wrapper.find('[data-testid="save-continue"]').trigger("click");
+      await flushPromises();
+
+      expect(wrapper.find('[data-testid="start-new"]').exists()).toBe(false);
+      await wrapper.find('[data-testid="edit-saved"]').trigger("click");
+      expect(wrapper.emitted("edit-saved")).toEqual([[fakeAgreement().id]]);
+      wrapper.unmount();
+    } finally {
+      signedIn.value = false;
+    }
   });
 
   it("closes Save & continue after a create so a second click cannot duplicate the agreement", async () => {
