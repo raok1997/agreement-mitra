@@ -621,6 +621,11 @@ has been attached**, the stamp duty paid. It then contains:
    under the Registration Act, 1908. The stamp duty and registration charges shall be borne
    by the [owner / tenant / shared]."
 
+   *(Updated 2026-10-09: the last sentence is now its own clause. It reads "The stamp duty and
+   registration charges shall be borne by the [Owner / Tenant]." or, where the parties choose to
+   split them, "The stamp duty and registration charges shall be shared equally between the
+   Owner and the Tenant." The Karnataka agreement carries the same wording.)*
+
 3. *(appears only in the stamped instrument)* "The stamp duty paid on this Agreement is INR
    [amount]."
 

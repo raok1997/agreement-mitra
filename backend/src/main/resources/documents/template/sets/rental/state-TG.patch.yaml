@@ -11,7 +11,10 @@ meta:
   # version, and the pin (Agreement.pinEffectiveTemplate) exists precisely to keep that answerable.
   # v3 (2026-09-17): stampDutyAmount became system-sourced (filled from the attached e-stamp
   # certificate at stamp intake). A v2 deed could print the blank amount row; a v3 deed cannot.
-  version: 3
+  # v4 (2026-10-09): who bears the stamp duty and registration charges became two option-gated clauses.
+  # `shared` rendered "borne by the Shared"; it now reads "shared equally between the Owner and the
+  # Tenant". Bumped because every deed's statutory section changes.
+  version: 4
 
 ops:
   # SYSTEM-SOURCED (2026-09-17, stamp-duty-amount-from-certificate). The customer cannot know the
@@ -36,8 +39,18 @@ ops:
       clause: { id: tgStampRegistration,
                 text: "This Agreement shall be duly stamped and, where the law requires it, registered
                        before the jurisdictional Sub-Registrar in the State of Telangana under the
-                       Registration Act, 1908. The stamp duty and registration charges shall be borne
-                       by the {{registrationChargesBorneBy}}." } }
+                       Registration Act, 1908." } }
+  # Who bears the charges is two option-gated clauses, not one "borne by the {{...}}" slot: the
+  # slot renders the option label, so `shared` printed "borne by the Shared" and never said how.
+  - { op: addClause,
+      clause: { id: tgRegistrationChargesBorneBy,
+                showWhen: "registrationChargesBorneBy == \"owner\" || registrationChargesBorneBy == \"tenant\"",
+                text: "The stamp duty and registration charges shall be borne by the
+                       {{registrationChargesBorneBy}}." } }
+  - { op: addClause,
+      clause: { id: tgRegistrationChargesShared, showWhen: "registrationChargesBorneBy == \"shared\"",
+                text: "The stamp duty and registration charges shall be shared equally between the
+                       Owner and the Tenant." } }
   - { op: addClause,
       clause: { id: tgStampAmount, showWhen: "stampDutyAmount > 0",
                 text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }
@@ -70,4 +83,5 @@ ops:
   - { op: addSection,
       section: { title: "Statutory (Telangana)", optional: false,
                  entries: [ stampDutyAmount, registrationChargesBorneBy,
-                            tgGoverningLaw, tgStampRegistration, tgStampAmount, tgEssentialServices ] } }
+                            tgGoverningLaw, tgStampRegistration, tgRegistrationChargesBorneBy,
+                            tgRegistrationChargesShared, tgStampAmount, tgEssentialServices ] } }

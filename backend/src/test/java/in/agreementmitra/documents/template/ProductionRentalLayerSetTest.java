@@ -153,6 +153,29 @@ class ProductionRentalLayerSetTest {
   }
 
   @Test
+  void eachRegistrationChargesChoiceRendersOneReadableBearerSentence() {
+    String borne = "The stamp duty and registration charges shall be borne by the ";
+    String shared =
+        "The stamp duty and registration charges shall be shared equally between the Owner and the"
+            + " Tenant.";
+    for (String state : List.of("TG", "KA")) {
+      EffectiveTemplate eff = resolve(state, "residential");
+      Map<String, String> expected =
+          Map.of("owner", borne + "Owner.", "tenant", borne + "Tenant.", "shared", shared);
+      for (Map.Entry<String, String> option : expected.entrySet()) {
+        Map<String, Object> data = new LinkedHashMap<>(aggregateBackedData());
+        data.put("registrationChargesBorneBy", option.getKey());
+        String html = new TemplateCompiler().compile(eff, data);
+        assertThat(html).as("%s %s", state, option.getKey()).contains(option.getValue());
+        assertThat(html.split("registration charges shall be", -1))
+            .as("%s %s: exactly one bearer sentence", state, option.getKey())
+            .hasSize(2);
+        assertThat(html).doesNotContain("by the Shared");
+      }
+    }
+  }
+
+  @Test
   void aStoredSharedChargeChoiceIsRejectedInBothModes() {
     EffectiveTemplate eff = resolve("TG", "residential");
     Map<String, Object> data = new LinkedHashMap<>(aggregateBackedData());

@@ -126,7 +126,8 @@ three residential ones (raised by `subletting-choice`). It also needs its own CA
 the residential maintenance choice (`maintenance-charge-basis`): a per-sq-ft basis, GST on CAM, a
 contractual yearly increase or an actuals reconciliation, a facility-management payee, and a
 `camBorneBy` / commercial `utilitiesBorneBy` with no `shared` option (it renders "borne by the
-Shared").
+Shared"). The commercial KA/TG `registrationChargesBorneBy` has the same "Shared" rendering; port the
+residential fix (option-gated `…RegistrationChargesShared` clause, "shared equally").
 
 - Terms-acceptance checkpoint (under "Other queued non-goals"; it records which terms
    version was accepted)
