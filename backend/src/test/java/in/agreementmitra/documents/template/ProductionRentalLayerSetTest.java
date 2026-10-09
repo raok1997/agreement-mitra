@@ -131,12 +131,12 @@ class ProductionRentalLayerSetTest {
   @Test
   void theBaseLayerPinsItsAuthoredVersion() {
     // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
-    // different deeds must never report one authored version. v7 is the bump that dropped
-    // `shared` from the maintenance and utilities borne-by choices. Pinned explicitly because
+    // different deeds must never report one authored version. v8 is the bump that replaced
+    // maintenanceBorneBy with the four-arrangement maintenanceMode. Pinned explicitly because
     // every other assertion in this suite reads the version dynamically, which would let a revert
     // through silently.
     assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
-        .isEqualTo(7);
+        .isEqualTo(8);
   }
 
   @Test
@@ -144,11 +144,173 @@ class ProductionRentalLayerSetTest {
     // "borne by the {{x}}" renders the option label, so `shared` printed "borne by the Shared".
     for (String state : List.of("IN", "TG", "KA")) {
       EffectiveTemplate eff = resolve(state, "residential");
-      for (String key : List.of("maintenanceBorneBy", "utilitiesBorneBy")) {
-        assertThat(field(eff, key).options())
-            .as("%s %s", state, key)
-            .containsExactly("tenant", "owner");
+      assertThat(field(eff, "utilitiesBorneBy").options())
+          .as("%s utilitiesBorneBy", state)
+          .containsExactly("tenant", "owner");
+    }
+  }
+
+  // --- Charges & Utilities: maintenance arrangements (maintenance-charge-basis) ---------------
+
+  private static final String CHARGES = "Charges & Utilities";
+
+  private static final Map<String, String> MAINTENANCE_CLAUSES =
+      Map.of(
+          "included_in_rent",
+          "The monthly rent includes the society and building maintenance charges, which the Owner"
+              + " shall pay to the society directly.",
+          "fixed_amount",
+          "In addition to the rent, the Tenant shall pay the Owner a maintenance charge of INR",
+          "as_billed_by_society",
+          "The Tenant shall pay the society and building maintenance charges directly to the"
+              + " society, as billed by it during the tenancy.",
+          "paid_by_owner",
+          "The society and building maintenance charges shall be borne by the Owner, who shall pay"
+              + " them to the society directly.");
+
+  private static final String REVISION_CLAUSE = "If the society revises its maintenance charges";
+  private static final String LEVY_CLAUSE = "Any one-time or capital levy raised by the society";
+
+  /** Compile with Charges & Utilities active and return only that section's HTML. */
+  private static String chargesSection(String state, Map<String, Object> extra) {
+    EffectiveTemplate eff = resolve(state, "residential");
+    Map<String, Object> data = new LinkedHashMap<>(generateReadyData());
+    data.putAll(extra);
+    Map<String, Object> coerced =
+        SubmittedDataValidator.validateAndCoerce(eff, data, ProjectionMode.GENERATE);
+    String html = new TemplateCompiler().compile(eff, coerced, null, Set.of(CHARGES));
+    String heading = "<h2>Charges &amp; Utilities</h2>";
+    int start = html.indexOf(heading);
+    assertThat(start).as("%s: Charges & Utilities renders", state).isNotNegative();
+    return html.substring(start, html.indexOf("</section>", start));
+  }
+
+  @Test
+  void eachMaintenanceModeRendersItsOwnClauseAndNoOther() {
+    for (String state : List.of("IN", "TG", "KA")) {
+      for (String mode : MAINTENANCE_CLAUSES.keySet()) {
+        String section =
+            chargesSection(state, Map.of("maintenanceMode", mode, "maintenanceAmount", "3500"));
+        for (Map.Entry<String, String> clause : MAINTENANCE_CLAUSES.entrySet()) {
+          if (clause.getKey().equals(mode)) {
+            assertThat(section).as("%s %s", state, mode).contains(clause.getValue());
+          } else {
+            assertThat(section)
+                .as("%s %s must not carry %s", state, mode, clause.getKey())
+                .doesNotContain(clause.getValue());
+          }
+        }
+        assertThat(section.contains(REVISION_CLAUSE))
+            .as("%s %s revision clause", state, mode)
+            .isEqualTo(mode.equals("fixed_amount"));
       }
+    }
+  }
+
+  @Test
+  void aFixedAmountStatesWhoPaysWhomOnTopOfTheRent() {
+    String section =
+        chargesSection(
+            "TG", Map.of("maintenanceMode", "fixed_amount", "maintenanceAmount", "3500"));
+    assertThat(section)
+        .contains(
+            "In addition to the rent, the Tenant shall pay the Owner a maintenance charge of INR"
+                + " 3500 per month, together with the rent.")
+        .contains(REVISION_CLAUSE)
+        .doesNotContain("payable amount to");
+  }
+
+  @Test
+  void aFixedModeWithNoOrZeroAmountPrintsNeitherFixedClause() {
+    Map<String, Object> blank = Map.of("maintenanceMode", "fixed_amount");
+    Map<String, Object> zero = Map.of("maintenanceMode", "fixed_amount", "maintenanceAmount", "0");
+    for (Map<String, Object> extra : List.of(blank, zero)) {
+      String section = chargesSection("TG", extra);
+      assertThat(section)
+          .as("%s", extra)
+          .doesNotContain(MAINTENANCE_CLAUSES.get("fixed_amount"))
+          .doesNotContain(REVISION_CLAUSE);
+    }
+  }
+
+  @Test
+  void anAmountTypedUnderAnotherModeIsNotPrinted() {
+    String section =
+        chargesSection(
+            "TG", Map.of("maintenanceMode", "included_in_rent", "maintenanceAmount", "3500"));
+    assertThat(section).doesNotContain("3500");
+  }
+
+  @Test
+  void theSocietyLevyClauseFollowsThePropertyType() {
+    for (String mode : MAINTENANCE_CLAUSES.keySet()) {
+      for (String type : List.of("apartment", "gated_community", "villa")) {
+        assertThat(chargesSection("TG", Map.of("maintenanceMode", mode, "propertyType", type)))
+            .as("%s %s", mode, type)
+            .contains(
+                "Any one-time or capital levy raised by the society, including sinking fund, corpus"
+                    + " fund, major-repair and non-occupancy charges, shall be borne by the Owner,"
+                    + " even where the society bills it to the Tenant.");
+      }
+      for (String type : List.of("independent_house", "pg_room")) {
+        assertThat(chargesSection("TG", Map.of("maintenanceMode", mode, "propertyType", type)))
+            .as("%s %s", mode, type)
+            .doesNotContain(LEVY_CLAUSE);
+      }
+    }
+  }
+
+  @Test
+  void chargesAndUtilitiesPrintsClausesAndNoBlanks() {
+    for (String state : List.of("IN", "TG", "KA")) {
+      String section = chargesSection(state, Map.of());
+      assertThat(section)
+          .as(state)
+          .contains("<ol class=\"clauses\">")
+          .doesNotContain("<table")
+          .doesNotContain("[ ")
+          .doesNotContain("Grace period")
+          .doesNotContain("Maintenance amount")
+          // The default mode is as billed by the society.
+          .contains(MAINTENANCE_CLAUSES.get("as_billed_by_society"));
+    }
+  }
+
+  @Test
+  void aStoredDraftCarryingTheRemovedKeyStillValidates() {
+    EffectiveTemplate eff = resolve("TG", "residential");
+    Map<String, Object> data = new LinkedHashMap<>(generateReadyData());
+    data.put("maintenanceBorneBy", "owner");
+    for (ProjectionMode mode : ProjectionMode.values()) {
+      Map<String, Object> coerced = SubmittedDataValidator.validateAndCoerce(eff, data, mode);
+      assertThat(coerced).as("%s", mode).doesNotContainKey("maintenanceBorneBy");
+    }
+  }
+
+  @Test
+  void theMaintenanceModeIsAnOptionalDefaultedEnum() {
+    for (String state : List.of("IN", "TG", "KA")) {
+      EffectiveTemplate eff = resolve(state, "residential");
+      Field mode = field(eff, "maintenanceMode");
+      assertThat(mode.label()).isEqualTo("How is maintenance handled?");
+      assertThat(mode.required()).isFalse();
+      assertThat(mode.defaultValue()).isEqualTo("as_billed_by_society");
+      assertThat(mode.options())
+          .containsExactly(
+              "included_in_rent", "fixed_amount", "as_billed_by_society", "paid_by_owner");
+      Field amount = field(eff, "maintenanceAmount");
+      assertThat(amount.required()).isFalse();
+      assertThat(amount.label()).isEqualTo("Maintenance amount (INR / month) – only if Fixed");
+      assertThat(fieldKeys(eff)).doesNotContain("maintenanceBorneBy");
+      assertThat(clauseIds(eff))
+          .doesNotContain("maintenanceClause", "maintenanceAmountClause")
+          .contains(
+              "maintenanceIncludedClause",
+              "maintenanceFixedClause",
+              "maintenanceRevisionClause",
+              "maintenanceAsBilledClause",
+              "maintenanceOwnerClause",
+              "societyLeviesClause");
     }
   }
 
@@ -337,6 +499,7 @@ class ProductionRentalLayerSetTest {
     assertThat(section(eff, "Now This Agreement Witnesseth").render())
         .isEqualTo(RenderKind.CLAUSES);
     assertThat(section(eff, "Annexure").render()).isEqualTo(RenderKind.ANNEXURE);
+    assertThat(section(eff, "Charges & Utilities").render()).isEqualTo(RenderKind.CLAUSES);
 
     // A mandatory section may still hold optional fields: only its aggregate-backed ones are
     // required.
@@ -459,8 +622,7 @@ class ProductionRentalLayerSetTest {
         // tgGoverningLaw: the TG-specific statute, not just "laws of India".
         .contains("Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960")
         .doesNotContain("shall not keep any pets") // optional Occupancy & Use add-on gated out
-        .doesNotContain(
-            "Society and building maintenance"); // optional Charges & Utilities gated out
+        .doesNotContain(LEVY_CLAUSE); // optional Charges & Utilities gated out
 
     // Add the optional Occupancy & Use section: its content (the default pets covenant) appears.
     String withOccupancy = compiler.compile(eff, coerced, null, Set.of("Occupancy & Use"));
@@ -488,7 +650,18 @@ class ProductionRentalLayerSetTest {
       assertThat(formSection(schema, "Owner").renderKind()).isEqualTo("parties");
       assertThat(formSection(schema, "Owner").optional()).isFalse();
       assertThat(formSection(schema, "Charges & Utilities").optional()).isTrue();
-      assertThat(formSection(schema, "Charges & Utilities").renderKind()).isEqualTo("keyvalue");
+      assertThat(formSection(schema, "Charges & Utilities").renderKind()).isEqualTo("clauses");
+      // A clauses section still asks its fields in the capture form.
+      assertThat(
+              formSection(schema, "Charges & Utilities").fields().stream()
+                  .map(f -> f.key())
+                  .toList())
+          .containsExactly(
+              "maintenanceMode",
+              "maintenanceAmount",
+              "utilitiesBorneBy",
+              "latePaymentPenalty",
+              "gracePeriodDays");
     }
   }
 

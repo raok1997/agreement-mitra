@@ -5,8 +5,9 @@
 # STRUCTURE (rental-document-content-v2 / M5): reads like the reference Leave-and-Licence deed --
 # a centred meta.document header; separate Owner and Tenant party cards (render: parties); a
 # Schedule of Property, a Term, and a Financial key/value set (render: keyvalue); coarse optional
-# Charges & Utilities / Occupancy & Use / Dispute Resolution add-on sections (optional: true, opt-in
-# via M2 activeSections, each field defaulted); a document-only "Now This Agreement Witnesseth"
+# Charges & Utilities (render: clauses -- fields asked, only clauses printed) / Occupancy & Use /
+# Dispute Resolution add-on sections (optional: true, opt-in via M2 activeSections, each field
+# defaulted); a document-only "Now This Agreement Witnesseth"
 # covenant list (render: clauses, ZERO fields, so M3 omits it from the capture form while M1 still
 # renders it); and an optional fixtures/inventory Annexure (render: annexure). The individually
 # addable add-ons (rent escalation, lock-in, notice, pets, parking, maintenance, utilities,
@@ -81,7 +82,13 @@ meta:
   # v7 (2026-10-09): `shared` was dropped from maintenanceBorneBy and utilitiesBorneBy. The clause
   # renders the option label into "shall be borne by the {{...}}", so it printed "borne by the Shared"
   # and never said how the cost was split. Bumped because the composed template changes.
-  version: 7
+  #
+  # v8 (2026-10-10): maintenanceBorneBy became maintenanceMode, four arrangements that each render
+  # their own clause and so say who pays whom (maintenance-charge-basis). maintenanceAmount is read
+  # only under fixed_amount. A society-levy clause was added for apartment-type premises, and
+  # Charges & Utilities moved to render: clauses, so no blank row or [ label ] prints in that
+  # section. Bumped because every deed carrying the section changes.
+  version: 8
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -147,9 +154,14 @@ fields:
       default: bank_transfer,
       options: [ bank_transfer, upi, cheque, cash ] }
   # --- Charges & utilities (optional add-on section) ---
-  - { key: maintenanceBorneBy, label: "Maintenance borne by",           type: enum,     required: false,
-      default: tenant, options: [ tenant, owner ] }
-  - { key: maintenanceAmount, label: "Maintenance amount (INR / month)", type: money,    required: false }
+  # The mode decides the payee: fixed_amount = Tenant pays the Owner with the rent; as_billed = Tenant
+  # pays the society; included_in_rent / paid_by_owner = Owner pays the society. maintenanceAmount is
+  # read only under fixed_amount (both Fixed clauses gate on it). Option values and the default are
+  # mirrored in frontend/src/views/maintenanceTerms.ts, held equal by a drift test.
+  - { key: maintenanceMode,  label: "How is maintenance handled?",       type: enum,     required: false,
+      default: as_billed_by_society,
+      options: [ included_in_rent, fixed_amount, as_billed_by_society, paid_by_owner ] }
+  - { key: maintenanceAmount, label: "Maintenance amount (INR / month) – only if Fixed", type: money, required: false }
   - { key: utilitiesBorneBy, label: "Utilities borne by",               type: enum,     required: false,
       default: tenant, options: [ tenant, owner ] }
   - { key: latePaymentPenalty, label: "Late-payment penalty (INR)",     type: money,    required: false }
@@ -220,13 +232,38 @@ clauses:
       The Tenant has paid to the Owner an interest-free refundable security deposit of INR
       {{securityDeposit}}, refundable on vacating the Premises after adjusting arrears of rent, unpaid
       utility charges, and the cost of making good any damage beyond normal wear and tear.
-  - id: maintenanceClause
+  - id: maintenanceIncludedClause
+    showWhen: 'maintenanceMode == "included_in_rent"'
     text: >-
-      Society and building maintenance charges shall be borne by the {{maintenanceBorneBy}}.
-  - id: maintenanceAmountClause
-    showWhen: "maintenanceAmount > 0"
+      The monthly rent includes the society and building maintenance charges, which the Owner shall
+      pay to the society directly.
+  - id: maintenanceFixedClause
+    showWhen: 'maintenanceMode == "fixed_amount" && maintenanceAmount > 0'
     text: >-
-      The maintenance charges payable amount to INR {{maintenanceAmount}} per month.
+      In addition to the rent, the Tenant shall pay the Owner a maintenance charge of INR
+      {{maintenanceAmount}} per month, together with the rent.
+  - id: maintenanceRevisionClause
+    showWhen: 'maintenanceMode == "fixed_amount" && maintenanceAmount > 0'
+    text: >-
+      If the society revises its maintenance charges, the maintenance charge payable by the Tenant
+      shall be revised to match, from the month following the Owner's written notice to the Tenant
+      together with a copy of the society's revised demand.
+  - id: maintenanceAsBilledClause
+    showWhen: 'maintenanceMode == "as_billed_by_society"'
+    text: >-
+      The Tenant shall pay the society and building maintenance charges directly to the society, as
+      billed by it during the tenancy.
+  - id: maintenanceOwnerClause
+    showWhen: 'maintenanceMode == "paid_by_owner"'
+    text: >-
+      The society and building maintenance charges shall be borne by the Owner, who shall pay them to
+      the society directly.
+  - id: societyLeviesClause
+    showWhen: 'propertyType == "apartment" || propertyType == "gated_community" || propertyType == "villa"'
+    text: >-
+      Any one-time or capital levy raised by the society, including sinking fund, corpus fund,
+      major-repair and non-occupancy charges, shall be borne by the Owner, even where the society
+      bills it to the Tenant.
   - id: utilitiesClause
     text: >-
       Electricity, water, gas, internet, and other utility charges consumed at the Premises shall be
@@ -371,11 +408,15 @@ sections:
                rentClause, escalationClause, depositClause ]
   # Optional add-on sections (opt-in via M2 activeSections; each field defaulted so gating them out
   # never trips required-validation). Individually addable.
+  # render: clauses -- the fields are still asked in the capture form, but only the included clauses
+  # print, so a blank amount or penalty never prints as a [ label ] row.
   - title: "Charges & Utilities"
-    render: keyvalue
+    render: clauses
     optional: true
-    entries: [ maintenanceBorneBy, maintenanceAmount, utilitiesBorneBy, latePaymentPenalty, gracePeriodDays,
-               maintenanceClause, maintenanceAmountClause, utilitiesClause, latePaymentClause ]
+    entries: [ maintenanceMode, maintenanceAmount, utilitiesBorneBy, latePaymentPenalty, gracePeriodDays,
+               maintenanceIncludedClause, maintenanceFixedClause, maintenanceRevisionClause,
+               maintenanceAsBilledClause, maintenanceOwnerClause, societyLeviesClause,
+               utilitiesClause, latePaymentClause ]
   - title: "Occupancy & Use"
     render: keyvalue
     optional: true

@@ -11,6 +11,11 @@ import {
   parseIso,
   type EntryFailure,
 } from "./dateEntry";
+import {
+  FIXED_AMOUNT,
+  MAINTENANCE_AMOUNT_KEY,
+  MAINTENANCE_MODE_KEY,
+} from "./maintenanceTerms";
 
 /** In-progress values for one section, keyed by field key. Always strings (matches the shell). */
 export type SectionData = Record<string, string>;
@@ -192,9 +197,9 @@ export function tenancyMonths(startIso: string, endIso: string): number | null {
  * this is the only place that compares one field against another, so the per-field call sites are
  * unaffected. `isSectionComplete` DOES consult the cross-field rules (see `crossFieldErrors`).
  *
- * Today the one cross-field rule is the tenancy date range. The error attaches to the END date --
- * where the user can fix it -- and only once both dates are individually present and valid, so a
- * half-filled form reports "required", not a confusing range error.
+ * The cross-field rules are listed on `crossFieldErrors`. Each error attaches to the field the user
+ * can fix, and only once the fields it compares have no error of their own, so a half-filled form
+ * reports "required", not a confusing cross-field error.
  *
  * Client validation remains a UX affordance, not the trust boundary: the server independently
  * rejects an end date that is not strictly after the start date with a 400.
@@ -219,6 +224,13 @@ export function sectionErrors(
  * `perFieldErrors` is passed in so a rule can stay silent while either field still has an error of
  * its own -- a half-filled form reports "required", not a confusing range error. Callers that do
  * not have it to hand may omit it.
+ *
+ * The rules:
+ * - Tenancy date range (every template): the end date must be after the start date.
+ * - Fixed maintenance (rental Charges & Utilities): a fixed_amount mode needs an amount above zero.
+ *   This is the first TEMPLATE-SPECIFIC rule in this otherwise generic module; the server does not
+ *   enforce it (the deed simply drops both Fixed clauses). Such rules move to a template-declared
+ *   form condition with the `capture-field-conditional-reveal` follow-up.
  */
 export function crossFieldErrors(
   fields: FormField[],
@@ -239,6 +251,19 @@ export function crossFieldErrors(
       if (endNotAfterStart) {
         errors.endDate = "The end date must be after the start date.";
       }
+    }
+  }
+
+  if (
+    keys.has(MAINTENANCE_MODE_KEY) &&
+    keys.has(MAINTENANCE_AMOUNT_KEY) &&
+    (data[MAINTENANCE_MODE_KEY] ?? "").trim() === FIXED_AMOUNT &&
+    !perFieldErrors[MAINTENANCE_AMOUNT_KEY]
+  ) {
+    const amount = (data[MAINTENANCE_AMOUNT_KEY] ?? "").trim();
+    if (amount === "" || !(Number(amount) > 0)) {
+      errors[MAINTENANCE_AMOUNT_KEY] =
+        "Enter the monthly amount for a fixed maintenance charge.";
     }
   }
   return errors;

@@ -13,10 +13,13 @@
 // WHAT IS BEING PAID FOR. Above the price, the agreement's key terms as the server has them stored,
 // read afresh on every mount -- never from a parent's copy, the capture form or the browser draft
 // (pre-payment-key-terms-summary). Payment waits for them; if they cannot be read, the step cannot
-// be paid from. Only the shown fields are kept: no party contact, address or captured value.
+// be paid from. Only the shown fields are kept: no party contact, address or captured value, except
+// the stored maintenance arrangement (maintenance-charge-basis).
 //
-// NOTHING HERE IS COMPUTED IN THE BROWSER. Every amount -- duty, stamp value, total -- is rendered
+// NOTHING CHARGED IS COMPUTED IN THE BROWSER. Every price -- duty, stamp value, total -- is rendered
 // exactly as the server sent it. The emitted selection names a choice, never an amount to charge.
+// The one sum made here is rent plus a fixed maintenance, shown for information only and never
+// stored or written into the deed.
 
 import { computed, onMounted, ref } from "vue";
 import { formatMinorUnits } from "../api/payments";
@@ -31,6 +34,16 @@ import {
 } from "./refusalMessages";
 import { formatRupees, roleLabel } from "./agreementListFormat";
 import { formatIso } from "./dateEntry";
+import {
+  CHARGES_SECTION_TITLE,
+  DEFAULT_MAINTENANCE_MODE,
+  FIXED_AMOUNT,
+  isMaintenanceMode,
+  LEGACY_MAINTENANCE_KEY,
+  MAINTENANCE_AMOUNT_KEY,
+  MAINTENANCE_MODE_KEY,
+  type MaintenanceMode,
+} from "./maintenanceTerms";
 import {
   getStampQuote,
   selectionFor,
@@ -68,6 +81,63 @@ interface KeyTerms {
   endDate: string;
   durationMonths: number;
   parties: { name: string; role: string }[];
+  maintenance: MaintenanceTerms | null;
+}
+
+/** The maintenance line: the arrangement, and for a readable fixed amount, the figures. */
+interface MaintenanceTerms {
+  text: string;
+  /** Rent plus maintenance each month, only for a fixed amount that could be read. */
+  total: string | null;
+}
+
+const MAINTENANCE_TEXT: Record<Exclude<MaintenanceMode, "fixed_amount">, string> = {
+  included_in_rent: "Included in the rent",
+  as_billed_by_society: "Paid by the tenant to the society, as billed",
+  paid_by_owner: "Paid by the owner",
+};
+
+// A plain rupee amount with at most two decimals -- what the capture form accepts for money.
+const PLAIN_RUPEES = /^\d+(\.\d{1,2})?$/;
+
+function toPaise(rupees: string): number {
+  const [whole, fraction = ""] = rupees.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+}
+
+/**
+ * The maintenance line for a stored agreement, or null when it has none: only a residential
+ * agreement with Charges & Utilities active and a known mode carries one (commercial reuses the
+ * section title). An absent mode is the template default, which the deed also states -- unless
+ * the agreement predates the mode (it stores the v7 `maintenanceBorneBy`), whose pinned deed says
+ * something this line cannot restate. The line only ever states a term the deed carries.
+ */
+function maintenanceTerms(a: AgreementView): MaintenanceTerms | null {
+  if (a.type !== "residential") return null;
+  if (!(a.activeSections ?? []).includes(CHARGES_SECTION_TITLE)) return null;
+  const data = a.captureData ?? {};
+  if (!data[MAINTENANCE_MODE_KEY] && data[LEGACY_MAINTENANCE_KEY]) return null;
+  const mode = (data[MAINTENANCE_MODE_KEY] ?? "").trim() || DEFAULT_MAINTENANCE_MODE;
+  if (!isMaintenanceMode(mode)) return null;
+  if (mode !== FIXED_AMOUNT) return { text: MAINTENANCE_TEXT[mode], total: null };
+
+  const amount = (data[MAINTENANCE_AMOUNT_KEY] ?? "").trim();
+  // Blank, zero or negative: the deed's Fixed clauses (gated `maintenanceAmount > 0`) do not print.
+  if (!(Number(amount) > 0)) return null;
+  const amountPaise = PLAIN_RUPEES.test(amount) ? toPaise(amount) : 0;
+  if (amountPaise <= 0) {
+    // Above zero but not a plain rupee amount (e.g. "1e3", only reachable via the API): the deed
+    // states it, so the arrangement is shown, without a figure this screen would have to guess.
+    return {
+      text: "A fixed monthly charge, paid to the owner with the rent",
+      total: null,
+    };
+  }
+  const totalPaise = Math.round(a.monthlyRent * 100) + amountPaise;
+  return {
+    text: `${formatRupees(amountPaise / 100)} a month, paid to the owner with the rent`,
+    total: formatRupees(totalPaise / 100),
+  };
 }
 
 const terms = ref<KeyTerms | null>(null);
@@ -93,6 +163,7 @@ function keyTerms(a: AgreementView): KeyTerms {
     endDate: a.endDate,
     durationMonths: a.durationMonths,
     parties: a.signers.map((p) => ({ name: p.name, role: p.role })),
+    maintenance: maintenanceTerms(a),
   };
 }
 
@@ -278,6 +349,23 @@ function confirm(): void {
               {{ formatRupees(terms.securityDeposit) }}
             </dd>
           </div>
+          <template v-if="terms.maintenance">
+            <div>
+              <dt class="text-slate-500">Maintenance</dt>
+              <dd class="text-slate-900" data-testid="key-terms-maintenance">
+                {{ terms.maintenance.text }}
+              </dd>
+            </div>
+            <div v-if="terms.maintenance.total">
+              <dt class="text-slate-500">Rent and maintenance together each month</dt>
+              <dd
+                class="text-slate-900"
+                data-testid="key-terms-maintenance-total"
+              >
+                {{ terms.maintenance.total }}
+              </dd>
+            </div>
+          </template>
           <div>
             <dt class="text-slate-500">Term</dt>
             <dd class="text-slate-900" data-testid="key-terms-term">

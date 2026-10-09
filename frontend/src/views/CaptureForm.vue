@@ -470,10 +470,10 @@ function closeModal(): void {
 function saveSection(): void {
   const id = activeSectionId.value;
   if (!id) return;
-  // A cross-field error (today: an end date not after the start) must block the save, or a
-  // reversed range reaches the preview and compiles a non-positive term into the document. A
-  // per-field "required" error must still be saveable, because capture is progressive and a
-  // section may be filled over more than one visit.
+  // A cross-field error (an end date not after the start, Fixed maintenance with no amount) must
+  // block the save, or a reversed range reaches the preview and compiles a non-positive term into
+  // the document. A per-field "required" error must still be saveable, because capture is
+  // progressive and a section may be filled over more than one visit.
   // A malformed date blocks too: saving its text would send garbage to the preview, and keeping the
   // previous value would silently replace the user's edit. So does an invalid number, which would
   // pass create and then fail draft generation. A blank one still saves.

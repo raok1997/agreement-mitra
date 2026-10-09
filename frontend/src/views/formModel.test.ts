@@ -366,6 +366,92 @@ describe("crossFieldErrors", () => {
   });
 });
 
+describe("crossFieldErrors: fixed maintenance", () => {
+  const chargesFields = [
+    field({
+      key: "maintenanceMode",
+      label: "How is maintenance handled?",
+      widget: "select",
+      type: "enum",
+      options: [
+        { value: "included_in_rent", label: "Included In Rent" },
+        { value: "fixed_amount", label: "Fixed Amount" },
+        { value: "as_billed_by_society", label: "As Billed By Society" },
+        { value: "paid_by_owner", label: "Paid By Owner" },
+      ],
+    }),
+    field({
+      key: "maintenanceAmount",
+      label: "Maintenance amount (INR / month) – only if Fixed",
+      widget: "number",
+      type: "money",
+    }),
+  ];
+  const message = "Enter the monthly amount for a fixed maintenance charge.";
+
+  it("fires for Fixed with a blank amount or a zero", () => {
+    for (const amount of ["", "0", "0.00"]) {
+      const data = {
+        maintenanceMode: "fixed_amount",
+        maintenanceAmount: amount,
+      };
+      expect(crossFieldErrors(chargesFields, data)).toEqual({
+        maintenanceAmount: message,
+      });
+      expect(blocksSave(chargesFields, data)).toBe(true);
+      expect(isSectionComplete(chargesFields, data)).toBe(false);
+    }
+  });
+
+  it("fires for Fixed with a negative amount", () => {
+    expect(
+      crossFieldErrors(chargesFields, {
+        maintenanceMode: "fixed_amount",
+        maintenanceAmount: "-5",
+      }),
+    ).toEqual({ maintenanceAmount: message });
+  });
+
+  it("is silent for Fixed with an amount", () => {
+    const data = { maintenanceMode: "fixed_amount", maintenanceAmount: "3500" };
+    expect(crossFieldErrors(chargesFields, data)).toEqual({});
+    expect(blocksSave(chargesFields, data)).toBe(false);
+  });
+
+  it("is silent for every other mode, even with a blank or zero amount", () => {
+    for (const mode of [
+      "included_in_rent",
+      "as_billed_by_society",
+      "paid_by_owner",
+    ]) {
+      for (const amount of ["", "0"]) {
+        const data = { maintenanceMode: mode, maintenanceAmount: amount };
+        expect(crossFieldErrors(chargesFields, data)).toEqual({});
+        expect(blocksSave(chargesFields, data)).toBe(false);
+      }
+    }
+  });
+
+  it("is silent when the section does not carry both fields", () => {
+    expect(
+      crossFieldErrors([chargesFields[0]], { maintenanceMode: "fixed_amount" }),
+    ).toEqual({});
+    expect(
+      crossFieldErrors([field({ key: "other" })], {
+        maintenanceMode: "fixed_amount",
+        maintenanceAmount: "",
+      }),
+    ).toEqual({});
+  });
+
+  it("stays silent while the amount has a per-field error of its own", () => {
+    // "1e3" is refused per-field (not a plain rupee amount); the rule does not stack a second message.
+    const data = { maintenanceMode: "fixed_amount", maintenanceAmount: "1e3" };
+    expect(crossFieldErrors(chargesFields, data)).toEqual({});
+    expect(blocksSave(chargesFields, data)).toBe(true);
+  });
+});
+
 describe("isSectionComplete: cross-field rules", () => {
   const dateFields = [
     field({

@@ -60,8 +60,9 @@ class TemplateCatalogSeederTest {
         .doesNotHaveDuplicates();
     assertThat(saved).allSatisfy(e -> assertThat(e.status()).isEqualTo(TemplateStatus.PUBLISHED));
     // A catalog row's version is derived from its layer set's BASE meta.version, so a base bump
-    // propagates here. rental/base.yaml is v7, bumped when `shared` was dropped from the charges
-    // borne-by choices; commercial/base.yaml is v5. Both were bumped when the inventory annexure
+    // propagates here. rental/base.yaml is v8, bumped when maintenanceBorneBy became the
+    // four-arrangement maintenanceMode (v7 dropped `shared` from the charges borne-by choices);
+    // commercial/base.yaml is v5. Both were bumped when the inventory annexure
     // became one item per line; before that when sub-letting became a required
     // three-way choice; before that when the party father's name and
     // address became required and aggregate-backed. Before that both
@@ -70,7 +71,7 @@ class TemplateCatalogSeederTest {
     // a future bump fails loudly rather than drifting -- which is exactly what it did here.
     assertThat(saved)
         .filteredOn(e -> e.type().equals("residential"))
-        .allSatisfy(e -> assertThat(e.version()).isEqualTo(7));
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(8));
     assertThat(saved)
         .filteredOn(e -> e.type().equals("commercial"))
         .allSatisfy(e -> assertThat(e.version()).isEqualTo(5));

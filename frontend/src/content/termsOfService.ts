@@ -81,7 +81,7 @@ const CLAUSES: Clause[] = [
       "That total is INR 499 where the stamp value on your agreement is INR 100 or less. Where the stamp value is more than INR 100, the total is INR 499 plus the amount by which it exceeds INR 100. So a higher stamp raises what you pay by exactly its extra value, and by nothing else.",
       // Paraphrases the under-stamp warning (under-stamp-v1, StampQuoteStep.vue): re-check this sentence when that warning changes.
       "We work out the stamp duty the law requires for your agreement and show it to you. Where the state's stamps allow it, we recommend a stamp of that value. In some states we can offer only a stamp of a fixed value, and that value can be below the duty. You can go ahead with a stamp below the duty only after we have shown you what that means: an under-stamped agreement cannot be relied on as evidence until the missing duty and a penalty are paid.",
-      "You are shown the stamp, the duty and the total before you pay, together with the main terms of your agreement as we have them saved: the property, the rent, the deposit, the dates and the parties. That is what you are paying to stamp and sign. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due. What we will not do is take payment and then come back to you for more.",
+      "You are shown the stamp, the duty and the total before you pay, together with the main terms of your agreement as we have them saved: the property, the rent, the deposit, the dates and the parties, and, where your agreement sets out how maintenance is handled, that arrangement, with the rent and maintenance together each month where maintenance is a fixed amount paid with the rent. That is what you are paying to stamp and sign. Drafting, previewing and downloading a draft cost nothing, so you see the document and the price before any of it is due. What we will not do is take payment and then come back to you for more.",
     ],
   },
   {
@@ -221,7 +221,7 @@ const CLAUSES: Clause[] = [
 
 export const TERMS_OF_SERVICE: LegalDocument = {
   title: "Terms of Service",
-  lastUpdated: "9 October 2026",
+  lastUpdated: "10 October 2026",
   banner:
     "This is a draft, published during a restricted beta and pending review by Indian counsel. " +
     "Sections marked below are deliberately incomplete. We publish it in this state because a draft " +
