@@ -1060,6 +1060,43 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     expect(afterRemove).not.toContain("Pets");
   });
 
+  it("the annexure dialog explains one item per line; other sections carry no hint", async () => {
+    const schema = schemaWithOptional();
+    schema.sections.push({
+      title: "Annexure",
+      optional: true,
+      renderKind: "annexure",
+      fields: [
+        {
+          key: "fixturesInventory",
+          label: "Fixtures and inventory schedule",
+          widget: "textarea",
+          type: "longtext",
+          required: false,
+          default: "Ceiling fans\nWater meter",
+        },
+      ],
+    });
+    mockedGetForm.mockResolvedValue(schema);
+    const wrapper = await mountReady();
+
+    await wrapper.find('[data-testid="add-optional-annexure"]').trigger("click");
+    await wrapper.find('[data-testid="section-annexure"]').trigger("click");
+    expect(wrapper.find('[data-testid="section-hint"]').text()).toMatch(
+      /One item per line/,
+    );
+    const inventory = wrapper.find('[data-testid="field-fixturesInventory"]');
+    expect((inventory.element as HTMLTextAreaElement).value).toBe(
+      "Ceiling fans\nWater meter",
+    );
+    await wrapper.find('[data-testid="modal-close"]').trigger("click");
+
+    await wrapper.find('[data-testid="add-optional-pets"]').trigger("click");
+    await wrapper.find('[data-testid="section-pets"]').trigger("click");
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="section-hint"]').exists()).toBe(false);
+  });
+
   it("4.3: Save is disabled until every mandatory section is complete; optional never gates it", async () => {
     const wrapper = await mountReady();
     const save = () => wrapper.find('[data-testid="save-continue"]');

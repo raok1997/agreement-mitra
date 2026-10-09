@@ -182,7 +182,14 @@ interface UiSection {
   // field-level required-ness. Mandatory sections always render + count toward completeness; optional
   // sections are opt-in via the Add-optional catalog and never block save.
   optional: boolean;
+  hint?: string;
 }
+
+// The annexure's inventory is free text, one item per line. Its default lists only near-universal
+// fixtures; furniture and appliances are suggested here, never prefilled, because whatever is left
+// in the box is signed as fact.
+const ANNEXURE_HINT =
+  "One item per line. If the property is furnished, add furniture and appliances too - e.g. Bed, Sofa, Wardrobe, Fridge, Washing machine, AC, Geyser.";
 
 // M5 (agreement-capture-persistence) retired the STOPGAP: the agreement now persists its FULL capture
 // state (the flat working-set map + added optional sections), and generate-as-draft renders from that
@@ -205,6 +212,7 @@ const uiSections = computed<UiSection[]>(() =>
         icon: sectionIcon(s.title),
         fields,
         optional: !isSectionMandatory(s),
+        hint: s.renderKind === "annexure" ? ANNEXURE_HINT : undefined,
       };
     })
     .filter((s) => s.fields.length > 0),
@@ -1576,7 +1584,7 @@ onBeforeUnmount(() => {
       role="dialog"
       aria-modal="true"
       :aria-label="activeSection.title"
-      class="max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white shadow-xl sm:max-w-lg sm:rounded-xl"
+      class="max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white shadow-xl sm:max-w-2xl sm:rounded-xl"
     >
       <header
         class="flex items-start gap-3 border-b border-slate-200 px-5 py-4"
@@ -1609,6 +1617,13 @@ onBeforeUnmount(() => {
         </button>
       </header>
       <div class="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2">
+        <p
+          v-if="activeSection.hint"
+          class="text-xs text-slate-500 sm:col-span-2"
+          data-testid="section-hint"
+        >
+          {{ activeSection.hint }}
+        </p>
         <div
           v-for="f in activeSection.fields"
           :key="f.key"

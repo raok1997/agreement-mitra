@@ -49,7 +49,10 @@ meta:
   # v4 (2026-10-09): the fixed no-subletting covenant became a required three-way choice
   # (subletting-choice) -- see the residential set's v5 note. Bumped because every rendered lease
   # changes.
-  version: 4
+  #
+  # v5 (2026-10-09): the fixtures/inventory annexure became one item per line with a near-universal
+  # default -- see the residential set's v6 note. Bumped because a lease carrying the annexure changes.
+  version: 5
   status: published
   document:
     title: "Commercial Lease Agreement"
@@ -131,8 +134,10 @@ fields:
   - { key: jurisdictionCity, label: "Jurisdiction city",                  type: text,     required: false }
   - { key: specialConditions, label: "Special conditions",                type: longtext, required: false }
   # --- Fixtures / inventory annexure (optional add-on section) ---
+  # Free text, one item per line, no quantities; the default is near-universal items only (see the
+  # residential base for why fit-out items are never prefilled).
   - { key: fixturesInventory, label: "Fixtures and inventory schedule",   type: longtext, required: false,
-      default: "Reception counter; ten workstations; two cabins; one conference table; central air-conditioning; fire extinguishers; signage board." }
+      default: "Light fittings\nElectrical switches and sockets\nTaps and washroom fittings\nFire extinguishers\nElectricity meter\nWater meter\nMain door keys / access cards" }
   # --- Witnesses (optional add-on section; all default empty, opt-in via activeSections) ---
   - { key: witness1Name,     label: "Witness 1 name",                     type: text,     required: false }
   - { key: witness1Address,  label: "Witness 1 address",                  type: longtext, required: false }
@@ -364,7 +369,7 @@ sections:
                quietEnjoymentClause, handoverClause, disputeClause, disputeAlternativeClause,
                stampRegistrationClause,
                serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]
-  # Optional fixtures/inventory annexure (render: annexure), opt-in, with a dummy inventory scaffold.
+  # Optional fixtures/inventory annexure (render: annexure), opt-in, with a short common-items default.
   - title: "Annexure"
     render: annexure
     optional: true

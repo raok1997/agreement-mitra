@@ -316,6 +316,27 @@ class TemplateCompilerTest {
   }
 
   @Test
+  void annexureMultiLineValueRendersOneEscapedItemPerNonBlankLine() {
+    List<Field> fields =
+        List.of(new Field("inv", "Inventory", FieldType.LONGTEXT, false, null, null, null, null));
+    List<Section> sections =
+        List.of(new Section("Annexure", List.of("inv"), false, RenderKind.ANNEXURE));
+    EffectiveTemplate template = effectiveOf(null, fields, List.of(), sections);
+
+    String html =
+        new TemplateCompiler()
+            .compile(template, dataWith("inv", "Ceiling fans\r\n\n  <b>Keys</b>  \nWater meter"));
+
+    assertThat(html).contains("<li>Inventory:\n<ul class=\"annexure-items\">");
+    assertThat(html)
+        .contains("<li>Ceiling fans</li>")
+        .contains("<li>&lt;b&gt;Keys&lt;/b&gt;</li>")
+        .contains("<li>Water meter</li>")
+        .doesNotContain("<b>Keys</b>");
+    assertThat(countOccurrences(html, "<li>")).isEqualTo(4); // blank line dropped
+  }
+
+  @Test
   void nullRenderKindFallsBackToKeyValueAndNeverThrows() {
     // A hand-built section with a null render kind (resolution defaults it to KEYVALUE) must not
     // throw; the compiler defensively renders the key/value table.

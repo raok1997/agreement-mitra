@@ -73,7 +73,11 @@ meta:
   # (subletting-choice). A lease silent on sub-letting lets the tenant sublet and assign (Transfer
   # of Property Act s.108(j)), so the covenant cannot be optional; instead `subletting` (in Term, no
   # default) selects one of three option-gated covenants. Bumped because every rendered deed changes.
-  version: 5
+  #
+  # v6 (2026-10-09): the fixtures/inventory annexure became one item per line, and its default is now
+  # near-universal items only, with no quantities. The old default was a furnished-flat inventory that a
+  # customer who did not edit it would sign as fact. Bumped because a deed carrying the annexure changes.
+  version: 6
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -162,8 +166,11 @@ fields:
   - { key: jurisdictionCity, label: "Jurisdiction city",                 type: text,     required: false }
   - { key: specialConditions, label: "Special conditions",              type: longtext, required: false }
   # --- Fixtures / inventory annexure (optional add-on section) ---
+  # Free text, one item per line (each line renders as its own bullet), no quantities. The default is
+  # deliberately only what nearly every let premises has: whatever the customer leaves in is printed
+  # into the signed deed, so furniture and appliances are suggested in the form, never prefilled.
   - { key: fixturesInventory, label: "Fixtures and inventory schedule",  type: longtext, required: false,
-      default: "Modular kitchen with hob and chimney; two ceiling fans; three tube lights; one geyser; wardrobes in both bedrooms; window curtains." }
+      default: "Ceiling fans\nLights and light fittings\nElectrical switches and sockets\nTaps and bathroom fittings\nElectricity meter\nWater meter\nMain door keys" }
   # --- Witnesses (optional add-on section; all default empty, opt-in via activeSections) ---
   - { key: witness1Name,     label: "Witness 1 name",                    type: text,     required: false }
   - { key: witness1Address,  label: "Witness 1 address",                 type: longtext, required: false }
@@ -384,7 +391,7 @@ sections:
                sublettingProhibitedClause, sublettingPermittedClause, inspectionClause,
                handoverClause, disputeClause, disputeAlternativeClause, stampRegistrationClause,
                serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]
-  # Optional fixtures/inventory annexure (render: annexure), opt-in, with a dummy inventory scaffold.
+  # Optional fixtures/inventory annexure (render: annexure), opt-in, with a short common-items default.
   - title: "Annexure"
     render: annexure
     optional: true

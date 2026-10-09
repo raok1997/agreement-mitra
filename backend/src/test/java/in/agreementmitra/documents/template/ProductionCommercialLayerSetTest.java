@@ -106,11 +106,11 @@ class ProductionCommercialLayerSetTest {
   @Test
   void theBaseLayerPinsItsAuthoredVersion() {
     // meta.version is load-bearing: Agreement.pinEffectiveTemplate records it, so two materially
-    // different deeds must never report one authored version. v4 is the bump that made sub-letting
-    // a required three-way choice. Pinned explicitly because every other assertion in
+    // different deeds must never report one authored version. v5 is the bump that made the
+    // inventory annexure one item per line. Pinned explicitly because every other assertion in
     // this suite reads the version dynamically, which would let a revert through silently.
     assertThat(new TemplateDefinitionLoader().loadResource(ROOT + "base.yaml").meta().version())
-        .isEqualTo(4);
+        .isEqualTo(5);
   }
 
   @Test
