@@ -404,7 +404,8 @@ const modalErrors = computed(() =>
 
 /**
  * Whether the open section violates a CROSS-FIELD rule. Drives only the Save button's disabled state:
- * a malformed date also blocks the save (`blocksSave`, in `saveSection`) but leaves the button live,
+ * a malformed date or an invalid number also blocks the save (`blocksSave`, in `saveSection`) but
+ * leaves the button live,
  * because a dead button gives no reason -- the click blurs the field and reveals its error instead.
  */
 const hasModalCrossFieldErrors = computed(
@@ -474,7 +475,8 @@ function saveSection(): void {
   // per-field "required" error must still be saveable, because capture is progressive and a
   // section may be filled over more than one visit.
   // A malformed date blocks too: saving its text would send garbage to the preview, and keeping the
-  // previous value would silently replace the user's edit. A blank date still saves.
+  // previous value would silently replace the user's edit. So does an invalid number, which would
+  // pass create and then fail draft generation. A blank one still saves.
   if (activeSection.value && blocksSave(activeSection.value.fields, modalForm))
     return;
   // Read-only (server-derived) keys are NOT committed: the server strips them from captureData as

@@ -1631,6 +1631,25 @@ describe("CaptureForm: dd/mm/yyyy date entry", () => {
     ).toBe("31/02/2026");
   });
 
+  it("refuses to save an invalid amount, which would otherwise fail only after create", async () => {
+    const wrapper = await mountReady();
+    await fillSection(wrapper, "financial-terms", { monthlyRent: "25000" });
+
+    await wrapper.find('[data-testid="section-financial-terms"]').trigger("click");
+    const rent = wrapper.find('[data-testid="field-monthlyRent"]');
+    await rent.setValue("1e3");
+    await rent.trigger("blur");
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="field-error-monthlyRent"]').text()).toMatch(
+      /at most two decimal places/,
+    );
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}");
+    expect(draft.data?.["financial-terms"]?.monthlyRent).toBe("25000");
+  });
+
   it("drops a non-ISO date from a resumed draft", async () => {
     localStorage.setItem(
       DRAFT_KEY,

@@ -79,8 +79,12 @@ export function validateField(field: FormField, raw: string): string | null {
   if (field.type === "int" || field.type === "money") {
     const n = Number(value);
     if (!Number.isFinite(n)) return `${field.label} must be a number.`;
-    if (field.type === "int" && !Number.isInteger(n))
+    // Plain digits only: `Number` also takes "1e3" and "3500.555", which the server stores and the
+    // deed prints verbatim ("INR 1E+3").
+    if (field.type === "int" && !/^-?\d+$/.test(value))
       return `${field.label} must be a whole number.`;
+    if (field.type === "money" && !/^-?\d+(\.\d{1,2})?$/.test(value))
+      return `${field.label} must be an amount in rupees, with at most two decimal places.`;
     if (v?.min != null && n < v.min)
       return `${field.label} must be at least ${v.min}.`;
     if (v?.max != null && n > v.max)
@@ -241,19 +245,23 @@ export function crossFieldErrors(
 }
 
 /**
- * Whether a section must not be saved as it stands: a cross-field rule fails, or a date field holds
- * a non-empty value that is not a valid date. Missing is allowed, wrong is not -- a blank date is
- * reported as required but still saves (capture is progressive), while a malformed one would
- * otherwise reach the preview as raw text or be silently replaced by the previous value.
+ * Whether a section must not be saved as it stands: a cross-field rule fails, or a date, whole-number
+ * or money field holds a non-empty value that is invalid. Missing is allowed, wrong is not -- a blank
+ * field is reported as required but still saves (capture is progressive), while a wrong one would
+ * otherwise reach the preview as raw text, or pass create and then fail draft generation.
  */
 export function blocksSave(fields: FormField[], data: SectionData): boolean {
   if (Object.keys(crossFieldErrors(fields, data)).length > 0) return true;
   return fields.some((f) => {
-    if (f.type !== "date" || f.readOnly) return false;
+    if (f.readOnly || !BLOCKING_WHEN_INVALID.has(f.type)) return false;
     const value = (data[f.key] ?? "").trim();
     return value !== "" && validateField(f, value) !== null;
   });
 }
+
+// A value of these types that is present but invalid would be stored, pass create, and then fail
+// draft generation -- after the agreement already exists. Blank is still allowed (progressive capture).
+const BLOCKING_WHEN_INVALID = new Set(["date", "int", "money"]);
 
 /** True when a section carries at least one required field (so it counts toward completeness). */
 export function isSectionRequired(fields: FormField[]): boolean {
