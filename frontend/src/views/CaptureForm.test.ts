@@ -708,7 +708,7 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(mockedCreate).toHaveBeenCalledOnce();
   });
 
-  it("Reset draft clears the client-held working set and storage", async () => {
+  it("Start over, once confirmed, clears the client-held working set and storage", async () => {
     const wrapper = await mountReady();
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
     expect(
@@ -719,6 +719,7 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     );
 
     await wrapper.find('[data-testid="reset"]').trigger("click");
+    await wrapper.find('[data-testid="confirm-ok"]').trigger("click");
     await flushPromises();
 
     expect(
@@ -727,6 +728,46 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(wrapper.find('[data-testid="status-property"]').text()).toBe(
       "Needs input",
     );
+  });
+
+  it("Start over, when cancelled, keeps everything typed", async () => {
+    const wrapper = await mountReady();
+    await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
+
+    await wrapper.find('[data-testid="reset"]').trigger("click");
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="confirm-cancel"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(false);
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).not.toBeNull();
+    expect(wrapper.find('[data-testid="status-property"]').text()).toBe(
+      "Ready",
+    );
+  });
+
+  it("offers no Start over while editing a saved agreement", async () => {
+    const wrapper = mount(CaptureForm, {
+      props: { agreementId: "agr-1", initialAgreement: fakeAgreement() },
+    });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="reset"]').exists()).toBe(false);
+  });
+
+  it("withdraws Start over once the new agreement is created", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    expect(wrapper.find('[data-testid="reset"]').exists()).toBe(true);
+
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="reset"]').exists()).toBe(false);
   });
 
   it("surfaces a schema-load failure without rendering a section rail", async () => {

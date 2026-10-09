@@ -30,6 +30,7 @@ import PaymentConfirmation from "./PaymentConfirmation.vue";
 import StampQuoteStep from "./StampQuoteStep.vue";
 import type { StampSelection } from "../api/stampQuote";
 import LegalDisclaimer from "../components/LegalDisclaimer.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import { fetchEligibleOrNone } from "../api/jurisdictions";
 import {
   formatMinorUnits,
@@ -681,6 +682,17 @@ function resetDraft(): void {
   schedulePreview();
 }
 
+// "Start over" wipes everything typed with no undo, so it asks first; focus returns to the button.
+const confirmingReset = ref(false);
+const startOverButton = ref<HTMLButtonElement | null>(null);
+
+async function closeResetConfirm(reset: boolean): Promise<void> {
+  if (reset) resetDraft();
+  confirmingReset.value = false;
+  await nextTick();
+  startOverButton.value?.focus();
+}
+
 // ---------------------------------------------------------------------------
 // Final action: create + generate-as-draft via the EXISTING endpoints, then clear the client-held
 // draft (Save & continue is the only thing that persists server-side).
@@ -1133,7 +1145,19 @@ onBeforeUnmount(() => {
           Complete {{ remainingRequired }} more required section(s)
         </span>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
+        <!-- Start over sits furthest from Save & continue: destructive, rare, and confirmed. An edit
+             or a created agreement has nothing to start over from (the draft slot is not theirs). -->
+        <button
+          v-if="schema && !editMode && !saved"
+          ref="startOverButton"
+          type="button"
+          class="rounded px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          data-testid="reset"
+          @click="confirmingReset = true"
+        >
+          Start over
+        </button>
         <button
           type="button"
           class="rounded border border-slate-300 px-3 py-2 text-sm font-medium"
@@ -1340,17 +1364,6 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-
-        <div v-if="schema" class="px-4 py-3">
-          <button
-            type="button"
-            class="text-xs text-slate-400 underline"
-            data-testid="reset"
-            @click="resetDraft"
-          >
-            Reset draft
-          </button>
-        </div>
       </aside>
 
       <!-- Live preview pane -->
@@ -1500,6 +1513,20 @@ onBeforeUnmount(() => {
          commit to, so it is where the notice has to be -- not on the marketing page. -->
     <LegalDisclaimer variant="bar" />
   </div>
+
+  <ConfirmDialog
+    v-if="confirmingReset"
+    title="Clear all entered details?"
+    confirm-label="Clear"
+    cancel-label="Keep editing"
+    @confirm="closeResetConfirm(true)"
+    @cancel="closeResetConfirm(false)"
+  >
+    <p>
+      This removes everything you've typed for this agreement. It can't be
+      undone.
+    </p>
+  </ConfirmDialog>
 
   <!-- Section modal (focus-trapped; full-screen bottom sheet on phone) -->
   <div
