@@ -655,6 +655,59 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     ).toBeNull();
   });
 
+  it("never writes the new-agreement draft while editing a saved agreement", async () => {
+    // The leak this guards: edit AM-1042, then "Create new" for the same template resumed
+    // AM-1042's parties and rent from the shared draft slot.
+    const wrapper = mount(CaptureForm, {
+      props: {
+        agreementId: "agr-1",
+        initialAgreement: fakeAgreement(),
+        state: "IN",
+        type: "residential",
+      },
+    });
+    await flushPromises();
+
+    await fillSection(wrapper, "parties", { tenantName: "Tara Sen" });
+
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).toBeNull();
+  });
+
+  it("does not re-write the draft from section edits after a successful create", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    await wrapper.find('[data-testid="save-continue"]').trigger("click");
+    await flushPromises();
+
+    await fillSection(wrapper, "parties", { tenantName: "Tara Sen-Rao" });
+
+    expect(
+      localStorage.getItem("am.preview.draft.v1.IN.residential"),
+    ).toBeNull();
+  });
+
+  it("closes Save & continue after a create so a second click cannot duplicate the agreement", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+
+    await save().trigger("click");
+    await flushPromises();
+    expect(save().attributes("disabled")).toBeDefined();
+
+    // :disabled is only the first line: with it stripped, the handler must still refuse.
+    save().element.removeAttribute("disabled");
+    await save().trigger("click");
+    await flushPromises();
+    expect(mockedCreate).toHaveBeenCalledOnce();
+  });
+
   it("Reset draft clears the client-held working set and storage", async () => {
     const wrapper = await mountReady();
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });

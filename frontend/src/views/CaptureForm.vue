@@ -540,7 +540,10 @@ function purgeLegacyGlobalDraft(): void {
   }
 }
 
+// The slot holds an UNSAVED NEW agreement only. Writing it from an edit, or after a create succeeded,
+// resumes that agreement's terms (and its parties' PII) into the next "Create new" for this template.
 function persistDraft(): void {
+  if (editMode.value || saved.value) return;
   try {
     localStorage.setItem(
       draftKey(),
@@ -704,8 +707,12 @@ const savedTrackingNumber = ref<string | null>(
 );
 const saveError = ref<string | null>(null);
 const missingHint = ref<string | null>(null);
+// A new agreement is created exactly once. Re-saving it would need the authenticated full-edit path
+// (PUT), which an anonymous creator cannot use, so Save is closed instead of creating a duplicate.
+const createdOnce = computed(() => !editMode.value && saved.value);
 
 async function saveAndContinue(): Promise<void> {
+  if (createdOnce.value) return; // a second create would be a duplicate agreement
   missingHint.value = null;
   saveError.value = null;
   // Defence-in-depth: the button is already :disabled while any mandatory section is incomplete, but a
@@ -1155,7 +1162,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-          :disabled="saving || !allRequiredDone"
+          :disabled="saving || !allRequiredDone || createdOnce"
           data-testid="save-continue"
           @click="saveAndContinue"
         >
