@@ -511,6 +511,44 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
+  it("keeps Save & continue disabled until a required enum with no default is chosen", async () => {
+    // The sub-letting shape: required, no default, so the select opens on "Select..." and the Term
+    // section stays incomplete until an option is picked (subletting-choice).
+    const schema = sampleSchema();
+    schema.sections
+      .find((s) => s.title === "Term")!
+      .fields.push({
+        key: "subletting",
+        label: "Sub-letting",
+        widget: "select",
+        type: "enum",
+        required: true,
+        options: [
+          { value: "with_owner_consent", label: "With Owner Consent" },
+          { value: "not_allowed", label: "Not Allowed" },
+          { value: "allowed", label: "Allowed" },
+        ],
+      });
+    mockedGetForm.mockResolvedValue(schema);
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+    expect(save().attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[data-testid="required-remaining"]').text()).toContain(
+      "1",
+    );
+
+    await wrapper.find('[data-testid="section-term"]').trigger("click");
+    const select = wrapper.find('[data-testid="field-subletting"]');
+    expect((select.element as HTMLSelectElement).value).toBe("");
+    expect(select.find("option").text()).toBe("Select...");
+    await select.setValue("not_allowed");
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+
+    expect(save().attributes("disabled")).toBeUndefined();
+  });
+
   it("Save & continue creates then generates the draft via the existing endpoints", async () => {
     mockedCreate.mockResolvedValue(fakeAgreement());
     mockedGenerate.mockResolvedValue();

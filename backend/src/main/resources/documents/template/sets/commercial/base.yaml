@@ -15,16 +15,18 @@
 # residential deed as its starting point where it fits; residential-only fields (BHK, furnishing,
 # pets, occupants) do not carry over.
 #
-# PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
+# PARITY CONTRACT: generate-as-draft maps the aggregate-backed field keys
 # (ownerName, ownerFatherName, ownerAddress, tenantName, tenantFatherName, tenantAddress,
 # propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate, endDate). Of those,
 # durationMonths is DERIVED (source: derived, required: false) -- the server computes it from the
 # dates, so it is mapped and rendered but never required of the customer.
-# The rest are the ONLY fields marked required here -- relabelled for commercial (Lessor name,
-# Lessee name, Demised premises, Monthly lease rent, Lease term, ...) but the SAME keys, so the signed
-# draft (generate) and the live preview stay in parity. Every other field is optional or carries a
-# system-authored default. A mandatory section (optional: false) always renders; its individual
-# fields may still be optional. The eSign anchors derive from the keys (ownerName -> esign:owner,
+# The rest are required here -- relabelled for commercial (Lessor name, Lessee name, Demised
+# premises, Monthly lease rent, Lease term, ...) but the SAME keys, so the signed draft (generate)
+# and the live preview stay in parity. Beyond them a field may be required only if it carries a
+# system-authored default or is USER-ANSWERED (see sets/rental/base.yaml: required, no default, in
+# the parity guards' allowlist -- today `subletting` -- and shown in a mandatory capture section).
+# Every other field is optional or defaulted. A mandatory section (optional: false) always
+# renders; its individual fields may still be optional. The eSign anchors derive from the keys (ownerName -> esign:owner,
 # tenantName -> esign:tenant); the Lessor/Lessee labels are display-only.
 # Sandbox + dummy data only.
 meta:
@@ -43,7 +45,11 @@ meta:
   # address here) became required and aggregate-backed, matching the agreement API's @NotBlank and
   # the residential set's v4 (capture-required-fields-drift). Bumped because the composed template
   # and potentially the rendered lease change.
-  version: 3
+  #
+  # v4 (2026-10-09): the fixed no-subletting covenant became a required three-way choice
+  # (subletting-choice) -- see the residential set's v5 note. Bumped because every rendered lease
+  # changes.
+  version: 4
   status: published
   document:
     title: "Commercial Lease Agreement"
@@ -87,6 +93,9 @@ fields:
       default: 3, validation: { min: 0, max: 24 } }
   - { key: fitOutMonths,     label: "Fit-out / rent-free period (months)", type: int,     required: false,
       default: 1, validation: { min: 0, max: 12 } }
+  # USER-ANSWERED (parity category 3): required with NO default -- see sets/rental/base.yaml.
+  - { key: subletting,       label: "Sub-letting",                        type: enum,     required: true,
+      options: [ with_owner_consent, not_allowed, allowed ] }
   # --- Financial ---
   - { key: monthlyRent,      label: "Monthly lease rent (INR)",           type: money,    required: true }
   - { key: securityDeposit,  label: "Security deposit (INR)",             type: money,    required: true }
@@ -221,10 +230,24 @@ clauses:
     text: >-
       The Lessee shall keep the Premises in good and tenantable condition and shall not make any
       structural alteration or addition without the Lessor's prior written consent.
-  - id: noSublettingClause
+  # One covenant per `subletting` option -- see sets/rental/base.yaml.
+  - id: sublettingWithConsentClause
+    showWhen: 'subletting == "with_owner_consent"'
     text: >-
       The Lessee shall not sublet, assign, or part with possession of the Premises, in whole or in
       part, without the Lessor's prior written consent.
+  - id: sublettingProhibitedClause
+    showWhen: 'subletting == "not_allowed"'
+    text: >-
+      The Lessee shall not sublet, assign, or part with possession of the Premises, in whole or in
+      part, under any circumstances.
+  - id: sublettingPermittedClause
+    showWhen: 'subletting == "allowed"'
+    text: >-
+      The Lessee may sublet the Premises, in whole or in part, after giving the Lessor prior written
+      notice of the sub-tenant's name, and shall remain liable to the Lessor for the rent and every
+      obligation under this Agreement. The Lessee shall not assign this Agreement without the Lessor's
+      prior written consent.
   - id: inspectionClause
     text: >-
       The Lessor or the Lessor's authorised agent may enter and inspect the Premises at reasonable
@@ -308,7 +331,7 @@ sections:
     render: keyvalue
     optional: false
     entries: [ agreementDate, startDate, endDate, durationMonths, lockInMonths, noticePeriodMonths,
-               fitOutMonths, termClause, lockInClause, noticeClause, fitOutClause ]
+               fitOutMonths, subletting, termClause, lockInClause, noticeClause, fitOutClause ]
   - title: "Financial"
     render: keyvalue
     optional: false
@@ -336,7 +359,8 @@ sections:
   - title: "Now This Agreement Witnesseth"
     render: clauses
     optional: false
-    entries: [ recital, useClause, careOfPremisesClause, noSublettingClause, inspectionClause,
+    entries: [ recital, useClause, careOfPremisesClause, sublettingWithConsentClause,
+               sublettingProhibitedClause, sublettingPermittedClause, inspectionClause,
                quietEnjoymentClause, handoverClause, disputeClause, disputeAlternativeClause,
                stampRegistrationClause,
                serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]

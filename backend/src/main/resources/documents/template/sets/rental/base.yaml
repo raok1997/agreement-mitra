@@ -14,13 +14,17 @@
 # shared base -- available to National and Telangana alike -- rather than only in the Telangana
 # layer; the Telangana layers add only the statutory overlay and jurisdiction default over this set.
 #
-# PARITY CONTRACT: generate-as-draft maps only the aggregate-backed field keys
+# PARITY CONTRACT: generate-as-draft maps the aggregate-backed field keys
 # (ownerName, ownerFatherName, ownerAddress, tenantName, tenantFatherName, tenantAddress,
 # propertyAddress, monthlyRent, securityDeposit, durationMonths, startDate, endDate). Of those,
 # durationMonths is DERIVED (source: derived, required: false) -- the server computes it from the
 # dates, so it is mapped and rendered but never required of the customer.
-# The rest are the ONLY fields marked required here -- every other field is optional or carries
-# a system-authored default, so the signed draft (generate) and the live preview stay in parity.
+# A field may be required only if it is (1) one of the other aggregate-backed keys, (2) carries a
+# system-authored default, or (3) is USER-ANSWERED: required, no default, named in the parity
+# guards' shared allowlist (today `subletting` alone), and shown as a required field in a mandatory
+# capture section -- so the form always asks it, and generate refuses until it is answered.
+# Every other field is optional or defaulted, so the signed draft (generate) and the live preview
+# stay in parity.
 # A mandatory section (optional: false) always renders; its individual fields may still be optional.
 # Sandbox + dummy data only.
 meta:
@@ -64,7 +68,12 @@ meta:
   # owner/tenant signer, so the stored party record wins over a differing capture-map value, and a
   # blank legacy party field fails generate instead of rendering a recital with blanks. Bumped
   # because the composed template and potentially the rendered deed change.
-  version: 4
+  #
+  # v5 (2026-10-09): the fixed no-subletting covenant became a required three-way choice
+  # (subletting-choice). A lease silent on sub-letting lets the tenant sublet and assign (Transfer
+  # of Property Act s.108(j)), so the covenant cannot be optional; instead `subletting` (in Term, no
+  # default) selects one of three option-gated covenants. Bumped because every rendered deed changes.
+  version: 5
   status: published
   # Centred document header (M1 draws it from meta.document). executionLine is system-authored text
   # with {{slot}} fills only, HTML-escaped at compile; when agreementDate is blank the projection
@@ -115,6 +124,10 @@ fields:
       default: 6, validation: { min: 0, max: 60 } }
   - { key: noticePeriodMonths, label: "Notice period (months)",          type: int,      required: false,
       default: 1, validation: { min: 0, max: 12 } }
+  # USER-ANSWERED (parity category 3): required with NO default -- the user must choose, because
+  # each option selects a different covenant and silence would flip the owner's position.
+  - { key: subletting,       label: "Sub-letting",                       type: enum,     required: true,
+      options: [ with_owner_consent, not_allowed, allowed ] }
   # --- Financial ---
   - { key: monthlyRent,      label: "Monthly rent (INR)",                type: money,    required: true }
   - { key: securityDeposit,  label: "Security deposit (INR)",            type: money,    required: true }
@@ -240,10 +253,26 @@ clauses:
     text: >-
       The Tenant shall keep the Premises in good and tenantable condition and shall not make any
       structural alteration or addition without the Owner's prior written consent.
-  - id: noSublettingClause
+  # One covenant per `subletting` option, as with disputeClause / disputeAlternativeClause: each
+  # option changes the sentence, so a humanised token inside one clause would not read as deed text.
+  # `allowed` permits sub-letting only -- assignment still needs the Owner's consent.
+  - id: sublettingWithConsentClause
+    showWhen: 'subletting == "with_owner_consent"'
     text: >-
       The Tenant shall not sublet, assign, or part with possession of the Premises, in whole or in
       part, without the Owner's prior written consent.
+  - id: sublettingProhibitedClause
+    showWhen: 'subletting == "not_allowed"'
+    text: >-
+      The Tenant shall not sublet, assign, or part with possession of the Premises, in whole or in
+      part, under any circumstances.
+  - id: sublettingPermittedClause
+    showWhen: 'subletting == "allowed"'
+    text: >-
+      The Tenant may sublet the Premises, in whole or in part, after giving the Owner prior written
+      notice of the sub-tenant's name, and shall remain liable to the Owner for the rent and every
+      obligation under this Agreement. The Tenant shall not assign this Agreement without the Owner's
+      prior written consent.
   - id: inspectionClause
     text: >-
       The Owner or the Owner's authorised agent may enter and inspect the Premises at reasonable times
@@ -323,7 +352,7 @@ sections:
     render: keyvalue
     optional: false
     entries: [ agreementDate, startDate, endDate, durationMonths, lockInMonths, noticePeriodMonths,
-               termClause, lockInClause, noticeClause ]
+               subletting, termClause, lockInClause, noticeClause ]
   - title: "Financial"
     render: keyvalue
     optional: false
@@ -351,7 +380,8 @@ sections:
   - title: "Now This Agreement Witnesseth"
     render: clauses
     optional: false
-    entries: [ recital, useClause, careOfPremisesClause, noSublettingClause, inspectionClause,
+    entries: [ recital, useClause, careOfPremisesClause, sublettingWithConsentClause,
+               sublettingProhibitedClause, sublettingPermittedClause, inspectionClause,
                handoverClause, disputeClause, disputeAlternativeClause, stampRegistrationClause,
                serviceOfNoticeClause, governingLawClause, severabilityClause, entireAgreementClause ]
   # Optional fixtures/inventory annexure (render: annexure), opt-in, with a dummy inventory scaffold.

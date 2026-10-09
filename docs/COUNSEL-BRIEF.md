@@ -530,8 +530,19 @@ almost every agreement we issue, and should be reviewed as such.
 17. "The Tenant shall keep the Premises in good and tenantable condition and shall not make
     any structural alteration or addition without the Owner's prior written consent."
 
-18. "The Tenant shall not sublet, assign, or part with possession of the Premises, in whole
-    or in part, without the Owner's prior written consent."
+**Sub-letting (always appears, in one of three forms chosen by the user)**
+
+18. The user must choose one; there is no default, because a lease silent on sub-letting lets
+    the tenant sublet and assign (Transfer of Property Act, s.108(j)). Either "The Tenant shall
+    not sublet, assign, or part with possession of the Premises, in whole or in part, without
+    the Owner's prior written consent." or "The Tenant shall not sublet, assign, or part with
+    possession of the Premises, in whole or in part, under any circumstances." or "The Tenant
+    may sublet the Premises, in whole or in part, after giving the Owner prior written notice
+    of the sub-tenant's name, and shall remain liable to the Owner for the rent and every
+    obligation under this Agreement. The Tenant shall not assign this Agreement without the
+    Owner's prior written consent."
+
+**Covenants (always appear), continued**
 
 19. "The Owner or the Owner's authorised agent may enter and inspect the Premises at
     reasonable times upon reasonable prior notice to the Tenant."

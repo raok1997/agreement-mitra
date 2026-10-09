@@ -9,10 +9,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.agreementmitra.identity.IdentityService;
+import in.agreementmitra.identity.oauth.HandoffService;
+import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.BlobStore;
 import in.agreementmitra.support.GotenbergTestConfig;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.PageFurniture;
+import in.agreementmitra.support.SessionCookie;
+import in.agreementmitra.support.StaffSessions;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -31,6 +36,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -67,6 +75,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *       the served form, reach the generated draft from the stored party record (not the capture
  *       map), and a blank legacy party field fails generate and the id-bound preview with
  *       field-level errors.
+ *   <li><b>subletting-choice</b> -- the user-answered {@code subletting} can only come from the
+ *       capture state, so an agreement without it is refused at generate and at the id-bound
+ *       preview, and an answered one carries its covenant into the stored draft.
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -83,6 +94,9 @@ class AgreementDocumentFormatE2EIntegrationTest {
   @Autowired private TestRestTemplate rest;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private BlobStore blobStore;
+  @Autowired private IdentityService identityService;
+  @Autowired private HandoffService handoffService;
+  @Autowired private SessionService sessionService;
   private final ObjectMapper mapper = new ObjectMapper();
 
   /** A realistic Telangana working set (the aggregate-backed keys plus a few add-on fields). */
@@ -448,16 +462,18 @@ class AgreementDocumentFormatE2EIntegrationTest {
   }
 
   @Test
-  void aNoCaptureAgreementGeneratesADraftCarryingThePartyDetailsFromItsSigners() throws Exception {
+  void aNoCaptureAgreementIsRefusedForTheMissingSublettingAnswer() throws Exception {
     UUID id = createAgreement(null);
 
-    assertThat(generate(id).getStatusCode()).isEqualTo(HttpStatus.OK);
+    ResponseEntity<String> generated = generate(id);
+    assertThat(generated.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertRequiredErrorsOnly(generated.getBody(), "subletting:required");
+    assertNothingStoredOrPinned(id);
 
-    assertThat(draftText(id))
-        .contains(OWNER_FATHER)
-        .contains(OWNER_ADDRESS)
-        .contains(TENANT_FATHER)
-        .contains(TENANT_ADDRESS);
+    ResponseEntity<String> preview =
+        rest.getForEntity("/api/agreements/{id}/preview", String.class, id);
+    assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertRequiredErrorsOnly(preview.getBody(), "subletting:required");
   }
 
   @Test
@@ -471,32 +487,104 @@ class AgreementDocumentFormatE2EIntegrationTest {
 
     ResponseEntity<String> generated = generate(id);
     assertThat(generated.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-    assertRequiredOwnerPartyErrorsOnly(generated.getBody());
-
-    Map<String, Object> row =
-        jdbc.queryForMap(
-            "SELECT draft_pdf_key, template_content_hash, template_layer_versions,"
-                + " draft_execution_date FROM agreement WHERE id = ?",
-            id);
-    assertThat(row.values()).as("nothing stored or pinned").containsOnlyNulls();
+    assertRequiredErrorsOnly(
+        generated.getBody(),
+        "ownerFatherName:required",
+        "ownerAddress:required",
+        "subletting:required");
+    assertNothingStoredOrPinned(id);
 
     ResponseEntity<String> preview =
         rest.getForEntity("/api/agreements/{id}/preview", String.class, id);
     assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-    assertRequiredOwnerPartyErrorsOnly(preview.getBody());
+    assertRequiredErrorsOnly(
+        preview.getBody(),
+        "ownerFatherName:required",
+        "ownerAddress:required",
+        "subletting:required");
   }
 
   @Test
-  void aCaptureMapCannotOverrideThePartyFatherNameFromTheSigner() throws Exception {
+  void anAnsweredAgreementCarriesThePartyDetailsFromItsSignersNotTheCaptureMap() throws Exception {
     String mapValue = "Capturemap Overridefather";
-    UUID id = createAgreement(Map.of("ownerFatherName", mapValue));
+    UUID id =
+        createAgreement(Map.of("ownerFatherName", mapValue, "subletting", "with_owner_consent"));
 
     assertThat(generate(id).getStatusCode()).isEqualTo(HttpStatus.OK);
 
-    assertThat(draftText(id)).contains(OWNER_FATHER).doesNotContain(mapValue);
+    assertThat(draftText(id))
+        .contains(OWNER_FATHER)
+        .doesNotContain(mapValue)
+        .contains(OWNER_ADDRESS)
+        .contains(TENANT_FATHER)
+        .contains(TENANT_ADDRESS);
+
+    ResponseEntity<byte[]> preview =
+        rest.getForEntity("/api/agreements/{id}/preview", byte[].class, id);
+    assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(preview.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+    assertThat(preview.getHeaders().getContentDisposition().getType()).isEqualTo("inline");
+    assertThat(preview.getHeaders().getCacheControl()).contains("no-store");
   }
 
-  private UUID createAgreement(Map<String, Object> captureData) throws Exception {
+  @Test
+  void theCapturedSublettingChoiceReachesTheStoredDraftAndThePinIsRecorded() throws Exception {
+    UUID id = createAgreement(Map.of("subletting", "not_allowed"));
+
+    assertThat(generate(id).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    assertThat(draftText(id))
+        .contains(
+            "part with possession of the Premises, in whole or in part, under any circumstances")
+        // careOfPremisesClause also ends "without the Owner's prior written consent", so match the
+        // consent covenant by its own lead-in.
+        .doesNotContain("in whole or in part, without the Owner")
+        .doesNotContain("may sublet");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT template_content_hash FROM agreement WHERE id = ?", String.class, id))
+        .isNotNull();
+  }
+
+  @Test
+  void aClaimedUnansweredAgreementIsAnUnknownIdToAnotherIdentityNotAFieldError() {
+    UUID id = createAgreement(null);
+    HttpHeaders owner = customer("subletting-owner");
+    assertThat(
+            rest.exchange(
+                    "/api/agreements/{id}/claim",
+                    HttpMethod.POST,
+                    new HttpEntity<>(owner),
+                    String.class,
+                    id)
+                .getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+    HttpEntity<Void> stranger = new HttpEntity<>(customer("subletting-stranger"));
+
+    for (ResponseEntity<String> refused :
+        List.of(
+            rest.exchange(
+                "/api/agreements/{id}/preview", HttpMethod.GET, stranger, String.class, id),
+            rest.exchange(
+                "/api/agreements/{id}/document", HttpMethod.POST, stranger, String.class, id))) {
+      assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+      assertThat(refused.getBody()).doesNotContain("errors").doesNotContain("subletting");
+    }
+  }
+
+  @Test
+  void theOldStatelessPreviewRouteIsGone() {
+    ResponseEntity<String> response =
+        rest.postForEntity("/api/agreements/preview", Map.of("data", Map.of()), String.class);
+
+    // No handler serves it; SecurityConfig's fail-closed anyRequest().denyAll() answers an
+    // unmatched route with 403 before dispatch could 404 it. So this proves only that the route is
+    // not served; that no @PostMapping remains was checked by grep at subletting-choice validate.
+    assertThat(response.getStatusCode().is2xxSuccessful()).isFalse();
+    assertThat(response.getStatusCode().value()).isIn(403, 404, 405);
+  }
+
+  private UUID createAgreement(Map<String, Object> captureData) {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("propertyAddress", "F1, Sri Sai Krishna Apartments, Kukatpally, Hyderabad");
     body.put("monthlyRent", "16000.00");
@@ -525,9 +613,29 @@ class AgreementDocumentFormatE2EIntegrationTest {
     if (captureData != null) {
       body.put("captureData", captureData);
     }
-    ResponseEntity<String> created = rest.postForEntity("/api/agreements", body, String.class);
+    @SuppressWarnings("rawtypes")
+    ResponseEntity<Map> created = rest.postForEntity("/api/agreements", body, Map.class);
     assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-    return UUID.fromString(mapper.readTree(created.getBody()).path("id").asText());
+    return UUID.fromString((String) created.getBody().get("id"));
+  }
+
+  private HttpHeaders customer(String subject) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.add(
+        HttpHeaders.COOKIE,
+        SessionCookie.header(
+            StaffSessions.customerSession(
+                identityService, handoffService, sessionService, subject)));
+    return headers;
+  }
+
+  private void assertNothingStoredOrPinned(UUID id) {
+    Map<String, Object> row =
+        jdbc.queryForMap(
+            "SELECT draft_pdf_key, template_content_hash, template_layer_versions,"
+                + " draft_execution_date FROM agreement WHERE id = ?",
+            id);
+    assertThat(row.values()).as("nothing stored or pinned").containsOnlyNulls();
   }
 
   private ResponseEntity<String> generate(UUID id) {
@@ -543,14 +651,13 @@ class AgreementDocumentFormatE2EIntegrationTest {
     }
   }
 
-  private void assertRequiredOwnerPartyErrorsOnly(String body) throws Exception {
+  private void assertRequiredErrorsOnly(String body, String... expected) throws Exception {
     JsonNode errors = mapper.readTree(body).get("errors");
     List<String> pairs = new ArrayList<>();
     for (JsonNode e : errors) {
       pairs.add(e.path("field").asText() + ":" + e.path("message").asText());
     }
-    assertThat(pairs)
-        .containsExactlyInAnyOrder("ownerFatherName:required", "ownerAddress:required");
+    assertThat(pairs).containsExactlyInAnyOrder(expected);
     // Keys and rule tokens only -- never a party value.
     assertThat(body)
         .doesNotContain("Bindu")

@@ -20,9 +20,11 @@ import org.springframework.transaction.annotation.Transactional;
  * with no per-template code change. For each set it reads the {@code base.yaml} {@code meta} (the
  * base gives the national {@code (state, type)} row) and every {@code state-<XX>.patch.yaml}
  * overlay beside it (each gives a {@code (XX, type)} row); the row's {@code version}, {@code
- * status}, name, and description <b>derive from the base definition</b> and cannot drift from the
- * layer set they point at (design Open Question: loader over data-insert). Only sets whose base is
- * {@code published} are seeded.
+ * status}, name, and description <b>derive from the base definition</b> when the row is inserted
+ * (design Open Question: loader over data-insert). Only sets whose base is {@code published} are
+ * seeded. An existing row is never updated, so after a base {@code version} bump a previously
+ * seeded database keeps the old number -- see {@code catalog-seeded-version-stale} in the follow-up
+ * register.
  *
  * <p>Gated to {@code local}/{@code sandbox} (sandbox + dummy data only) and idempotent <b>per
  * {@code (state, type)} dimension pair</b>: it inserts only the discovered rows whose {@code

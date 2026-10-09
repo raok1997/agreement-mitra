@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 import in.agreementmitra.documents.api.FormSchema;
 import in.agreementmitra.documents.api.FormSection;
+import in.agreementmitra.support.TemplateParity;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -155,9 +156,12 @@ class ProductionKarnatakaLayerSetsTest {
   @ParameterizedTest(name = "(KA, {0})")
   @CsvSource({"residential", "commercial"})
   void theParityContractHoldsForKarnataka(String type) {
-    // generate-as-draft maps only the aggregate-backed keys; every other field must be optional or
-    // defaulted, or a Karnataka draft would fail required-validation where a preview succeeded.
+    // generate-as-draft maps the aggregate-backed keys plus the user-answered fields; every other
+    // field must be optional or defaulted, or a Karnataka draft would fail required-validation
+    // where a preview succeeded.
     EffectiveTemplate eff = resolve(type);
+    assertThat(aggregateBackedData().keySet()).isEqualTo(TemplateParity.AGGREGATE_KEYS);
+    assertThat(SublettingCovenants.parityViolations(eff)).isEmpty();
 
     assertThatCode(
             () ->
@@ -165,7 +169,9 @@ class ProductionKarnatakaLayerSetsTest {
                     .compile(
                         eff,
                         SubmittedDataValidator.validateAndCoerce(
-                            eff, aggregateBackedData(), ProjectionMode.GENERATE)))
+                            eff,
+                            TemplateParity.withUserAnswers(aggregateBackedData()),
+                            ProjectionMode.GENERATE)))
         .doesNotThrowAnyException();
   }
 
@@ -177,6 +183,20 @@ class ProductionKarnatakaLayerSetsTest {
         .contains("esign:tenant");
   }
 
+  @ParameterizedTest(name = "(KA, {0})")
+  @CsvSource({"residential,Tenant,Owner", "commercial,Lessee,Lessor"})
+  void eachSublettingOptionRendersItsOwnCovenant(String type, String party, String counterparty) {
+    EffectiveTemplate eff = resolve(type);
+    SublettingCovenants.assertRequiredTermFieldWithNoDefault(
+        eff, "residential".equals(type) ? "noticePeriodMonths" : "fitOutMonths");
+    SublettingCovenants.assertTheWitnessethListsAllThreeCovenants(eff);
+    assertThat(clauseIds(eff))
+        .containsAll(SublettingCovenants.CLAUSE_IDS)
+        .doesNotContain("noSublettingClause");
+    SublettingCovenants.assertEachOptionRendersItsOwnCovenant(
+        eff, aggregateBackedData(), party, counterparty);
+  }
+
   // --- helpers -------------------------------------------------------------------------------
 
   private static String compileWithNoOptionalSections(String type) {
@@ -185,7 +205,9 @@ class ProductionKarnatakaLayerSetsTest {
         .compile(
             eff,
             SubmittedDataValidator.validateAndCoerce(
-                eff, aggregateBackedData(), ProjectionMode.GENERATE),
+                eff,
+                TemplateParity.withUserAnswers(aggregateBackedData()),
+                ProjectionMode.GENERATE),
             null,
             Set.of());
   }

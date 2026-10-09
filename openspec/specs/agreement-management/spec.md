@@ -407,14 +407,19 @@ SHALL use the agreement's **stored capture state** when present -- feeding the s
 map (reconciled so the authoritative fixed columns win) and the stored `activeSections` into the
 document projection -- so the **stored/signed draft matches the live preview the user saw** (preview and
 draft parity). When the agreement has **no** stored capture state, the render SHALL fall back to the
-fixed-column mapping with no optional sections. The fixed columns include the first owner's and the
+fixed-column mapping with no optional sections -- which, for a set with a user-answered field, reaches
+validation only to be refused (below). The fixed columns include the first owner's and the
 first tenant's father's/spouse's name and current address, so those values reach the document from the
 stored party record in both cases; when any of them is blank (a row persisted before structured party
 capture, backfilled empty), the render SHALL fail with field-level validation errors naming the missing
-keys rather than render a recital with blanks. Validation precedes the freeze check, so such a row
-reports the `400` even when a signing request exists. The document reference in the provenance line SHALL
-remain the agreement's derived tracking number. Storing the draft SHALL remain frozen once a signing
-request exists (`409`), and the pin SHALL be recorded only after a successful store.
+keys rather than render a recital with blanks. A **user-answered** field (required, no default, not a
+fixed column -- `subletting`) can only come from the capture state, so an agreement whose capture state
+is null or lacks it SHALL likewise fail with a field-level `required` error naming that key; this
+server-side refusal is the enforcing control, the capture form's gating being a convenience. Validation
+precedes the freeze check, so such a row reports the `400` even when a signing request exists. The
+document reference in the provenance line SHALL remain the agreement's derived tracking number. Storing
+the draft SHALL remain frozen once a signing request exists (`409`), and the pin SHALL be recorded only
+after a successful store.
 
 #### Scenario: The stored draft renders the added optional sections
 
@@ -423,13 +428,14 @@ request exists (`409`), and the pin SHALL be recorded only after a successful st
 - **THEN** the stored draft PDF contains that optional section and the dynamic value, matching what the
   preview showed
 
-#### Scenario: A legacy agreement with no capture state renders from its fixed columns
+#### Scenario: A legacy agreement with no capture state is refused for the missing sub-letting answer
 
 - **GIVEN** an agreement with a null capture state whose parties carry a father's name and current
   address
 - **WHEN** its draft is generated
-- **THEN** the render uses the fixed-column mapping with no optional sections, and the recital carries
-  the first owner's and first tenant's father's names and addresses
+- **THEN** the response is `400` with `errors[]` citing `subletting` as `required` and echoing no field
+  value
+- **AND** no draft is stored and no template pin or execution date is recorded
 
 #### Scenario: A legacy agreement with blank party details fails generate with field errors
 
@@ -437,8 +443,14 @@ request exists (`409`), and the pin SHALL be recorded only after a successful st
   blank (the empty-string backfill of rows persisted before structured party capture)
 - **WHEN** its draft is generated
 - **THEN** the response is `400` with `errors[]` citing `ownerFatherName` and `ownerAddress` as
-  `required` and echoing no field value
+  `required` (alongside `subletting`) and echoing no field value
 - **AND** no draft is stored and no template pin or execution date is recorded
+
+#### Scenario: An agreement whose capture state carries the sub-letting answer generates
+
+- **GIVEN** an agreement whose capture state holds `subletting` = `not_allowed`
+- **WHEN** its draft is generated
+- **THEN** the stored draft carries the not-allowed sub-letting covenant and the pin is recorded
 
 ### Requirement: An agreement persists its full capture state
 
@@ -452,8 +464,8 @@ remain server-managed and SHALL be ignored if present as map keys (anti-mass-ass
 rental columns (property address, monthly rent, security deposit, dates, parties -- including each
 party's father's/spouse's name and current address) SHALL remain authoritative; where the capture map
 repeats them it SHALL NOT override the typed values. When no `captureData` is supplied (an API client
-sending only fixed fields), the agreement SHALL persist a null capture state and render from the fixed
-columns alone.
+sending only fixed fields), the agreement SHALL persist a null capture state; such an agreement SHALL
+NOT generate until a `captureData` carrying every user-answered field (`subletting`) is supplied.
 
 #### Scenario: Create stores the capture state
 
@@ -472,11 +484,11 @@ columns alone.
   signer's validated `fatherName`
 - **THEN** the generated draft's recital carries the signer's `fatherName`, not the capture-map value
 
-#### Scenario: An API client sending only fixed fields is unaffected
+#### Scenario: An API client sending only fixed fields persists but cannot generate
 
 - **WHEN** a client POSTs a valid agreement with no `captureData`
-- **THEN** the system persists a null capture state and the agreement renders from its fixed columns,
-  including the parties' father's names and addresses
+- **THEN** the system persists a null capture state and returns `201 Created`
+- **AND** a later generate of that agreement is refused with a `subletting` `required` error
 
 ### Requirement: A saved agreement round-trips its capture state on read
 

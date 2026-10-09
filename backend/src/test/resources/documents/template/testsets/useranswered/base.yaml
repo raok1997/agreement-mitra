@@ -1,0 +1,32 @@
+# TEST FIXTURE ONLY -- a minimal layer set for the parity guard's user-answered category
+# (openspec/changes/subletting-choice, design D3). Each required, undefaulted, non-aggregate field
+# sits where TemplateParityTest expects a verdict:
+#   subletting      -- allowlisted, required in a mandatory section       -> allowed
+#   carpetAreaSqft  -- NOT allowlisted, required in a mandatory section   -> violation
+#   petPolicy       -- required, but only in an OPTIONAL section          -> violation
+#   orphanAnswer    -- required, listed in no section                     -> violation
+# System-authored dummy content only.
+meta:
+  id: useranswered-demo-base
+  dimensions:
+    state: IN
+    type: residential
+  version: 1
+  status: published
+
+fields:
+  - { key: ownerName,      label: "Owner name",     type: text, required: true }
+  - { key: subletting,     label: "Sub-letting",    type: enum, required: true,
+      options: [ with_owner_consent, not_allowed, allowed ] }
+  - { key: carpetAreaSqft, label: "Carpet area",    type: int,  required: true }
+  - { key: petPolicy,      label: "Pet policy",     type: text, required: true }
+  - { key: orphanAnswer,   label: "Orphan answer",  type: text, required: true }
+
+clauses:
+  - id: parties
+    text: "This Agreement is made by {{ownerName}}."
+
+sections:
+  - { title: Parties, optional: false, entries: [ ownerName, parties ] }
+  - { title: Terms,   optional: false, entries: [ subletting, carpetAreaSqft ] }
+  - { title: Extras,  optional: true,  entries: [ petPolicy ] }
