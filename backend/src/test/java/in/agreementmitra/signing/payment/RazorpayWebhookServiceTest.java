@@ -1,6 +1,7 @@
 package in.agreementmitra.signing.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -171,6 +172,18 @@ class RazorpayWebhookServiceTest {
     when(orderService.applyConfirmation(anyString(), anyString(), anyLong(), any()))
         .thenReturn(ConfirmationOutcome.CONFIRMED);
     assertThat(webhooks.handle(body, sign(body))).isTrue();
+  }
+
+  @Test
+  void aVerifiedWebhookWhosePaymentCouldNotBeRecordedIsNotAcknowledged() {
+    // Returning true here is what tells the gateway to stop redelivering. A payment the database
+    // refused to record must escape instead, so the caller cannot answer 202.
+    PaymentRecordingFailedException failure = new PaymentRecordingFailedException(null, "22001");
+    when(orderService.applyConfirmation(anyString(), anyString(), anyLong(), any()))
+        .thenThrow(failure);
+    String body = paymentCapturedBody(49_900L);
+
+    assertThatThrownBy(() -> webhooks.handle(body, sign(body))).isSameAs(failure);
   }
 
   @Test

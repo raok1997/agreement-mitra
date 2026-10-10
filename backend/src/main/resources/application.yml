@@ -32,14 +32,14 @@ spring:
   flyway:
     enabled: true
     clean-disabled: true
-  # One thread per @Scheduled job - today four: signing and payment reconciliation, delivery retry,
-  # draft retention. Boot's default pool is ONE thread, so a long draft-retention run would otherwise
-  # delay the reconciliation jobs that are the fallback for missed webhooks (stale-draft-purge D7).
-  # A change that adds a @Scheduled job raises this number.
+  # One thread per @Scheduled job - today five: signing and payment reconciliation, delivery retry,
+  # draft retention, staff alert dispatch. Boot's default pool is ONE thread, so a long
+  # draft-retention run would otherwise delay the reconciliation jobs that are the fallback for
+  # missed webhooks (stale-draft-purge D7). A change that adds a @Scheduled job raises this number.
   task:
     scheduling:
       pool:
-        size: 4
+        size: 5
 
 server:
   port: ${SERVER_PORT:8090}
@@ -284,6 +284,22 @@ payment:
     key-id: ${RAZORPAY_KEY_ID:}
     key-secret: ${RZP_KEY_SECRET:}
     webhook-secret: ${RZP_WEBHOOK_SECRET:}
+
+# Staff alert (staff-paid-order-alert). A scheduled sweep finds payment orders the gateway marked
+# paid in the last 24 hours and posts ONE paid-order alert per agreement to the staff Discord channel,
+# plus one duplicate-payment alert per surplus order (double-charge-invisible-to-staff). It only
+# reads payment orders; the payment confirmation path does not know it exists.
+#
+# `discord.webhook-url` is a SECRET - the token is in the URL path and anyone holding it can post to
+# the channel. Env only, never logged. BLANK (the default) or unusable switches the feature off:
+# nothing is recorded and nothing is sent. Retry bounds, backoff and timeouts are code constants
+# (StaffAlertBackoff), not properties, so configuration cannot break the lease they form.
+staff-alert:
+  dispatch-enabled: ${STAFF_ALERT_DISPATCH_ENABLED:true}
+  interval: ${STAFF_ALERT_INTERVAL:PT30S}
+  initial-delay: ${STAFF_ALERT_INITIAL_DELAY:PT1M}
+  discord:
+    webhook-url: ${STAFF_ALERT_DISCORD_WEBHOOK_URL:}
 
 # Object storage for PDFs (MinIO locally / S3-compatible in prod)
 storage:

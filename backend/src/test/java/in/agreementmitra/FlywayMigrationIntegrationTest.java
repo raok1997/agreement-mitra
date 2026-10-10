@@ -225,4 +225,76 @@ class FlywayMigrationIntegrationTest {
       jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
     }
   }
+
+  /**
+   * V28 re-keys {@code staff_alert}. A row written in the V27 shape must keep its key, so a sent or
+   * failed alert is not raised again, and "one paid-order alert per agreement" must still be
+   * enforced by the schema rather than by convention.
+   */
+  @Test
+  void v28ReKeysStaffAlertsKeepingOnePaidOrderAlertPerAgreement() {
+    String schema = "v28_rekey";
+    DriverManagerDataSource scratch =
+        new DriverManagerDataSource(
+            connectionDetails.getJdbcUrl(),
+            connectionDetails.getUsername(),
+            connectionDetails.getPassword());
+    JdbcTemplate jdbc = new JdbcTemplate(scratch);
+    String alerts = schema + ".staff_alert";
+    try {
+      Flyway.configure().dataSource(scratch).schemas(schema).target("27").load().migrate();
+      UUID agreementId =
+          jdbc.queryForObject(
+              "INSERT INTO "
+                  + schema
+                  + ".agreement (id, tracking_reference, property_address, monthly_rent,"
+                  + " security_deposit, term_months, start_date, end_date, created_at)"
+                  + " VALUES (gen_random_uuid(), 'AMV28KEY01', '1 Scratch Road', 1000, 2000, 11,"
+                  + " DATE '2026-01-01', DATE '2026-12-01', now()) RETURNING id",
+              UUID.class);
+      jdbc.update(
+          "INSERT INTO "
+              + alerts
+              + " (agreement_id, status, attempts, next_attempt_at, created_at, sent_at)"
+              + " VALUES (?, 'SENT', 1, now(), now(), now())",
+          agreementId);
+
+      Flyway.configure().dataSource(scratch).schemas(schema).target("28").load().migrate();
+
+      assertThat(
+              jdbc.queryForMap(
+                  "SELECT id, kind, status FROM " + alerts + " WHERE agreement_id = ?",
+                  agreementId))
+          .containsEntry("id", agreementId)
+          .containsEntry("kind", "ORDER_PAID")
+          .containsEntry("status", "SENT");
+      String insert =
+          "INSERT INTO "
+              + alerts
+              + " (id, kind, agreement_id, status, attempts, next_attempt_at, created_at)"
+              + " VALUES (?, ?, ?, 'PENDING', 0, now(), now())";
+      assertThatThrownBy(() -> jdbc.update(insert, agreementId, "ORDER_PAID", agreementId))
+          .as("a second paid-order alert for the agreement collides on the key")
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), "ORDER_PAID", agreementId))
+          .as("a paid-order alert must be keyed by its agreement")
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), "SOMETHING", agreementId))
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), "DUPLICATE_PAYMENT", null))
+          .as("agreement_id stays NOT NULL once it is no longer the key")
+          .isInstanceOf(DataIntegrityViolationException.class);
+      // Duplicate-payment alerts are keyed by the surplus order: an agreement can hold several.
+      jdbc.update(insert, UUID.randomUUID(), "DUPLICATE_PAYMENT", agreementId);
+      jdbc.update(insert, UUID.randomUUID(), "DUPLICATE_PAYMENT", agreementId);
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT count(*) FROM " + alerts + " WHERE agreement_id = ?",
+                  Integer.class,
+                  agreementId))
+          .isEqualTo(3);
+    } finally {
+      jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
+  }
 }

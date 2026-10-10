@@ -33,6 +33,10 @@ import org.springframework.web.bind.annotation.RestController;
  * fails (no side effect of any kind), {@code 202} once verified - the same acknowledgement whether
  * or not the order is one we hold, so the endpoint is not an existence oracle. Neither response
  * echoes the body, the signature, or any credential.
+ *
+ * <p>A verified webhook is {@code 202} <b>unless handling it throws</b>. Nothing here catches that:
+ * the request then ends as a server error with no detail in its body, and the gateway delivers the
+ * event again. A payment the database refused to record is one such case, not the only one.
  */
 @RestController
 @RequestMapping("/api/webhooks/razorpay")

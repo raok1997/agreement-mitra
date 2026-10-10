@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.payment;
 
+import in.agreementmitra.signing.SurplusPayment;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
@@ -39,4 +40,28 @@ interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID> {
    */
   List<PaymentOrder> findByStatusAndCreatedAtLessThanOrderByCreatedAtAsc(
       PaymentOrderStatus status, Instant createdBefore, Pageable pageable);
+
+  /**
+   * Agreements with a non-surplus order confirmed paid at or after {@code cutoff} - the staff alert
+   * look-back. The status is a literal, not a parameter, so the planner can use the partial index
+   * on {@code confirmed_at} (V27).
+   */
+  @Query(
+      "select distinct o.agreementId from PaymentOrder o"
+          + " where o.status = in.agreementmitra.signing.payment.PaymentOrderStatus.PAID"
+          + " and o.surplus = false"
+          + " and o.confirmedAt >= :cutoff")
+  List<UUID> findAgreementIdsPaidSince(@Param("cutoff") Instant cutoff);
+
+  /**
+   * Surplus orders confirmed paid at or after {@code cutoff} - the duplicate-payment look-back.
+   * Disjoint from {@link #findAgreementIdsPaidSince} by the surplus predicate; same index.
+   */
+  @Query(
+      "select new in.agreementmitra.signing.SurplusPayment(o.id, o.agreementId)"
+          + " from PaymentOrder o"
+          + " where o.status = in.agreementmitra.signing.payment.PaymentOrderStatus.PAID"
+          + " and o.surplus = true"
+          + " and o.confirmedAt >= :cutoff")
+  List<SurplusPayment> findSurplusPaidSince(@Param("cutoff") Instant cutoff);
 }

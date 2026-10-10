@@ -9,6 +9,7 @@ import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentConfirmation;
 import in.agreementmitra.signing.PaymentOrderQuery;
+import in.agreementmitra.signing.PaymentRecording;
 import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SigningRequestQuery;
@@ -669,6 +670,43 @@ public class AgreementService {
                         "Agreement not found: " + AgreementIds.redact(agreementId)));
     agreement.recordPayment(confirmation, actorIdentityId);
     return toPaymentView(repository.save(agreement));
+  }
+
+  /**
+   * Record a <b>gateway</b> payment confirmation, unless the agreement already holds a payment.
+   * Decided under the agreement's row lock, so two orders confirmed at the same instant cannot both
+   * be recorded, and nor can a gateway confirmation that lands after a manual one. (A manual
+   * confirmation that lands <em>after</em> a gateway one still overwrites it: that seam is
+   * unguarded on purpose.)
+   *
+   * <ul>
+   *   <li>not yet {@code PAID} (unpaid, or waived): recorded with no actor - {@link
+   *       PaymentRecording#RECORDED};
+   *   <li>{@code PAID} under this same reference: nothing written - {@link
+   *       PaymentRecording#ALREADY_RECORDED};
+   *   <li>{@code PAID} under any other reference, or none: nothing written, the first payment's
+   *       record is kept - {@link PaymentRecording#SURPLUS}.
+   * </ul>
+   *
+   * The manual STAFF seam is {@link #recordPayment}, which is deliberately unguarded.
+   */
+  @Transactional
+  public PaymentRecording recordGatewayPayment(UUID agreementId, PaymentConfirmation confirmation) {
+    Agreement agreement =
+        repository
+            .findByIdForUpdate(agreementId)
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "Agreement not found: " + AgreementIds.redact(agreementId)));
+    if (agreement.paymentState() != PaymentState.PAID) {
+      agreement.recordPayment(confirmation, null);
+      repository.save(agreement);
+      return PaymentRecording.RECORDED;
+    }
+    return agreement.paidUnder(confirmation.reference())
+        ? PaymentRecording.ALREADY_RECORDED
+        : PaymentRecording.SURPLUS;
   }
 
   /**

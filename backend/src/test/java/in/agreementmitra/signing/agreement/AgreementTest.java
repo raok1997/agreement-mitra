@@ -391,6 +391,54 @@ class AgreementTest {
     assertThat(agreement.isDeletableDraft(false, false)).isFalse();
   }
 
+  // --- paidUnder (double-charge-invisible-to-staff) -------------------------------
+
+  private static Agreement paidWith(String reference) {
+    Agreement agreement = newAgreement();
+    agreement.recordPayment(
+        new PaymentConfirmation(
+            agreement.getId(), new BigDecimal("499.00"), "INR", reference, Instant.now()),
+        null);
+    return agreement;
+  }
+
+  @Test
+  void anUnpaidOrWaivedAgreementIsPaidUnderNothing() {
+    Agreement unpaid = newAgreement();
+    Agreement waived = newAgreement();
+    waived.waivePayment(UUID.randomUUID(), Instant.now());
+
+    assertThat(unpaid.paidUnder("pay_x")).isFalse();
+    assertThat(waived.paidUnder("pay_x")).isFalse();
+    assertThat(waived.paidUnder(null)).isFalse();
+  }
+
+  @Test
+  void aPaidAgreementIsPaidUnderItsOwnReferenceHoweverItIsTyped() {
+    Agreement agreement = paidWith("PAY_ABC123");
+
+    assertThat(agreement.paidUnder("PAY_ABC123")).isTrue();
+    assertThat(agreement.paidUnder("  pay_abc123 ")).isTrue();
+    assertThat(paidWith("pay_AbC123").paidUnder("PAY_ABC123")).isTrue();
+  }
+
+  @Test
+  void aPaidAgreementIsNotPaidUnderAnotherReferenceOrNone() {
+    Agreement agreement = paidWith("NEFT-2026-77");
+
+    assertThat(agreement.paidUnder("pay_abc123")).isFalse();
+    assertThat(agreement.paidUnder(null)).isFalse();
+    assertThat(agreement.paidUnder("  ")).isFalse();
+  }
+
+  @Test
+  void aPaidAgreementWithNoStoredReferenceIsPaidUnderNothing() {
+    Agreement agreement = paidWith(null);
+
+    assertThat(agreement.paidUnder("pay_abc123")).isFalse();
+    assertThat(agreement.paidUnder(null)).isFalse();
+  }
+
   @Test
   void aClosedAgreementIsNotDeletable() {
     Agreement agreement = newAgreement();

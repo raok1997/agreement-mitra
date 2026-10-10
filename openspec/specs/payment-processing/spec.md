@@ -6,9 +6,7 @@ Delta to `payment-processing`: what the customer is shown, and sent, at the mome
 confirmed. The existing capability establishes that payment is confirmed by the server and
 never by the browser. This delta adds the customer-facing consequence of that confirmation --
 a distinct confirmation view, and an emailed link that survives the tab being closed.
-
 ## Requirements
-
 ### Requirement: Every party is reachable on an enabled delivery channel before an order is created
 
 The system SHALL NOT create a payment order for an agreement unless every signer on it -- each
@@ -356,3 +354,139 @@ called.
 - **WHEN** checkout is started without a stamp choice for an agreement with no existing order
 - **THEN** the response is a validation error
 - **AND** no call is made to the payment provider
+
+### Requirement: A gateway payment on an already-paid agreement is kept as a surplus payment
+The system SHALL, when a gateway payment is confirmed for an agreement that is at that moment already paid under a different payment reference, mark that payment order paid and surplus, and SHALL NOT change the agreement's recorded payment or repeat any effect of a first payment confirmation.
+
+A payment order is **surplus** when its payment was captured but was not recorded as the
+agreement's payment, because the agreement already held one when it was confirmed. This is the one
+exception to the rule that a gateway confirmation updates the agreement's payment state through the
+payment-gate seam: the agreement's recorded amount, currency, reference, actor and time stay those
+of the first payment, whether that was a gateway payment or a manual staff confirmation.
+
+References are compared by one shared normalisation - the same one a manually recorded reference
+is stored under - so case and surrounding whitespace do not matter. The surplus mark is decided
+while the agreement is locked, is set once when the order is marked paid, and never changes
+afterwards. The confirmation is still acknowledged to the gateway and is still idempotent under
+redelivery. One gateway payment id SHALL be held by at most one payment order.
+
+#### Scenario: A late payment on an expired order after another order was paid
+- **GIVEN** an agreement paid through one payment order, and an earlier order for it that expired
+- **WHEN** the gateway confirms a payment on the expired order
+- **THEN** that order is marked paid and surplus
+- **AND** the agreement's recorded amount, reference and time are unchanged
+- **AND** the confirmation is acknowledged as it is for any confirmed payment
+
+#### Scenario: A late payment on a failed order after another order was paid
+- **GIVEN** an agreement paid through one payment order, and an earlier order for it that failed
+- **WHEN** the gateway confirms a payment on the failed order
+- **THEN** that order is marked paid and surplus and the agreement's recorded payment is unchanged
+
+#### Scenario: A gateway payment after a manual staff confirmation
+- **GIVEN** an agreement staff confirmed as paid by hand under one reference
+- **WHEN** the gateway confirms a payment order for it with a different payment id
+- **THEN** that order is marked paid and surplus
+- **AND** the agreement's recorded reference and actor are still those of the staff confirmation
+
+#### Scenario: Staff recorded the same gateway payment by hand
+- **GIVEN** an agreement staff confirmed as paid using a gateway payment id as the reference, typed in another case or with surrounding whitespace
+- **WHEN** the gateway confirms the payment order carrying that payment id
+- **THEN** that order is marked paid and is not surplus
+- **AND** the agreement's recorded payment is unchanged
+- **AND** the parties are sent the recovery link, as for a first gateway confirmation
+
+#### Scenario: A gateway payment after a waiver
+- **GIVEN** an agreement whose payment staff waived
+- **WHEN** the gateway confirms a payment order for it
+- **THEN** the agreement becomes paid with that payment recorded
+- **AND** the order is marked paid and is not surplus
+
+#### Scenario: A first payment is unaffected
+- **GIVEN** an unpaid agreement
+- **WHEN** the gateway confirms a payment order for it
+- **THEN** the agreement becomes paid with that payment recorded and the order is not surplus
+
+#### Scenario: A surplus payment sends no recovery link
+- **GIVEN** an agreement that is already paid
+- **WHEN** a surplus payment is confirmed for it
+- **THEN** no recovery link is sent for that confirmation
+
+#### Scenario: A surplus confirmation is redelivered
+- **GIVEN** a payment order already marked paid and surplus
+- **WHEN** the same confirmation is delivered again
+- **THEN** nothing changes and the order is still surplus
+
+#### Scenario: A third payment
+- **GIVEN** an agreement with one recorded payment and one surplus payment order
+- **WHEN** the gateway confirms a payment on yet another of its orders
+- **THEN** that order is also marked paid and surplus and the agreement's recorded payment is unchanged
+
+#### Scenario: Two orders for one agreement are confirmed at the same instant
+- **GIVEN** an unpaid agreement with two payment orders, each with a captured payment
+- **WHEN** both confirmations are applied concurrently
+- **THEN** exactly one payment is recorded on the agreement
+- **AND** the other order is marked paid and surplus
+
+#### Scenario: A payment id already held by another order
+- **GIVEN** a payment order already marked paid under one gateway payment id
+- **WHEN** a confirmation for a different order reports that same payment id
+- **THEN** the confirmation is refused as a duplicate reference
+- **AND** that order is not marked paid and is not surplus
+
+### Requirement: A refused gateway confirmation is a duplicate only for the payment uniqueness rules
+The system SHALL report a gateway payment confirmation the database refuses as a duplicate reference only when the refusal comes from the rule that one payment reference is recorded against at most one agreement or the rule that one gateway payment id is held by at most one payment order, and SHALL treat any other refusal as a payment-recording failure.
+
+A **payment-recording failure** records nothing: the payment order keeps its status, it is not
+marked surplus, the agreement's payment state is unchanged, and none of the effects of a first
+payment confirmation happen. It is never reported as a duplicate reference and never as a confirmed
+payment.
+
+What each producer of a confirmation does with a payment-recording failure:
+
+- The gateway webhook SHALL NOT acknowledge it. A verified webhook whose confirmation fails this way
+  is answered with a server error, so the gateway delivers it again.
+- The reconciliation job SHALL leave the order outstanding and read it again on a later run; one
+  order's failure does not stop the rest of the batch.
+- The browser checkout callback SHALL still answer with the current payment progress.
+
+The failure the system raises, and the line it logs for that failure, SHALL name the refused rule
+where the database reports one, and SHALL NOT carry the payment id, the amount, or any row content
+reported by the database.
+
+#### Scenario: A payment id staff already recorded against another agreement
+- **GIVEN** an agreement staff confirmed as paid by hand using a gateway payment id as the reference
+- **WHEN** the gateway confirms a payment order of a different agreement with that same payment id in another letter case
+- **THEN** the confirmation is refused as a duplicate reference
+- **AND** that order is not marked paid and the second agreement stays unpaid
+
+#### Scenario: A refusal that is not a duplicate is not acknowledged to the gateway
+- **GIVEN** an outstanding payment order
+- **WHEN** a verified gateway webhook reports a payment for it that the database refuses for a reason other than the two uniqueness rules
+- **THEN** the webhook is answered with a server error whose body names neither the refused rule nor the payment
+- **AND** the order is still outstanding and not surplus, the agreement is still unpaid, and no recovery link is sent
+- **AND** delivering the same webhook again gives the same answer and changes nothing
+
+#### Scenario: A refusal that is not a duplicate is never reported as one
+- **GIVEN** an outstanding payment order
+- **WHEN** a confirmation for it is refused by the database for a reason other than the two uniqueness rules
+- **THEN** the confirmation fails as a payment-recording failure
+- **AND** it is not reported as a duplicate reference
+
+#### Scenario: Reconciliation meets a payment-recording failure
+- **GIVEN** two outstanding payment orders the provider reports as paid, the first of which fails as a payment-recording failure
+- **WHEN** the reconciliation job runs
+- **THEN** the first order is still outstanding
+- **AND** the second order is confirmed
+
+#### Scenario: The browser callback meets a payment-recording failure
+- **GIVEN** an outstanding payment order whose confirmation fails as a payment-recording failure
+- **WHEN** the customer's browser reports the checkout closed with a valid handler signature
+- **THEN** the response is the current payment progress, showing the agreement unpaid
+- **AND** no error is returned to the customer
+
+#### Scenario: A payment-recording failure does not expose the payment
+- **GIVEN** a confirmation the database refuses for a reason other than the two uniqueness rules
+- **WHEN** the failure is raised and logged
+- **THEN** it names the refused rule or reports that none was named
+- **AND** neither the failure nor its log line carries the payment id, the amount, or the text of the database's own error
+

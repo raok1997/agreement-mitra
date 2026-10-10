@@ -419,6 +419,21 @@ class Agreement implements Persistable<UUID> {
   }
 
   /**
+   * Whether this agreement is {@code PAID} under {@code reference}. Both sides are compared in the
+   * one normal form ({@link in.agreementmitra.signing.PaymentConfirmation#normalizeReference}), so
+   * a gateway payment id staff typed by hand in another case is still the same payment. Never true
+   * without a reference on both sides.
+   */
+  boolean paidUnder(String reference) {
+    String stored =
+        in.agreementmitra.signing.PaymentConfirmation.normalizeReference(paymentReference);
+    return paymentState == PaymentState.PAID
+        && stored != null
+        && stored.equals(
+            in.agreementmitra.signing.PaymentConfirmation.normalizeReference(reference));
+  }
+
+  /**
    * Record a deliberate decision to proceed without payment. Stays distinguishable from {@code
    * PAID} forever: no amount, no currency, no external reference is invented - only the actor and
    * the time, so a report can always tell a waiver from money received.

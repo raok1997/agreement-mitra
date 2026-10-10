@@ -331,7 +331,7 @@ is the part of the configuration that actually needs reviewing.
 | `ESIGN_WEBHOOK_KEY_PEPPER` | `dev-only-webhook-key-pepper-change-me` | Per-transaction eSign webhook keys encrypted at rest under a published value, so a database read yields a working credential. That key authenticates inbound state changes. |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | Recovery links emailed to the parties point at localhost. Unusable, and nothing warns. |
 | `RULES_STAMP_DUTY_ALLOW_UNREVIEWED` | `false` | **No state is chargeable at all** -- see below. |
-| `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `DISABLED` to bring the box up before the gateway account exists. |
+| `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `OPTIONAL` to bring the box up before the gateway account exists. |
 | `MAIL_PROVIDER` | `stub` | The email channel is enabled by default, so delivery reports success and sends nothing. |
 | `ESIGN_PROVIDER` | `zoop` | Correct, but `ZOOP_RESPONSE_URL`/`ZOOP_REDIRECT_URL` default **blank**: the callback never arrives and signatures complete only via the reconciliation job. |
 | `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `INFO` | Correct. Set `DEBUG` only deliberately, for a bounded diagnosis: application lines redact agreement ids to an 8-character prefix, but debug output is still more than production needs. **Do not** raise framework loggers instead -- `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG` logs request URIs (`/api/agreements/<id>/...`), Hibernate bind `TRACE` logs parameter values, root `DEBUG` does both, and enabling a Caddy `log` directive records request URIs; each writes raw agreement ids. |
@@ -378,6 +378,125 @@ agreements that are live in production and remove their PDFs. **Invariant: each
 environment has its own bucket.** Never enable the job on a restored or cloned
 database until its `S3_BUCKET` is confirmed to be that environment's own.
 
+### Staff alert channel
+
+When `STAFF_ALERT_DISCORD_WEBHOOK_URL` is set, a gateway-paid order raises one
+message in a private staff Discord channel within about a minute (change
+`staff-paid-order-alert`). Blank, the default, switches the feature off: nothing
+is recorded and nothing is sent. The message carries the tracking reference, the
+state and a link to the site -- nothing personal.
+
+**Order matters on the first deploy.** A template key missing from the server's
+`backend.env` fails the deploy, so the key is added before the code that reads it:
+
+1. On the server, run `./provision.sh secrets` and leave the new key blank.
+2. Deploy. The migration applies; with the URL blank, behaviour is unchanged.
+3. In Discord, create a **private** channel for staff, then Channel settings ->
+   Integrations -> Webhooks -> New webhook, and copy its URL.
+4. Run `./provision.sh secrets` again, paste the URL, and restart the backend.
+   Orders paid in the previous 24 hours alert once.
+5. Make one test payment and confirm its alert arrives.
+
+**Phone notifications are a per-person setting.** Discord mutes ordinary channel
+messages on mobile by default, and the alert deliberately pings nobody. Each staff
+member sets the channel to notify on **All messages** on their phone; without that
+the alert arrives silently.
+
+**The URL is a secret.** Anyone holding it can post to the channel. An alert is a
+prompt to open the console, never an instruction to act on its own.
+
+- **Rotate** in this order, so there is no gap: create a new webhook -> set its URL
+  with `./provision.sh secrets` -> restart the backend -> delete the old webhook.
+- **Review channel membership** whenever staff change. Tracking references
+  accumulate there; one alone grants no access to an agreement, but the channel
+  is still staff-only.
+
+**A failed alert is not re-sent.** A deleted or mistyped webhook fails each alert
+on its first attempt, and the only trace is an ERROR line beginning `Staff alert
+ORDER_PAID for agreement` or `Staff alert DUPLICATE_PAYMENT for agreement` --
+either `... failed and will not be retried` (refused, or out
+of attempts) or `... closed without a recorded delivery` (pending for more than
+24 hours, or a last attempt whose outcome was never recorded). The staff console
+queue still lists every waiting order. After fixing the URL, re-queue the recent failures:
+
+```sql
+UPDATE staff_alert
+   SET status = 'PENDING', attempts = 0, next_attempt_at = now(), created_at = now()
+ WHERE status = 'FAILED' AND created_at > now() - interval '24 hours';
+```
+
+`created_at` is reset because an alert pending for more than 24 hours is failed
+unsent.
+
+#### "Possible duplicate payment - check before refunding"
+
+A second alert, with this lead, means the gateway captured a payment for an
+agreement that **already had one recorded** -- a late payment on an expired or
+failed order, or a gateway payment on an agreement staff had confirmed by hand
+(change `double-charge-invisible-to-staff`). The first payment's record on the
+agreement is kept; the extra payment's order is marked `surplus`. It replaces the
+"Paid order waiting for a stamp" alert for that payment, it does not add to it.
+
+The system **refunds nothing**. The alert is a prompt to check, and it is worded
+as "possible" on purpose: if staff recorded a gateway payment by hand under some
+other reference (a UTR, or none), the same single payment looks like two.
+
+The message carries only the tracking reference. Two alerts for one agreement
+read the same, and a send may repeat, so the database is the truth. Look the
+agreement up by the tracking reference from the alert:
+
+```sql
+SELECT o.receipt, o.status, o.surplus, o.amount_minor_units, o.currency,
+       q.stamp_value_minor_units, o.created_at, o.confirmed_at
+  FROM payment_order o
+  JOIN agreement a ON a.id = o.agreement_id
+  LEFT JOIN stamp_quote q ON q.payment_order_id = o.id
+ WHERE a.tracking_reference = 'AM7K2P9Q'
+ ORDER BY o.created_at;
+```
+
+Then, in this order:
+
+1. **Confirm two captured payments** for that agreement in the gateway dashboard
+   (search by the `receipt`). One captured payment means no refund is owed -- it
+   was recorded twice under two references.
+2. **Refund only the order marked `surplus`**, never the credited one, and only
+   **through the gateway to the original payment method**. Never by bank
+   transfer to details received in a message.
+3. **Before buying the stamp, check which order was credited** (`surplus = false`)
+   and buy the stamp for **that row's** `stamp_value_minor_units` (paise). The
+   stamp queue and the payment-progress view read the agreement's *newest*
+   order, which is not always the credited one (register row
+   `checkout-ignores-agreement-paid-state`).
+
+Never paste an agreement id into the channel: it is a bearer credential, and the
+`receipt` column above **is** the agreement id (with a retry suffix). The tracking
+reference is enough to talk about an order.
+
+**If an alert may have been lost** (channel unset or down, or the sweep stopped
+for more than 24 hours), the surplus mark is still on the order. List every
+surplus payment in a period:
+
+```sql
+SELECT a.tracking_reference, o.receipt, o.amount_minor_units, o.currency, o.confirmed_at
+  FROM payment_order o
+  JOIN agreement a ON a.id = o.agreement_id
+ WHERE o.surplus
+   AND o.confirmed_at > now() - interval '30 days'
+ ORDER BY o.confirmed_at;
+```
+
+Orders paid before this release are not marked: a duplicate from before it does
+not appear in either query.
+
+**Rollback:** blank the URL and restart. Alerts left pending for more than 24
+hours are marked failed, not sent, when the feature is switched back on.
+
+**What raises no alert:** an order that never passes through the gateway. A
+payment staff confirm by hand, and a waiver, reach the queue silently in either
+`PAYMENT_MODE`. A second gateway payment on an already-paid agreement raises no
+second "paid order" alert; it raises the duplicate-payment alert above instead.
+
 ### Why the `sandbox` profile is required
 
 Without it the app boots and serves the SPA, but the **template catalog is
@@ -411,7 +530,7 @@ request time instead -- so the deploy refuses them rather than the JVM. Which bl
 are allowed is the template's `required`/`required-if`/`optional` tag on each key,
 with the cost of a blank in the comment above it: Google login is `optional`; ZOOP
 is required while `ESIGN_PROVIDER=zoop`, Leegality while `ESIGN_PROVIDER=leegality`,
-Razorpay while `PAYMENT_MODE=REQUIRED` (set `DISABLED` to bring the box up before
+Razorpay while `PAYMENT_MODE=REQUIRED` (set `OPTIONAL` to bring the box up before
 the gateway account exists), the Zoho password while `MAIL_PROVIDER=smtp`.
 
 Repo policy remains sandbox and dummy data only.

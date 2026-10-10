@@ -7,11 +7,14 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
+import in.agreementmitra.signing.payment.PaymentService;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.LogCapture;
 import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.SigningRequests;
 import in.agreementmitra.support.StaffSessions;
@@ -23,6 +26,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -103,6 +107,9 @@ class PaymentGateIntegrationTest {
   @Autowired private IdentityService identityService;
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
+
+  @RegisterExtension
+  final LogCapture paymentServiceLogs = LogCapture.of(PaymentService.class, Level.ERROR);
 
   private String staffToken;
   private String customerToken;
@@ -219,11 +226,15 @@ class PaymentGateIntegrationTest {
   }
 
   private ResponseEntity<String> confirmPayment(UUID agreementId, String reference) {
+    return confirmPayment(agreementId, "1499.00", reference);
+  }
+
+  private ResponseEntity<String> confirmPayment(UUID agreementId, String amount, String reference) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
     headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
     String body =
-        "{\"amount\":\"1499.00\",\"currency\":\"INR\",\"reference\":\"" + reference + "\"}";
+        "{\"amount\":\"" + amount + "\",\"currency\":\"INR\",\"reference\":\"" + reference + "\"}";
     return rest.postForEntity(
         "/api/staff/payments/" + agreementId + "/confirm",
         new HttpEntity<>(body, headers),
@@ -243,6 +254,13 @@ class PaymentGateIntegrationTest {
   private String paymentStateOf(UUID agreementId) {
     return jdbc.queryForObject(
         "SELECT payment_state FROM agreement WHERE id = ?", String.class, agreementId);
+  }
+
+  private Map<String, Object> recordedPayment(UUID agreementId) {
+    return jdbc.queryForMap(
+        "SELECT payment_state, payment_reference, payment_amount, payment_currency,"
+            + " payment_actor_identity_id, payment_recorded_at FROM agreement WHERE id = ?",
+        agreementId);
   }
 
   // --- state -----------------------------------------------------------------
@@ -413,10 +431,50 @@ class PaymentGateIntegrationTest {
     assertThat(confirmPayment(createFinalisedAgreement(), sharedReference).getStatusCode())
         .isEqualTo(HttpStatus.OK);
 
-    ResponseEntity<String> second = confirmPayment(createFinalisedAgreement(), sharedReference);
+    UUID secondAgreement = createFinalisedAgreement();
+    Map<String, Object> before = recordedPayment(secondAgreement);
+
+    ResponseEntity<String> second = confirmPayment(secondAgreement, sharedReference);
 
     assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     assertThat(second.getBody()).contains("payment-reference-already-used");
+    assertThat(recordedPayment(secondAgreement))
+        .isEqualTo(before)
+        .containsEntry("payment_state", "UNPAID");
+  }
+
+  /**
+   * A refusal that is not a reused reference must not be reported as one
+   * (payment-confirmation-catch-all-integrity-mapping). The amount is one more digit than {@code
+   * agreement.payment_amount} ({@code NUMERIC(12,2)}) holds, so Postgres refuses the write with SQL
+   * state 22003 - a real refusal, with no uniqueness rule involved. If the column is widened or the
+   * amount is validated earlier, this fails and must pick another provocation.
+   */
+  @Test
+  void aRefusalThatIsNotAReusedReferenceIsAServerErrorAndRecordsNothing() {
+    UUID agreementId = createFinalisedAgreement();
+    Map<String, Object> before = recordedPayment(agreementId);
+    String reference = "PAY-" + UUID.randomUUID();
+
+    ResponseEntity<String> response = confirmPayment(agreementId, "10000000000.00", reference);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    assertThat(String.valueOf(response.getBody()))
+        .doesNotContain("payment-reference-already-used")
+        .doesNotContain(reference)
+        .doesNotContain("22003")
+        .doesNotContain("numeric")
+        .doesNotContain("PaymentRecordingFailedException");
+    assertThat(recordedPayment(agreementId))
+        .isEqualTo(before)
+        .containsEntry("payment_state", "UNPAID");
+    // A 500 alone proves nothing - anything that throws produces one. This line is written only
+    // where the refusal was classified.
+    assertThat(paymentServiceLogs.hasLevel(Level.ERROR)).isTrue();
+    assertThat(String.join("\n", paymentServiceLogs.messages()))
+        .contains("SQL state 22003")
+        .doesNotContain(reference)
+        .doesNotContain("10000000000");
   }
 
   @Test

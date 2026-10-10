@@ -468,7 +468,8 @@ public class PaymentOrderService {
    * that follows is what decides, and it goes through the same confirmation path as the webhook.
    *
    * <p>An invalid signature is not an error the customer needs to see: the response is the current
-   * payment progress either way, so a tampered callback simply learns nothing.
+   * payment progress either way, so a tampered callback simply learns nothing. A payment the
+   * database refused to record is answered the same way - progress, showing it unpaid.
    */
   public PaymentProgressResponse acknowledgeCheckout(
       UUID agreementId,
@@ -488,7 +489,14 @@ public class PaymentOrderService {
     }
     // Verified means "the provider issued this", nothing more. Ask the provider what is actually
     // true before changing anything.
-    readAuthoritatively(agreementId, request.razorpayOrderId());
+    try {
+      readAuthoritatively(agreementId, request.razorpayOrderId());
+    } catch (PaymentRecordingFailedException alreadyLogged) {
+      // The callback is a UX signal, so the customer sees the payment as pending rather than an
+      // error page. Nothing here completes it: the failure is already logged at ERROR, and the
+      // webhook redelivery and reconciliation will meet the same refusal until its cause is fixed.
+      // Only this failure is caught - anything else fails the request as it always has.
+    }
     return progress(agreementId, callerIdentityId, staffCaller);
   }
 
@@ -531,10 +539,17 @@ public class PaymentOrderService {
    * Apply a confirmation. The webhook and the reconciliation job both call exactly this, so there
    * is one set of idempotency rules rather than two that drift apart (design D9).
    *
-   * <p>The duplicate-reference case is caught here, <b>outside</b> the transaction that provoked
-   * it: the database's unique index on the external reference is what stops one payment being
-   * credited to two agreements, and it is caught rather than pre-checked so two concurrent
-   * confirmations cannot both win.
+   * <p>A refused write is caught here, <b>outside</b> the transaction that provoked it. It is a
+   * duplicate reference only when one of the two payment uniqueness rules refused it ({@link
+   * PaymentIntegrity}): those indexes are what stop one payment being credited twice, and they are
+   * caught rather than pre-checked so two concurrent confirmations cannot both win.
+   *
+   * <p>Any other refusal is a failure to record a payment, not a duplicate. Reporting it as one
+   * would have the webhook acknowledge a captured payment that was never recorded, after which the
+   * gateway stops redelivering.
+   *
+   * @throws PaymentRecordingFailedException when the database refuses the write for any other
+   *     reason; nothing was recorded
    */
   ConfirmationOutcome applyConfirmation(
       String providerOrderId,
@@ -544,11 +559,15 @@ public class PaymentOrderService {
     try {
       return confirmations.apply(
           providerOrderId, providerPaymentId, reportedMinorUnits, reportedCurrency);
-    } catch (DataIntegrityViolationException alreadyRecorded) {
-      log.warn(
-          "Payment confirmation refused: the provider payment for order {} is already recorded",
-          RazorpayClient.redact(providerOrderId));
-      return ConfirmationOutcome.DUPLICATE_REFERENCE;
+    } catch (DataIntegrityViolationException refused) {
+      if (PaymentIntegrity.refusedBy(PaymentIntegrity.GATEWAY_DUPLICATE_RULES, refused)) {
+        log.warn(
+            "Payment confirmation refused: the provider payment for order {} is already recorded",
+            RazorpayClient.redact(providerOrderId));
+        return ConfirmationOutcome.DUPLICATE_REFERENCE;
+      }
+      throw PaymentIntegrity.loggedFailure(
+          log, "order " + RazorpayClient.redact(providerOrderId), refused);
     }
   }
 

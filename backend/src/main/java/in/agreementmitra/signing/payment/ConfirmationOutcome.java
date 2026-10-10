@@ -37,9 +37,12 @@ enum ConfirmationOutcome {
   MISSING_REFERENCE,
 
   /**
-   * The provider payment id is already recorded against some agreement. Raised from the database's
-   * unique index, never a read-then-write pre-check, so two concurrent confirmations cannot both
-   * credit one payment.
+   * The provider payment id is already recorded against another agreement, or already held by
+   * another payment order. Raised from the database's two unique indexes on it, never a
+   * read-then-write pre-check, so two concurrent confirmations cannot both credit one payment.
+   *
+   * <p>Only those two indexes produce this outcome. A write the database refuses for any other
+   * reason is not an outcome at all: it is a {@link PaymentRecordingFailedException}.
    */
   DUPLICATE_REFERENCE
 }

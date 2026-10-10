@@ -8,6 +8,7 @@ import in.agreementmitra.signing.api.PaymentStateResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,8 +51,15 @@ public class PaymentService {
    * catching that index's violation, never a read-then-write pre-check - two concurrent
    * confirmations of one payment must not both succeed.
    *
+   * <p>Only that index makes the refusal a reused reference. Any other refusal by the database - an
+   * amount too large for its column, say - is a failure to record the payment, and telling staff
+   * the reference was reused would be false. The order-payment-id rule is not accepted here either:
+   * this path never writes a payment order.
+   *
    * @throws ConflictException {@code PAYMENT_REFERENCE_ALREADY_USED} if the reference is already
    *     recorded against some agreement
+   * @throws PaymentRecordingFailedException when the database refuses the write for any other
+   *     reason; nothing was recorded
    */
   public PaymentStateResponse confirm(
       UUID staffIdentityId,
@@ -64,7 +72,7 @@ public class PaymentService {
             agreementId,
             amount,
             blankTo(currency, DEFAULT_CURRENCY).toUpperCase(Locale.ROOT),
-            normalizeReference(reference),
+            PaymentConfirmation.normalizeReference(reference),
             Instant.now());
     try {
       PaymentStateResponse response =
@@ -72,8 +80,13 @@ public class PaymentService {
       // Never log the amount or the reference - the fact is enough for an operations trail.
       log.debug("Payment recorded for agreement {}", AgreementIds.redact(agreementId));
       return response;
-    } catch (DataIntegrityViolationException e) {
-      throw ConflictException.paymentReferenceAlreadyUsed();
+    } catch (DataIntegrityViolationException refused) {
+      if (PaymentIntegrity.refusedBy(
+          Set.of(PaymentIntegrity.AGREEMENT_PAYMENT_REFERENCE), refused)) {
+        throw ConflictException.paymentReferenceAlreadyUsed();
+      }
+      throw PaymentIntegrity.loggedFailure(
+          log, "agreement " + AgreementIds.redact(agreementId), refused);
     }
   }
 
@@ -91,14 +104,6 @@ public class PaymentService {
   /** The agreement's payment state as read/reported. */
   public PaymentStateResponse view(UUID agreementId) {
     return agreementService.paymentView(agreementId);
-  }
-
-  private static String normalizeReference(String reference) {
-    if (reference == null) {
-      return null;
-    }
-    String trimmed = reference.trim().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
-    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private static String blankTo(String value, String fallback) {

@@ -41,6 +41,8 @@ class AgreementForeignKeyGuardIntegrationTest {
           // exist only with an order - excluded by "no payment order"
           Map.entry("payment_order.agreement_id->agreement", "excluded"),
           Map.entry("stamp_quote.agreement_id->agreement", "excluded"),
+          // written only by the alert sweep, for an agreement with a paid order - same exclusion
+          Map.entry("staff_alert.agreement_id->agreement", "excluded"),
           // set only for PAID/WAIVED agreements - excluded by "payment state UNPAID"
           Map.entry("recovery_audit.agreement_id->agreement", "excluded"),
           // kept with the link cleared (V23)
