@@ -276,6 +276,34 @@ running has no effect. Worth also checking whether the scheduled reconciliation
 fallback (`signing.reconciliation`) recovers the transaction on its own: a missed
 webhook is precisely the case it exists for, and it did not advance this one.
 
+### Four-signer probe: RUN 2026-10-10 - `/v5/init` accepts 4 signers
+
+The go/no-go for `multi-party-signers` (cap of four parties). No public source
+states a limit on `signers[]` or on coordinates per signer, so it was asked of
+the test host directly.
+
+**The run.** One `/v5/init` on `https://test.zoop.plus/contract/esign/` with a
+synthetic four-page A4 PDF (a fixed label per page, no party data), **four**
+placeholder signers on `example.com` addresses, `SEQUENTIAL`,
+`send_invite: false` (nobody was emailed), a 60-minute expiry, and **one
+coordinate per signer on every page - 16 in all**, laid out as the four-lane
+footer strip (`x_coord` 404 / 302 / 198 / 96, `y_coord` 26). Transaction
+`6ac9c9c12bda0b41b52c49e9`, left to expire unsigned.
+
+| Check | Status |
+| --- | --- |
+| `/v5/init` accepts four signers | **PASS** - HTTP 200, `success: true` |
+| 16 coordinates (4 signers x 4 pages) accepted | **PASS** |
+| One `request_id` and one `signing_url` per signer | **PASS** - four of each |
+| `signing_order` follows submission order | **PASS** - 1, 2, 3, 4 |
+| Four boxes drawn side by side without overlap | **NOT VERIFIED** - nobody signed |
+| A fourth sequential signer completes the transaction | **NOT VERIFIED** |
+
+Acceptance of the request is what the cap needed. The two unverified rows are
+the same visual check the two-signer tracer needed, and they are owed on a real
+four-signer signed PDF before `multi-party-signers` archives: a placement defect
+produces no error. A ceiling above four is still unknown - only four was asked.
+
 ### Open questions
 
 Small, and none of them block starting:

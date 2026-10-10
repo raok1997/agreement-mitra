@@ -320,9 +320,9 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
    - Flat price unchanged; `SEQUENTIAL` signing, owners then tenants; each party
      still needs a distinct email; residential templates only (commercial stays one
      lessor and one lessee).
-   - **Go/no-go before any design work:** one ZOOP sandbox `/v5/init` with four
-     dummy signers and a coordinate on every page. No public source states ZOOP's
-     signer or coordinate limit; record the result in `docs/integrations/zoop.md`.
+   - ZOOP's test host accepts four signers with a coordinate each on every page
+     (probe of 2026-10-10, `docs/integrations/zoop.md` section 5). Whether the four
+     boxes render side by side is still unverified - nobody signed.
    - One change, **`multi-party-signers`**, tasks in this order: cap in the
      validator → repeating-party template construct and mapper → per-signer anchors
      (`esign:owner-1`, terminated token) → four-lane strip that refuses when the
