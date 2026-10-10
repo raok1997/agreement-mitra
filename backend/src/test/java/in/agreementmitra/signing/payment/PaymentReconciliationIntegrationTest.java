@@ -6,8 +6,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.LogCapture;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -16,6 +18,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -83,6 +86,9 @@ class PaymentReconciliationIntegrationTest {
   @Autowired private PaymentOrderRepository orders;
   @Autowired private PaymentReconciliationJob job;
 
+  @RegisterExtension
+  final LogCapture confirmationLogs = LogCapture.of(PaymentOrderService.class, Level.ERROR);
+
   @BeforeEach
   void reset() {
     WIREMOCK.resetAll();
@@ -125,13 +131,18 @@ class PaymentReconciliationIntegrationTest {
    * arrived. Backdated so the reconciliation age threshold is unambiguously met.
    */
   private PaymentOrder outstandingOrder(UUID agreementId, String providerOrderId) {
+    return outstandingOrder(agreementId, providerOrderId, Instant.now().minus(Duration.ofHours(1)));
+  }
+
+  private PaymentOrder outstandingOrder(
+      UUID agreementId, String providerOrderId, Instant createdAt) {
     PaymentOrder order =
         PaymentOrder.create(
             agreementId,
             providerOrderId,
             agreementId.toString(),
             new Money(49_900L, "INR"),
-            Instant.now().minus(Duration.ofHours(1)));
+            createdAt);
     return orders.save(order);
   }
 
@@ -214,6 +225,39 @@ class PaymentReconciliationIntegrationTest {
                 java.sql.Timestamp.class,
                 agreementId))
         .isEqualTo(firstRecordedAt);
+  }
+
+  /**
+   * A payment the database refuses to record (payment-confirmation-catch-all-integrity-mapping)
+   * must not stop the batch. The failing order is the older of the two, so it is read first: a job
+   * that let its failure escape would never reach the second.
+   *
+   * <p>The provocation is a captured payment id of 65 characters, one more than {@code
+   * payment_order.provider_payment_id} holds.
+   */
+  @Test
+  void aPaymentTheDatabaseRefusesLeavesItsOrderOutstandingAndTheRestOfTheBatchConfirmed() {
+    UUID failing = createAgreement();
+    UUID healthy = createAgreement();
+    Instant now = Instant.now();
+    outstandingOrder(failing, "order_RECONFAIL", now.minus(Duration.ofHours(3)));
+    outstandingOrder(healthy, "order_RECONOK", now.minus(Duration.ofHours(2)));
+    stubOrder("order_RECONFAIL", "paid");
+    stubCapturedPayment("order_RECONFAIL", "pay_RECONFAIL" + "X".repeat(52), 49_900L);
+    stubOrder("order_RECONOK", "paid");
+    stubCapturedPayment("order_RECONOK", "pay_RECONOK", 49_900L);
+
+    job.reconcile();
+
+    assertThat(orderStatusOf("order_RECONFAIL")).isEqualTo("CREATED");
+    assertThat(paymentStateOf(failing)).isEqualTo("UNPAID");
+    // Still outstanding because the database refused the write - not because the provider read
+    // never produced a confirmation, which would leave the same state.
+    assertThat(String.join("\n", confirmationLogs.messages()))
+        .contains("Payment recording failed for order " + RazorpayClient.redact("order_RECONFAIL"))
+        .contains("SQL state 22001");
+    assertThat(orderStatusOf("order_RECONOK")).isEqualTo("PAID");
+    assertThat(paymentStateOf(healthy)).isEqualTo("PAID");
   }
 
   // --- it cannot invent a payment -------------------------------------------

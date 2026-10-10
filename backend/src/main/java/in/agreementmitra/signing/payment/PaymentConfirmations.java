@@ -15,11 +15,13 @@ import org.springframework.transaction.annotation.Transactional;
  * job, and the authoritative read triggered by the browser callback all land here; none of them has
  * its own version of this logic (design D9).
  *
- * <p><b>Why it is a separate bean.</b> The duplicate-reference case surfaces as a {@code
- * DataIntegrityViolationException} from the database's unique index, and that exception must be
- * caught <em>outside</em> the transaction that provoked it - a transaction marked rollback-only
- * cannot be continued. Keeping the transactional method on its own bean means the caller's catch
- * genuinely sits outside the boundary, rather than being silently bypassed by self-invocation.
+ * <p><b>Why it is a separate bean.</b> A write the database refuses surfaces as a {@code
+ * DataIntegrityViolationException}, and that exception must be caught <em>outside</em> the
+ * transaction that provoked it - a transaction marked rollback-only cannot be continued. Keeping
+ * the transactional method on its own bean means the caller's catch genuinely sits outside the
+ * boundary, rather than being silently bypassed by self-invocation. The caller decides what the
+ * refusal was: a duplicate reference for the two payment uniqueness rules, a failure to record the
+ * payment for anything else ({@link PaymentIntegrity}).
  *
  * <p><b>Ordering of the two locks.</b> The payment order row is locked first, then the agreement
  * row (inside {@code recordGatewayPayment}). Every payment path takes them in that order, so there
@@ -69,10 +71,12 @@ class PaymentConfirmations {
    *     unique across all agreements
    * @param reportedMinorUnits the amount reported, in paise
    * @param reportedCurrency the currency reported
-   * @throws org.springframework.dao.DataIntegrityViolationException if the payment id is already
-   *     held by another payment order, or - when this confirmation records the agreement's payment
-   *     - already recorded against another agreement; the caller maps it to {@link
-   *     ConfirmationOutcome#DUPLICATE_REFERENCE} outside this transaction
+   * @throws org.springframework.dao.DataIntegrityViolationException if the database refuses a
+   *     write. When the payment id is already held by another payment order, or - when this
+   *     confirmation records the agreement's payment - already recorded against another agreement,
+   *     the caller maps it to {@link ConfirmationOutcome#DUPLICATE_REFERENCE} outside this
+   *     transaction; any other refusal the caller raises as a {@link
+   *     PaymentRecordingFailedException}
    */
   @Transactional
   ConfirmationOutcome apply(

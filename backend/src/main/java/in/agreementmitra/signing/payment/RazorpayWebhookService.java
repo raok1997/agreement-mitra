@@ -57,6 +57,10 @@ public class RazorpayWebhookService {
    * @param presentedSignature the {@code X-Razorpay-Signature} header value
    * @return whether the request verified. {@code false} means the caller rejects it with no state
    *     change; {@code true} means it is acknowledged, whether or not it named anything we hold.
+   * @throws PaymentRecordingFailedException when the body verified but the database refused to
+   *     record the payment it describes. Deliberately not caught: the caller must not acknowledge
+   *     it, so the gateway delivers the event again. Any other failure while handling a verified
+   *     body escapes the same way.
    */
   public boolean handle(String rawBody, String presentedSignature) {
     if (!RazorpaySignatures.webhookSignatureValid(
@@ -71,9 +75,10 @@ public class RazorpayWebhookService {
   }
 
   /**
-   * Parse the now-trusted body and apply any confirmation it describes. Every failure mode here -
-   * unparseable, an event we do not act on, an order we do not hold - produces the same
-   * acknowledgement, deliberately.
+   * Parse the now-trusted body and apply any confirmation it describes. A body that is unparseable,
+   * an event we do not act on, and an order we do not hold all produce the same acknowledgement,
+   * deliberately. A confirmation that throws is the exception: nothing here catches it, so a
+   * payment the database refused to record is never acknowledged.
    */
   private void apply(String rawBody) {
     JsonNode root;

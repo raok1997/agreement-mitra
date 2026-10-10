@@ -131,6 +131,9 @@ class RazorpayPaymentIntegrationTest {
   @RegisterExtension
   final LogCapture confirmationLogs = LogCapture.of(PaymentConfirmations.class, Level.DEBUG);
 
+  @RegisterExtension
+  final LogCapture orderServiceLogs = LogCapture.of(PaymentOrderService.class, Level.WARN);
+
   private String customerToken;
   private String otherCustomerToken;
   private String staffToken;
@@ -716,6 +719,186 @@ class RazorpayPaymentIntegrationTest {
     // Through the webhook the same refusal is acknowledged like everything else.
     assertThat(capture(expired, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
     assertThat(orderRow(expired)).containsEntry("status", "EXPIRED");
+  }
+
+  // --- a refused write is a duplicate only for the two uniqueness rules ------------------------
+  // (payment-confirmation-catch-all-integrity-mapping)
+
+  /**
+   * One payment belongs to one agreement. Staff recorded the gateway's payment id by hand against
+   * agreement A; the gateway then confirms that id on agreement B's order. No payment order holds
+   * the id yet, so the index on the order's payment id cannot be what refuses this - only the
+   * agreement's unique reference can. The id is lower-case and A's stored reference is upper-case,
+   * so this also pins that index as an expression index.
+   */
+  @Test
+  void aPaymentIdStaffRecordedAgainstAnotherAgreementIsRefusedAsADuplicateReference() {
+    String paymentId = unique("pay_crossagr").toLowerCase(java.util.Locale.ROOT);
+    UUID first = createAgreement();
+    assertThat(staffConfirms(first, paymentId).getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(recordedPayment(first))
+        .containsEntry("payment_reference", paymentId.toUpperCase(java.util.Locale.ROOT));
+    UUID second = createAgreement();
+    String order = orderIn(second, "CREATED");
+    Map<String, Object> before = recordedPayment(second);
+    mail.reset();
+
+    ConfirmationOutcome outcome =
+        paymentOrderService.applyConfirmation(order, paymentId, 49_900L, "INR");
+
+    assertThat(outcome).isEqualTo(ConfirmationOutcome.DUPLICATE_REFERENCE);
+    assertThat(capture(order, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(orderRow(order))
+        .containsEntry("status", "CREATED")
+        .containsEntry("surplus", false)
+        .containsEntry("provider_payment_id", null);
+    assertThat(recordedPayment(second)).isEqualTo(before).containsEntry("payment_state", "UNPAID");
+    assertThat(mail.sent()).isEmpty();
+  }
+
+  /**
+   * A gateway payment id one character longer than {@code payment_order.provider_payment_id} holds.
+   * Postgres refuses the order write with SQL state 22001, which names no constraint: a real
+   * refusal that is not a duplicate, with no test-only seam. It fits {@code
+   * agreement.payment_reference}, so the order write is the only one the database refuses.
+   *
+   * <p>If the column is widened or the id is validated earlier, the tests using this must pick
+   * another provocation. Each one therefore asserts the refusal itself - the failure, the {@code
+   * 500}, or the ERROR line - and not only the unchanged state it leaves.
+   */
+  private static String overLongPaymentId() {
+    String id = (unique("pay_TOOLONG") + "X".repeat(65)).substring(0, 65);
+    assertThat(id).hasSize(65);
+    return id;
+  }
+
+  /**
+   * The webhook must not acknowledge a payment that was not recorded: {@code 500}, so the gateway
+   * delivers it again, and nothing written.
+   *
+   * <p>The log assertion reads the whole test output, not one logger - the application's own line,
+   * Hibernate's SQL error line and the container's stack trace for the escaped exception. The
+   * harness runs <b>without</b> {@code logServerErrorDetail=false}, which production pins, so for
+   * this case it is the stricter configuration.
+   */
+  @Test
+  @org.junit.jupiter.api.extension.ExtendWith(
+      org.springframework.boot.test.system.OutputCaptureExtension.class)
+  void aWebhookWhosePaymentTheDatabaseRefusesIsNotAcknowledgedAndRecordsNothing(
+      org.springframework.boot.test.system.CapturedOutput output) {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    String paymentId = overLongPaymentId();
+    Map<String, Object> before = recordedPayment(agreementId);
+    mail.reset();
+
+    ResponseEntity<String> first = capture(order, paymentId);
+    ResponseEntity<String> redelivered = capture(order, paymentId);
+
+    for (ResponseEntity<String> response : List.of(first, redelivered)) {
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+      assertThat(String.valueOf(response.getBody()))
+          .doesNotContain(paymentId)
+          .doesNotContain("22001")
+          .doesNotContain(PaymentRecordingFailedException.UNNAMED)
+          .doesNotContain("uq_")
+          .doesNotContain("PaymentRecordingFailedException")
+          .doesNotContain("character varying");
+    }
+    assertThat(orderRow(order))
+        .containsEntry("status", "CREATED")
+        .containsEntry("surplus", false)
+        .containsEntry("provider_payment_id", null);
+    assertThat(recordedPayment(agreementId))
+        .isEqualTo(before)
+        .containsEntry("payment_state", "UNPAID");
+    assertThat(mail.sent()).isEmpty();
+
+    assertThat(output.getAll()).doesNotContain(paymentId);
+    assertThat(output.getAll())
+        .containsPattern(
+            "ERROR.*PaymentOrderService.*Payment recording failed for order "
+                + java.util.regex.Pattern.quote(RazorpayClient.redact(order))
+                + ".*SQL state 22001");
+  }
+
+  @Test
+  void aRefusalThatIsNotADuplicateFailsRatherThanBeingReportedAsOne() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    Map<String, Object> before = recordedPayment(agreementId);
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> paymentOrderService.applyConfirmation(order, overLongPaymentId(), 49_900L, "INR"))
+        .isInstanceOf(PaymentRecordingFailedException.class)
+        .hasNoCause();
+
+    assertThat(orderRow(order)).containsEntry("status", "CREATED").containsEntry("surplus", false);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+  }
+
+  /**
+   * The surplus route: the agreement already holds a payment, so nothing is written to it and the
+   * order write is the only one the database can refuse.
+   */
+  @Test
+  void aRefusalOnAnAlreadyPaidAgreementAlsoFailsRatherThanBeingReportedAsADuplicate() {
+    String[] earlier = new String[1];
+    UUID agreementId = paidWithAnEarlierOrder("EXPIRED", earlier);
+    Map<String, Object> before = recordedPayment(agreementId);
+    mail.reset();
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () ->
+                paymentOrderService.applyConfirmation(
+                    earlier[0], overLongPaymentId(), 49_900L, "INR"))
+        .isInstanceOf(PaymentRecordingFailedException.class)
+        .hasNoCause();
+
+    assertThat(orderRow(earlier[0]))
+        .containsEntry("status", "EXPIRED")
+        .containsEntry("surplus", false)
+        .containsEntry("provider_payment_id", null);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    assertThat(mail.sent()).isEmpty();
+  }
+
+  /**
+   * The browser callback is a UX signal: a payment the database refused to record is answered with
+   * progress, not an error page. The 65-character id lives only in the provider's answer - the
+   * callback body caps its own payment id at 64 and uses it for the handler signature alone.
+   */
+  @Test
+  void theBrowserCallbackStillAnswersWithProgressWhenThePaymentCouldNotBeRecorded() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    stubOrderRead(order, "paid", 49_900L);
+    WIREMOCK.stubFor(
+        get(urlPathEqualTo(ORDERS_URL + "/" + order + "/payments"))
+            .willReturn(
+                okJson(
+                    "{\"count\":1,\"items\":[{\"id\":\""
+                        + overLongPaymentId()
+                        + "\",\"status\":\"captured\",\"amount\":49900,\"currency\":\"INR\"}]}")));
+    mail.reset();
+
+    String signature = RazorpaySignatures.hmacSha256Hex(order + "|pay_CALLBACK", API_KEY);
+    ResponseEntity<String> response = postCallback(agreementId, order, "pay_CALLBACK", signature);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(response.getBody()).contains("UNPAID").contains("CREATED");
+    assertThat(paymentStateOf(agreementId)).isEqualTo("UNPAID");
+    assertThat(orderRow(order)).containsEntry("status", "CREATED").containsEntry("surplus", false);
+    assertThat(mail.sent()).isEmpty();
+    // The authoritative read really was attempted and the database really did refuse the write:
+    // without both, this would pass over nothing.
+    WIREMOCK.verify(
+        1,
+        com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(
+            urlPathEqualTo(ORDERS_URL + "/" + order + "/payments")));
+    assertThat(String.join("\n", orderServiceLogs.messages()))
+        .contains("Payment recording failed for order " + RazorpayClient.redact(order))
+        .contains("SQL state 22001");
   }
 
   // --- the browser callback is NOT authoritative -----------------------------

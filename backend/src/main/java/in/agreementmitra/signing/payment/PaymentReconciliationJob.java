@@ -77,7 +77,9 @@ class PaymentReconciliationJob {
         reconcileOne(order, now);
       } catch (RuntimeException e) {
         // One order's failure must not abort the batch. Details omitted on purpose: no ids, no
-        // amounts, nothing that would make a log line worth stealing.
+        // amounts, nothing that would make a log line worth stealing. A payment the database
+        // refused to record lands here too: the order stays outstanding and is read again on the
+        // next run, and the confirmation path has already logged which rule refused it.
         log.warn("Reconciliation skipped one payment order");
       }
     }
@@ -97,7 +99,9 @@ class PaymentReconciliationJob {
       return;
     }
     if (outcome != ConfirmationOutcome.UNKNOWN_ORDER) {
-      return; // already confirmed / mismatched / duplicate: all handled, none of them our business
+      // Already confirmed / mismatched / a true duplicate: all handled, none of them our business.
+      // A refusal that is not a duplicate never reaches here - it throws, and reconcile() skips it.
+      return;
     }
     if (order.outstandingLongerThan(properties.order().ttl(), now)) {
       order.markExpired();
