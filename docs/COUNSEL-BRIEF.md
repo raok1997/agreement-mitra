@@ -496,15 +496,46 @@ almost every agreement we issue, and should be reviewed as such.
    [deposit], refundable on vacating the Premises after adjusting arrears of rent, unpaid
    utility charges, and the cost of making good any damage beyond normal wear and tear."
 
-**Charges and utilities** *(opt-in: the whole group appears only if the user adds it; within it, clauses 10 and 12 appear only where an amount has been entered)*
+**Charges and utilities** *(opt-in: the whole group appears only if the user adds it. It prints
+as numbered clauses only, with no table of the values entered. Exactly one of clauses 9(a) to 9(d)
+appears, chosen by the user; clauses 9(b) and 10 appear only where an amount above zero has been
+entered; clause 12 appears only where a late-payment charge has been entered)*
 
-9. "Society and building maintenance charges shall be borne by the [owner / tenant /
-   shared]."
+9. The user chooses how maintenance is handled; the default is (c). Either:
 
-10. "The maintenance charges payable amount to INR [amount] per month."
+   (a) "The monthly rent includes the society and building maintenance charges, which the Owner
+       shall pay to the society directly."
+
+   (b) "In addition to the rent, the Tenant shall pay the Owner a maintenance charge of INR
+       [amount] per month, together with the rent."
+
+   (c) "The Tenant shall pay the society and building maintenance charges directly to the
+       society, as billed by it during the tenancy."
+
+   (d) "The society and building maintenance charges shall be borne by the Owner, who shall pay
+       them to the society directly."
+
+10. *(with 9(b) only; new wording, for your review)* "If the society revises its maintenance
+    charges, the maintenance charge payable by the Tenant shall be revised to match, from the
+    month following the Owner's written notice to the Tenant together with a copy of the
+    society's revised demand."
+
+10A. *(for an apartment, gated community or villa only, whichever of 9(a) to 9(d) applies; new
+     wording, for your review)* "Any one-time or capital levy raised by the society, including
+     sinking fund, corpus fund, major-repair and non-occupancy charges, shall be borne by the
+     Owner, even where the society bills it to the Tenant."
+
+*Our questions on clauses 9 to 10A:*
+
+- Does 10A settle a sinking-fund line that appears on a society bill the Tenant pays under 9(c),
+  or does 9(c) need its own carve-out?
+- Should unpaid maintenance under 9(b) be adjustable against the deposit? Clause 8 names only
+  arrears of rent and unpaid utility charges.
+- Is the "society" wording of 9(a) to 9(d) right for an independent house, where there may be no
+  society? (10A does not appear for an independent house.)
 
 11. "Electricity, water, gas, internet, and other utility charges consumed at the Premises
-    shall be borne by the [owner / tenant / shared] as per actual usage during the tenancy."
+    shall be borne by the [owner / tenant] as per actual usage during the tenancy."
 
 12. "If the rent is not paid within [grace period] day(s) of the due date, the Tenant shall
     pay a late-payment charge of INR [penalty]."
@@ -621,6 +652,11 @@ has been attached**, the stamp duty paid. It then contains:
    compulsorily registered before the jurisdictional Sub-Registrar in the State of Telangana
    under the Registration Act, 1908. The stamp duty and registration charges shall be borne
    by the [owner / tenant / shared]."
+
+   *(Updated 2026-10-09: the last sentence is now its own clause. It reads "The stamp duty and
+   registration charges shall be borne by the [Owner / Tenant]." or, where the parties choose to
+   split them, "The stamp duty and registration charges shall be shared equally between the
+   Owner and the Tenant." The Karnataka agreement carries the same wording.)*
 
 3. *(appears only in the stamped instrument)* "The stamp duty paid on this Agreement is INR
    [amount]."

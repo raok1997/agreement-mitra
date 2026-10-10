@@ -276,6 +276,38 @@ class AgreementDocumentFormatE2EIntegrationTest {
     assertThat(section(sections, "Tenant").get("renderKind").asText()).isEqualTo("parties");
     assertThat(section(sections, "Financial").get("renderKind").asText()).isEqualTo("keyvalue");
     assertThat(section(sections, "Witnesses").get("renderKind").asText()).isEqualTo("keyvalue");
+
+    // maintenance-charge-basis: Charges & Utilities prints as clauses only, but still asks
+    // maintenanceMode with its four arrangements.
+    JsonNode charges = section(sections, "Charges & Utilities");
+    assertThat(charges.get("renderKind").asText()).isEqualTo("clauses");
+    JsonNode mode = null;
+    for (JsonNode field : charges.get("fields")) {
+      if ("maintenanceMode".equals(field.path("key").asText())) {
+        mode = field;
+      }
+    }
+    assertThat(mode).isNotNull();
+    List<String> modeValues = new ArrayList<>();
+    mode.get("options").forEach(o -> modeValues.add(o.get("value").asText()));
+    assertThat(modeValues)
+        .containsExactly(
+            "included_in_rent", "fixed_amount", "as_billed_by_society", "paid_by_owner");
+  }
+
+  @Test
+  void aFixedMaintenancePreviewStatesTheClauseAndPrintsNoPlaceholder() throws Exception {
+    Map<String, Object> data = telanganaData();
+    data.put("maintenanceMode", "fixed_amount");
+    data.put("maintenanceAmount", "3500");
+
+    String html = previewHtml(data, List.of("Charges & Utilities"));
+
+    assertThat(html)
+        .contains("<h2>Charges &amp; Utilities</h2>")
+        .contains("the Tenant shall pay the Owner a maintenance charge of INR 3500 per month")
+        .doesNotContain("[ Maintenance amount")
+        .doesNotContain("[ Late-payment penalty");
   }
 
   // --- M0 + M1 + M5: the preview renders the artifact layout from meta.document + render kinds

@@ -753,6 +753,42 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
     expect(mockedCreate).toHaveBeenCalledOnce();
   });
 
+  it("retries only the draft after a failed generate, so a second click does not duplicate the agreement", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockRejectedValueOnce(new Error("render down")).mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+
+    await save().trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="save-error"]').exists()).toBe(true);
+
+    await save().trigger("click");
+    await flushPromises();
+
+    expect(mockedCreate).toHaveBeenCalledOnce();
+    expect(mockedGenerate).toHaveBeenCalledTimes(2);
+    expect(mockedGenerate).toHaveBeenLastCalledWith("agr-1");
+    expect(wrapper.find('[data-testid="save-ok"]').exists()).toBe(true);
+  });
+
+  it("creates afresh after a failed generate when the terms were changed", async () => {
+    mockedCreate.mockResolvedValue(fakeAgreement());
+    mockedGenerate.mockRejectedValueOnce(new Error("render down")).mockResolvedValue();
+    const wrapper = await mountReady();
+    await fillAllRequired(wrapper);
+    const save = () => wrapper.find('[data-testid="save-continue"]');
+
+    await save().trigger("click");
+    await flushPromises();
+    await fillSection(wrapper, "property", { propertyAddress: "14 MG Road" });
+    await save().trigger("click");
+    await flushPromises();
+
+    expect(mockedCreate).toHaveBeenCalledTimes(2);
+  });
+
   it("Start over, once confirmed, clears the client-held working set and storage", async () => {
     const wrapper = await mountReady();
     await fillSection(wrapper, "property", { propertyAddress: "12 MG Road" });
@@ -1095,6 +1131,88 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     await wrapper.find('[data-testid="section-pets"]').trigger("click");
     expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="section-hint"]').exists()).toBe(false);
+  });
+
+  it("refuses to save Charges & Utilities under Fixed Amount until an amount is entered", async () => {
+    const schema = schemaWithOptional();
+    schema.sections.push({
+      title: "Charges & Utilities",
+      optional: true,
+      renderKind: "clauses",
+      fields: [
+        {
+          key: "maintenanceMode",
+          label: "How is maintenance handled?",
+          widget: "select",
+          type: "enum",
+          required: false,
+          default: "as_billed_by_society",
+          options: [
+            { value: "included_in_rent", label: "Included In Rent" },
+            { value: "fixed_amount", label: "Fixed Amount" },
+            { value: "as_billed_by_society", label: "As Billed By Society" },
+            { value: "paid_by_owner", label: "Paid By Owner" },
+          ],
+        },
+        {
+          key: "maintenanceAmount",
+          label: "Maintenance amount (INR / month) – only if Fixed",
+          widget: "money",
+          type: "money",
+          required: false,
+        },
+      ],
+    });
+    mockedGetForm.mockResolvedValue(schema);
+    const wrapper = await mountReady();
+
+    await wrapper
+      .find('[data-testid="add-optional-charges-utilities"]')
+      .trigger("click");
+    await new Promise((r) => setTimeout(r, 650)); // let the add's own preview refresh settle
+    await flushPromises();
+    await wrapper.find('[data-testid="section-charges-utilities"]').trigger("click");
+    await wrapper
+      .find('[data-testid="field-maintenanceMode"]')
+      .setValue("fixed_amount");
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="field-error-maintenanceAmount"]').text(),
+    ).toBe("Enter the monthly amount for a fixed maintenance charge.");
+
+    // Blocked: the modal stays open and nothing reaches the preview.
+    mockedPreviewHtml.mockClear();
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await new Promise((r) => setTimeout(r, 650));
+    await flushPromises();
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(mockedPreviewHtml).not.toHaveBeenCalled();
+
+    // Choosing another arrangement clears the error; switching back to Fixed brings it back.
+    const mode = wrapper.find('[data-testid="field-maintenanceMode"]');
+    await mode.setValue("included_in_rent");
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="field-error-maintenanceAmount"]').exists(),
+    ).toBe(false);
+    await mode.setValue("fixed_amount");
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="field-error-maintenanceAmount"]').exists(),
+    ).toBe(true);
+
+    await wrapper.find('[data-testid="field-maintenanceAmount"]').setValue("3500");
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="field-error-maintenanceAmount"]').exists(),
+    ).toBe(false);
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await new Promise((r) => setTimeout(r, 650));
+    await flushPromises();
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(false);
+    const [sentData] = mockedPreviewHtml.mock.calls.at(-1) ?? [];
+    expect(sentData?.maintenanceMode).toBe("fixed_amount");
+    expect(sentData?.maintenanceAmount).toBe("3500");
   });
 
   it("4.3: Save is disabled until every mandatory section is complete; optional never gates it", async () => {
@@ -1593,6 +1711,25 @@ describe("CaptureForm: dd/mm/yyyy date entry", () => {
     expect(
       (start.element as HTMLInputElement).value,
     ).toBe("31/02/2026");
+  });
+
+  it("refuses to save an invalid amount, which would otherwise fail only after create", async () => {
+    const wrapper = await mountReady();
+    await fillSection(wrapper, "financial-terms", { monthlyRent: "25000" });
+
+    await wrapper.find('[data-testid="section-financial-terms"]').trigger("click");
+    const rent = wrapper.find('[data-testid="field-monthlyRent"]');
+    await rent.setValue("1e3");
+    await rent.trigger("blur");
+    await wrapper.find('[data-testid="modal-save"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="field-error-monthlyRent"]').text()).toMatch(
+      /at most two decimal places/,
+    );
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}");
+    expect(draft.data?.["financial-terms"]?.monthlyRent).toBe("25000");
   });
 
   it("drops a non-ISO date from a resumed draft", async () => {

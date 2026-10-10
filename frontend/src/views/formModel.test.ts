@@ -120,6 +120,44 @@ describe("formModel: client validation", () => {
     expect(validateField(f, "abc")).toMatch(/must be a number/);
   });
 
+  it("accepts only plain digits for whole numbers and plain rupee amounts for money", () => {
+    const i = field({ type: "int", widget: "number" });
+    const m = field({ type: "money", widget: "money" });
+    expect(validateField(i, "1e3")).toMatch(/whole number/);
+    expect(validateField(m, "1e3")).toMatch(/at most two decimal places/);
+    expect(validateField(m, "3500.555")).toMatch(/at most two decimal places/);
+    expect(validateField(m, "3500.5")).toBeNull();
+    expect(validateField(m, " 3500 ")).toBeNull();
+  });
+
+  it("blocks saving an invalid number but not a missing one", () => {
+    const rentDueDay = field({
+      key: "rentDueDay",
+      type: "int",
+      widget: "number",
+      validation: { min: 1, max: 28 },
+    });
+    const penalty = field({
+      key: "latePaymentPenalty",
+      type: "money",
+      widget: "money",
+    });
+    expect(blocksSave([rentDueDay], { rentDueDay: "29" })).toBe(true);
+    expect(blocksSave([penalty], { latePaymentPenalty: "1e3" })).toBe(true);
+    expect(
+      blocksSave([rentDueDay, penalty], {
+        rentDueDay: "",
+        latePaymentPenalty: "",
+      }),
+    ).toBe(false);
+    expect(
+      blocksSave([rentDueDay, penalty], {
+        rentDueDay: "5",
+        latePaymentPenalty: "500",
+      }),
+    ).toBe(false);
+  });
+
   it("enforces money min without requiring integer-ness", () => {
     const f = field({ type: "money", widget: "money", validation: { min: 0 } });
     expect(validateField(f, "1500.50")).toBeNull();
@@ -328,6 +366,92 @@ describe("crossFieldErrors", () => {
   });
 });
 
+describe("crossFieldErrors: fixed maintenance", () => {
+  const chargesFields = [
+    field({
+      key: "maintenanceMode",
+      label: "How is maintenance handled?",
+      widget: "select",
+      type: "enum",
+      options: [
+        { value: "included_in_rent", label: "Included In Rent" },
+        { value: "fixed_amount", label: "Fixed Amount" },
+        { value: "as_billed_by_society", label: "As Billed By Society" },
+        { value: "paid_by_owner", label: "Paid By Owner" },
+      ],
+    }),
+    field({
+      key: "maintenanceAmount",
+      label: "Maintenance amount (INR / month) – only if Fixed",
+      widget: "number",
+      type: "money",
+    }),
+  ];
+  const message = "Enter the monthly amount for a fixed maintenance charge.";
+
+  it("fires for Fixed with a blank amount or a zero", () => {
+    for (const amount of ["", "0", "0.00"]) {
+      const data = {
+        maintenanceMode: "fixed_amount",
+        maintenanceAmount: amount,
+      };
+      expect(crossFieldErrors(chargesFields, data)).toEqual({
+        maintenanceAmount: message,
+      });
+      expect(blocksSave(chargesFields, data)).toBe(true);
+      expect(isSectionComplete(chargesFields, data)).toBe(false);
+    }
+  });
+
+  it("fires for Fixed with a negative amount", () => {
+    expect(
+      crossFieldErrors(chargesFields, {
+        maintenanceMode: "fixed_amount",
+        maintenanceAmount: "-5",
+      }),
+    ).toEqual({ maintenanceAmount: message });
+  });
+
+  it("is silent for Fixed with an amount", () => {
+    const data = { maintenanceMode: "fixed_amount", maintenanceAmount: "3500" };
+    expect(crossFieldErrors(chargesFields, data)).toEqual({});
+    expect(blocksSave(chargesFields, data)).toBe(false);
+  });
+
+  it("is silent for every other mode, even with a blank or zero amount", () => {
+    for (const mode of [
+      "included_in_rent",
+      "as_billed_by_society",
+      "paid_by_owner",
+    ]) {
+      for (const amount of ["", "0"]) {
+        const data = { maintenanceMode: mode, maintenanceAmount: amount };
+        expect(crossFieldErrors(chargesFields, data)).toEqual({});
+        expect(blocksSave(chargesFields, data)).toBe(false);
+      }
+    }
+  });
+
+  it("is silent when the section does not carry both fields", () => {
+    expect(
+      crossFieldErrors([chargesFields[0]], { maintenanceMode: "fixed_amount" }),
+    ).toEqual({});
+    expect(
+      crossFieldErrors([field({ key: "other" })], {
+        maintenanceMode: "fixed_amount",
+        maintenanceAmount: "",
+      }),
+    ).toEqual({});
+  });
+
+  it("stays silent while the amount has a per-field error of its own", () => {
+    // "1e3" is refused per-field (not a plain rupee amount); the rule does not stack a second message.
+    const data = { maintenanceMode: "fixed_amount", maintenanceAmount: "1e3" };
+    expect(crossFieldErrors(chargesFields, data)).toEqual({});
+    expect(blocksSave(chargesFields, data)).toBe(true);
+  });
+});
+
 describe("isSectionComplete: cross-field rules", () => {
   const dateFields = [
     field({
@@ -502,7 +626,10 @@ describe("validateField -- dates", () => {
     const cases: [string, RegExp][] = [
       ["08/0", /^Start date is incomplete -- enter it as dd\/mm\/yyyy\.$/],
       ["03-02-2001", /^Start date must be a date in dd\/mm\/yyyy format\.$/],
-      ["31/02/2026", /^Start date is not a real date -- check the day and month\.$/],
+      [
+        "31/02/2026",
+        /^Start date is not a real date -- check the day and month\.$/,
+      ],
       ["01/01/2200", /^Start date must be between 1900 and 2199\.$/],
       ["1800-01-01", /^Start date must be between 1900 and 2199\.$/],
       ["2026-02-31", /not a real date/],
@@ -532,7 +659,10 @@ describe("validateField -- dates", () => {
   it("still blocks on a cross-field rule", () => {
     const end = { ...start, key: "endDate", label: "End date" };
     expect(
-      blocksSave([start, end], { startDate: "2026-06-01", endDate: "2026-01-01" }),
+      blocksSave([start, end], {
+        startDate: "2026-06-01",
+        endDate: "2026-01-01",
+      }),
     ).toBe(true);
   });
 

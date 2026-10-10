@@ -19,7 +19,10 @@
 meta:
   kind: state
   dimensions: { state: KA }
-  version: 1
+  # v2 (2026-10-09): who bears the stamp duty and registration charges became two option-gated clauses.
+  # `shared` rendered "borne by the Shared"; it now reads "shared equally between the Owner and the
+  # Tenant". Bumped because every deed's statutory section changes.
+  version: 2
 
 ops:
   - { op: addField,
@@ -46,8 +49,18 @@ ops:
       clause: { id: kaStampRegistration,
                 text: "This Agreement shall be duly stamped under the Karnataka Stamp Act, 1957 and,
                        where the law requires it, registered before the jurisdictional Sub-Registrar
-                       in the State of Karnataka under the Registration Act, 1908. The stamp duty and
-                       registration charges shall be borne by the {{registrationChargesBorneBy}}." } }
+                       in the State of Karnataka under the Registration Act, 1908." } }
+  # Who bears the charges is two option-gated clauses, not one "borne by the {{...}}" slot: the
+  # slot renders the option label, so `shared` printed "borne by the Shared" and never said how.
+  - { op: addClause,
+      clause: { id: kaRegistrationChargesBorneBy,
+                showWhen: "registrationChargesBorneBy == \"owner\" || registrationChargesBorneBy == \"tenant\"",
+                text: "The stamp duty and registration charges shall be borne by the
+                       {{registrationChargesBorneBy}}." } }
+  - { op: addClause,
+      clause: { id: kaRegistrationChargesShared, showWhen: "registrationChargesBorneBy == \"shared\"",
+                text: "The stamp duty and registration charges shall be shared equally between the
+                       Owner and the Tenant." } }
   - { op: addClause,
       clause: { id: kaStampAmount, showWhen: "stampDutyAmount > 0",
                 text: "The stamp duty paid on this Agreement is INR {{stampDutyAmount}}." } }
@@ -63,5 +76,6 @@ ops:
   - { op: addSection,
       section: { title: "Statutory (Karnataka)", optional: false,
                  entries: [ stampDutyAmount, registrationChargesBorneBy,
-                            kaGoverningLaw, kaStampRegistration, kaStampAmount,
+                            kaGoverningLaw, kaStampRegistration, kaRegistrationChargesBorneBy,
+                            kaRegistrationChargesShared, kaStampAmount,
                             kaEssentialServices ] } }

@@ -47,11 +47,12 @@ class TemplateCatalogRegistryIntegrationTest {
     assertThat(published)
         .allSatisfy(e -> assertThat(e.status()).isEqualTo(TemplateStatus.PUBLISHED));
     assertThat(published).extracting(TemplateCatalogEntry::state).contains("IN", "TG", "KA");
-    // Seed version derives from the base definition's meta (no drift): rental/base.yaml is v6 and
-    // commercial/base.yaml is v5, both bumped when the inventory annexure became one item per line.
+    // Seed version derives from the base definition's meta (no drift): rental/base.yaml is v8
+    // (maintenanceMode replaced maintenanceBorneBy) and commercial/base.yaml is v5 (inventory
+    // annexure one item per line).
     assertThat(published)
         .filteredOn(e -> e.type().equals("residential"))
-        .allSatisfy(e -> assertThat(e.version()).isEqualTo(6));
+        .allSatisfy(e -> assertThat(e.version()).isEqualTo(8));
     assertThat(published)
         .filteredOn(e -> e.type().equals("commercial"))
         .allSatisfy(e -> assertThat(e.version()).isEqualTo(5));

@@ -507,4 +507,180 @@ describe("StampQuoteStep", () => {
       expect(wrapper.text()).not.toMatch(/edit agreement/i);
     });
   });
+
+  describe("maintenance line (maintenance-charge-basis)", () => {
+    const CHARGES = "Charges & Utilities";
+
+    function withCharges(
+      captureData: Record<string, string>,
+      over: Partial<AgreementView> = {},
+    ): AgreementView {
+      return stored({ captureData, activeSections: [CHARGES], ...over });
+    }
+
+    async function line(view: AgreementView) {
+      mockedAgreement.mockResolvedValue(view);
+      const wrapper = await mountStep();
+      const text = wrapper.find('[data-testid="key-terms-maintenance"]');
+      const total = wrapper.find('[data-testid="key-terms-maintenance-total"]');
+      return {
+        wrapper,
+        text: text.exists() ? text.text() : null,
+        total: total.exists() ? total.text() : null,
+      };
+    }
+
+    it("shows a fixed amount and the rent-and-maintenance figure", async () => {
+      const shown = await line(
+        withCharges({ maintenanceMode: "fixed_amount", maintenanceAmount: "3500" }),
+      );
+      expect(shown.text).toBe("₹3,500 a month, paid to the owner with the rent");
+      expect(shown.total).toBe("₹28,500");
+      expect(shown.wrapper.get('[data-testid="key-terms"]').text()).toContain(
+        "Rent and maintenance together each month",
+      );
+      expect(shown.wrapper.get('[data-testid="key-terms"]').text()).not.toMatch(
+        /\btotal\b/i,
+      );
+    });
+
+    it("shows paise exactly, summed in whole paise", async () => {
+      const shown = await line(
+        withCharges(
+          { maintenanceMode: "fixed_amount", maintenanceAmount: "3500.50" },
+          { monthlyRent: 25000.0 },
+        ),
+      );
+      expect(shown.text).toBe("₹3,500.50 a month, paid to the owner with the rent");
+      expect(shown.total).toBe("₹28,500.50");
+    });
+
+    it("sums a rent with paise without floating-point drift", async () => {
+      const shown = await line(
+        withCharges(
+          { maintenanceMode: "fixed_amount", maintenanceAmount: "0.20" },
+          { monthlyRent: 0.1 },
+        ),
+      );
+      expect(shown.total).toBe("₹0.30");
+    });
+
+    it("shows each other arrangement without a total", async () => {
+      const expected: Record<string, string> = {
+        included_in_rent: "Included in the rent",
+        as_billed_by_society: "Paid by the tenant to the society, as billed",
+        paid_by_owner: "Paid by the owner",
+      };
+      for (const [mode, text] of Object.entries(expected)) {
+        const shown = await line(
+          withCharges({ maintenanceMode: mode, maintenanceAmount: "3500" }),
+        );
+        expect(shown.text, mode).toBe(text);
+        expect(shown.total, mode).toBeNull();
+        expect(shown.wrapper.html(), mode).not.toContain("3,500");
+      }
+    });
+
+    it("reads an absent mode as the default, as billed by the society", async () => {
+      const shown = await line(withCharges({}));
+      expect(shown.text).toBe("Paid by the tenant to the society, as billed");
+      expect(shown.total).toBeNull();
+    });
+
+    it("still states a fixed arrangement whose positive amount cannot be read, with no figure", async () => {
+      for (const amount of ["1e3", "3500.555"]) {
+        const shown = await line(
+          withCharges({ maintenanceMode: "fixed_amount", maintenanceAmount: amount }),
+        );
+        expect(shown.text, amount).toBe(
+          "A fixed monthly charge, paid to the owner with the rent",
+        );
+        expect(shown.total, amount).toBeNull();
+      }
+    });
+
+    it("shows no line for a fixed mode whose amount the deed does not print", async () => {
+      // Both Fixed clauses are gated `maintenanceAmount > 0`, so the deed says nothing here.
+      for (const amount of ["", "0", "0.00", "-5"]) {
+        const shown = await line(
+          withCharges({ maintenanceMode: "fixed_amount", maintenanceAmount: amount }),
+        );
+        expect(shown.text, amount).toBeNull();
+        expect(shown.total, amount).toBeNull();
+      }
+    });
+
+    it("shows no line for an agreement pinned before the mode existed", async () => {
+      // A v7 agreement stores maintenanceBorneBy; its deed says who bears it, which the default
+      // ("as billed") would contradict.
+      for (const borneBy of ["owner", "tenant"]) {
+        const shown = await line(
+          withCharges({ maintenanceBorneBy: borneBy, maintenanceAmount: "2500" }),
+        );
+        expect(shown.text, borneBy).toBeNull();
+        expect(shown.total, borneBy).toBeNull();
+      }
+    });
+
+    it("shows no line without the section, for an unknown mode, or for a commercial agreement", async () => {
+      const cases: AgreementView[] = [
+        stored({
+          captureData: { maintenanceMode: "fixed_amount", maintenanceAmount: "3500" },
+          activeSections: [],
+        }),
+        stored({
+          captureData: { maintenanceMode: "fixed_amount", maintenanceAmount: "3500" },
+          activeSections: null,
+        }),
+        withCharges({ maintenanceMode: "shared" }),
+        withCharges({ camBorneBy: "tenant" }, { type: "commercial" }),
+      ];
+      for (const view of cases) {
+        const shown = await line(view);
+        expect(shown.text).toBeNull();
+        expect(shown.total).toBeNull();
+      }
+    });
+
+    it("from a real stored payload, shows only the listed terms plus the maintenance line", async () => {
+      // Mirrors GET /api/agreements/{id}: captureData holds every captured key, party details included.
+      const shown = await line(
+        withCharges({
+          ownerName: "Ravi Kumar",
+          ownerFatherName: "CAPTUREFATHER",
+          ownerAddress: "CAPTUREADDRESS",
+          tenantName: "Asha Rao",
+          propertyType: "apartment",
+          utilitiesBorneBy: "tenant",
+          latePaymentPenalty: "777",
+          gracePeriodDays: "5",
+          maintenanceMode: "fixed_amount",
+          maintenanceAmount: "3500",
+        }),
+      );
+      const html = shown.wrapper.html();
+      for (const hidden of [
+        "CAPTUREFATHER",
+        "CAPTUREADDRESS",
+        "777",
+        "secret.party@example.test",
+        "9000012345",
+        "Fathername Zeta",
+      ]) {
+        expect(html).not.toContain(hidden);
+      }
+      const labels = shown.wrapper
+        .findAll('[data-testid="key-terms"] dt')
+        .map((dt) => dt.text());
+      expect(labels).toEqual([
+        "Property",
+        "Monthly rent",
+        "Security deposit",
+        "Maintenance",
+        "Rent and maintenance together each month",
+        "Term",
+        "Parties",
+      ]);
+    });
+  });
 });

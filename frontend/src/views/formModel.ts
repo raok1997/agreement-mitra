@@ -11,6 +11,11 @@ import {
   parseIso,
   type EntryFailure,
 } from "./dateEntry";
+import {
+  FIXED_AMOUNT,
+  MAINTENANCE_AMOUNT_KEY,
+  MAINTENANCE_MODE_KEY,
+} from "./maintenanceTerms";
 
 /** In-progress values for one section, keyed by field key. Always strings (matches the shell). */
 export type SectionData = Record<string, string>;
@@ -79,8 +84,12 @@ export function validateField(field: FormField, raw: string): string | null {
   if (field.type === "int" || field.type === "money") {
     const n = Number(value);
     if (!Number.isFinite(n)) return `${field.label} must be a number.`;
-    if (field.type === "int" && !Number.isInteger(n))
+    // Plain digits only: `Number` also takes "1e3" and "3500.555", which the server stores and the
+    // deed prints verbatim ("INR 1E+3").
+    if (field.type === "int" && !/^-?\d+$/.test(value))
       return `${field.label} must be a whole number.`;
+    if (field.type === "money" && !/^-?\d+(\.\d{1,2})?$/.test(value))
+      return `${field.label} must be an amount in rupees, with at most two decimal places.`;
     if (v?.min != null && n < v.min)
       return `${field.label} must be at least ${v.min}.`;
     if (v?.max != null && n > v.max)
@@ -188,9 +197,9 @@ export function tenancyMonths(startIso: string, endIso: string): number | null {
  * this is the only place that compares one field against another, so the per-field call sites are
  * unaffected. `isSectionComplete` DOES consult the cross-field rules (see `crossFieldErrors`).
  *
- * Today the one cross-field rule is the tenancy date range. The error attaches to the END date --
- * where the user can fix it -- and only once both dates are individually present and valid, so a
- * half-filled form reports "required", not a confusing range error.
+ * The cross-field rules are listed on `crossFieldErrors`. Each error attaches to the field the user
+ * can fix, and only once the fields it compares have no error of their own, so a half-filled form
+ * reports "required", not a confusing cross-field error.
  *
  * Client validation remains a UX affordance, not the trust boundary: the server independently
  * rejects an end date that is not strictly after the start date with a 400.
@@ -215,6 +224,13 @@ export function sectionErrors(
  * `perFieldErrors` is passed in so a rule can stay silent while either field still has an error of
  * its own -- a half-filled form reports "required", not a confusing range error. Callers that do
  * not have it to hand may omit it.
+ *
+ * The rules:
+ * - Tenancy date range (every template): the end date must be after the start date.
+ * - Fixed maintenance (rental Charges & Utilities): a fixed_amount mode needs an amount above zero.
+ *   This is the first TEMPLATE-SPECIFIC rule in this otherwise generic module; the server does not
+ *   enforce it (the deed simply drops both Fixed clauses). Such rules move to a template-declared
+ *   form condition with the `capture-field-conditional-reveal` follow-up.
  */
 export function crossFieldErrors(
   fields: FormField[],
@@ -237,23 +253,40 @@ export function crossFieldErrors(
       }
     }
   }
+
+  if (
+    keys.has(MAINTENANCE_MODE_KEY) &&
+    keys.has(MAINTENANCE_AMOUNT_KEY) &&
+    (data[MAINTENANCE_MODE_KEY] ?? "").trim() === FIXED_AMOUNT &&
+    !perFieldErrors[MAINTENANCE_AMOUNT_KEY]
+  ) {
+    const amount = (data[MAINTENANCE_AMOUNT_KEY] ?? "").trim();
+    if (amount === "" || !(Number(amount) > 0)) {
+      errors[MAINTENANCE_AMOUNT_KEY] =
+        "Enter the monthly amount for a fixed maintenance charge.";
+    }
+  }
   return errors;
 }
 
 /**
- * Whether a section must not be saved as it stands: a cross-field rule fails, or a date field holds
- * a non-empty value that is not a valid date. Missing is allowed, wrong is not -- a blank date is
- * reported as required but still saves (capture is progressive), while a malformed one would
- * otherwise reach the preview as raw text or be silently replaced by the previous value.
+ * Whether a section must not be saved as it stands: a cross-field rule fails, or a date, whole-number
+ * or money field holds a non-empty value that is invalid. Missing is allowed, wrong is not -- a blank
+ * field is reported as required but still saves (capture is progressive), while a wrong one would
+ * otherwise reach the preview as raw text, or pass create and then fail draft generation.
  */
 export function blocksSave(fields: FormField[], data: SectionData): boolean {
   if (Object.keys(crossFieldErrors(fields, data)).length > 0) return true;
   return fields.some((f) => {
-    if (f.type !== "date" || f.readOnly) return false;
+    if (f.readOnly || !BLOCKING_WHEN_INVALID.has(f.type)) return false;
     const value = (data[f.key] ?? "").trim();
     return value !== "" && validateField(f, value) !== null;
   });
 }
+
+// A value of these types that is present but invalid would be stored, pass create, and then fail
+// draft generation -- after the agreement already exists. Blank is still allowed (progressive capture).
+const BLOCKING_WHEN_INVALID = new Set(["date", "int", "money"]);
 
 /** True when a section carries at least one required field (so it counts toward completeness). */
 export function isSectionRequired(fields: FormField[]): boolean {
