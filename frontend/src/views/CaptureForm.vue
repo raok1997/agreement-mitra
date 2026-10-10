@@ -59,6 +59,7 @@ import {
 } from "../api/templateForm";
 import FieldWidget from "../components/widgets/FieldWidget.vue";
 import { formatIso, isAcceptedIso } from "./dateEntry";
+import { CONTACT_EMAIL } from "../content/promises";
 import {
   blocksSave,
   emptyWorking,
@@ -183,6 +184,8 @@ interface UiSection {
   // sections are opt-in via the Add-optional catalog and never block save.
   optional: boolean;
   hint?: string;
+  // Set on a party card ("owner", "tenant", "lessor", "lessee"); drives the more-than-one link.
+  partyRole?: string;
 }
 
 // The annexure's inventory is free text, one item per line. Its default lists only near-universal
@@ -190,6 +193,14 @@ interface UiSection {
 // in the box is signed as fact.
 const ANNEXURE_HINT =
   "One item per line. If the property is furnished, add furniture and appliances too - e.g. Bed, Sofa, Wardrobe, Fridge, Washing machine, AC, Geyser.";
+
+// The deed, the signature anchors and the every-page strip all take one signer per side, so a
+// second owner or tenant typed into the name field would be named but never sign. A party dialog
+// answers "more than one?" where an add-another button would sit, and hands off to email.
+function multiPartyMailto(role: string): string {
+  const subject = encodeURIComponent(`Agreement with more than one ${role}`);
+  return `mailto:${CONTACT_EMAIL}?subject=${subject}`;
+}
 
 // M5 (agreement-capture-persistence) retired the STOPGAP: the agreement now persists its FULL capture
 // state (the flat working-set map + added optional sections), and generate-as-draft renders from that
@@ -213,6 +224,8 @@ const uiSections = computed<UiSection[]>(() =>
         fields,
         optional: !isSectionMandatory(s),
         hint: s.renderKind === "annexure" ? ANNEXURE_HINT : undefined,
+        partyRole:
+          s.renderKind === "parties" ? s.title.toLowerCase() : undefined,
       };
     })
     .filter((s) => s.fields.length > 0),
@@ -1658,6 +1671,35 @@ onBeforeUnmount(() => {
             :error="modalErrors[f.key]"
           />
         </div>
+        <details
+          v-if="activeSection.partyRole"
+          class="text-sm sm:col-span-2"
+          data-testid="multi-party"
+        >
+          <summary
+            class="cursor-pointer font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+            data-testid="multi-party-toggle"
+          >
+            More than one {{ activeSection.partyRole }}?
+          </summary>
+          <div
+            class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900"
+          >
+            <p>
+              This form takes one {{ activeSection.partyRole }}. Do not enter
+              two names here - only one person would sign. Email us before you
+              continue.
+            </p>
+            <a
+              :href="multiPartyMailto(activeSection.partyRole)"
+              class="mt-2 inline-block rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+              data-testid="multi-party-email"
+            >
+              Email us
+            </a>
+            <span class="ml-2 text-xs">{{ CONTACT_EMAIL }}</span>
+          </div>
+        </details>
       </div>
       <footer
         class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4"
