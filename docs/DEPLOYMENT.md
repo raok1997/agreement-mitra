@@ -331,7 +331,7 @@ is the part of the configuration that actually needs reviewing.
 | `ESIGN_WEBHOOK_KEY_PEPPER` | `dev-only-webhook-key-pepper-change-me` | Per-transaction eSign webhook keys encrypted at rest under a published value, so a database read yields a working credential. That key authenticates inbound state changes. |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | Recovery links emailed to the parties point at localhost. Unusable, and nothing warns. |
 | `RULES_STAMP_DUTY_ALLOW_UNREVIEWED` | `false` | **No state is chargeable at all** -- see below. |
-| `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `DISABLED` to bring the box up before the gateway account exists. |
+| `PAYMENT_MODE` | `REQUIRED` | Payment required while `RAZORPAY_KEY_ID`/`RZP_KEY_SECRET` default blank, so checkout fails at request time. Set `OPTIONAL` to bring the box up before the gateway account exists. |
 | `MAIL_PROVIDER` | `stub` | The email channel is enabled by default, so delivery reports success and sends nothing. |
 | `ESIGN_PROVIDER` | `zoop` | Correct, but `ZOOP_RESPONSE_URL`/`ZOOP_REDIRECT_URL` default **blank**: the callback never arrives and signatures complete only via the reconciliation job. |
 | `LOGGING_LEVEL_IN_AGREEMENTMITRA` | `INFO` | Correct. Set `DEBUG` only deliberately, for a bounded diagnosis: application lines redact agreement ids to an 8-character prefix, but debug output is still more than production needs. **Do not** raise framework loggers instead -- `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG` logs request URIs (`/api/agreements/<id>/...`), Hibernate bind `TRACE` logs parameter values, root `DEBUG` does both, and enabling a Caddy `log` directive records request URIs; each writes raw agreement ids. |
@@ -411,7 +411,7 @@ request time instead -- so the deploy refuses them rather than the JVM. Which bl
 are allowed is the template's `required`/`required-if`/`optional` tag on each key,
 with the cost of a blank in the comment above it: Google login is `optional`; ZOOP
 is required while `ESIGN_PROVIDER=zoop`, Leegality while `ESIGN_PROVIDER=leegality`,
-Razorpay while `PAYMENT_MODE=REQUIRED` (set `DISABLED` to bring the box up before
+Razorpay while `PAYMENT_MODE=REQUIRED` (set `OPTIONAL` to bring the box up before
 the gateway account exists), the Zoho password while `MAIL_PROVIDER=smtp`.
 
 Repo policy remains sandbox and dummy data only.
