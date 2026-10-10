@@ -63,6 +63,13 @@ signing:
   draft-retention:
     enabled: false
 
+# The staff alert sweep is disabled for the same reason as the jobs above; tests call the dispatcher
+# directly with an explicit time. The webhook URL is pinned blank so no test can reach a real channel.
+staff-alert:
+  dispatch-enabled: false
+  discord:
+    webhook-url: ""
+
 # The email seam stays on the STUB in tests: messages are captured in memory and nothing is sent, so
 # no test needs a mailbox, a credential, or network access. Delivery tests assert against the
 # captured messages. SMTP settings are pinned empty so no test can reach a real account.

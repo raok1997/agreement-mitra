@@ -13,6 +13,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
+import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.RecordingEmailSender;
@@ -70,6 +71,8 @@ class RazorpayPaymentIntegrationTest {
 
   private static final String RECOVERY_BASE_URL = "https://app.example.test";
 
+  private static final String STAFF_HOOK_PATH = "/api/webhooks/1/it-staff-hook";
+
   private static final WireMockServer WIREMOCK = new WireMockServer(options().dynamicPort());
 
   static {
@@ -86,6 +89,9 @@ class RazorpayPaymentIntegrationTest {
     // and an enabled channel to observe it at all.
     registry.add("delivery.public-base-url", () -> RECOVERY_BASE_URL);
     registry.add("delivery.channels.email.enabled", () -> "true");
+    // Staff alerts are switched ON for this context, so "confirming a payment contacts nobody and
+    // records no alert" is asserted with the feature live rather than trivially, with it off.
+    registry.add("staff-alert.discord.webhook-url", () -> WIREMOCK.baseUrl() + STAFF_HOOK_PATH);
   }
 
   @AfterAll
@@ -112,6 +118,7 @@ class RazorpayPaymentIntegrationTest {
   @Autowired private HandoffService handoffService;
   @Autowired private SessionService sessionService;
   @Autowired private RecordingEmailSender mail;
+  @Autowired private PaymentOrderQuery paymentOrderQuery;
 
   private String customerToken;
   private String otherCustomerToken;
@@ -342,6 +349,52 @@ class RazorpayPaymentIntegrationTest {
 
     assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
     assertThat(readProgress(agreementId, customerToken).getBody()).contains("PAID");
+  }
+
+  // --- staff alerts stay off the confirmation path (staff-paid-order-alert) ----
+
+  /**
+   * The staff alert is derived from the paid order by a scheduled sweep. Confirming a payment must
+   * neither call the staff channel nor write an alert row - a write in that transaction is exactly
+   * what could roll a real payment back - and the paid order must then be visible to the sweep's
+   * look-back read.
+   */
+  @Test
+  void confirmingAPaymentContactsNoStaffChannelAndLeavesThePaidOrderForTheSweep() {
+    UUID agreementId = createAgreement();
+    stubOrderCreation("order_ALERT1", 49_900L);
+    assertThat(startCheckout(agreementId, customerToken).getStatusCode()).isEqualTo(HttpStatus.OK);
+    Instant beforeConfirmation = Instant.now().minusSeconds(1);
+    assertThat(paymentOrderQuery.agreementsWithOrderPaidSince(beforeConfirmation))
+        .doesNotContain(agreementId); // an outstanding order is not a paid one
+
+    assertThat(
+            deliverSignedWebhook(paymentCapturedBody("order_ALERT1", "pay_ALERT1", 49_900L))
+                .getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    WIREMOCK.verify(0, postRequestedFor(urlEqualTo(STAFF_HOOK_PATH)));
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM staff_alert WHERE agreement_id = ?",
+                Integer.class,
+                agreementId))
+        .isZero();
+    assertThat(paymentOrderQuery.agreementsWithOrderPaidSince(beforeConfirmation))
+        .containsOnlyOnce(agreementId);
+    // A cutoff after the confirmation excludes it: this is the 24-hour look-back's boundary.
+    assertThat(paymentOrderQuery.agreementsWithOrderPaidSince(Instant.now().plusSeconds(60)))
+        .doesNotContain(agreementId);
+  }
+
+  @Test
+  void anAgreementWhoseOnlyOrderExpiredIsNotReportedAsPaid() {
+    UUID agreementId = createAgreement();
+    in.agreementmitra.support.PaymentOrders.insert(jdbc, agreementId, "EXPIRED", null);
+
+    assertThat(paymentOrderQuery.agreementsWithOrderPaidSince(Instant.EPOCH))
+        .doesNotContain(agreementId);
   }
 
   // --- the browser callback is NOT authoritative -----------------------------

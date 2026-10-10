@@ -146,6 +146,36 @@ system records no payer-only rule and must not gain one (design D15 in `post-pay
 any party holding the link is equally entitled. Guarded by
 `RazorpayPaymentIntegrationTest.payingSendsEveryPartyALinkTheyCanOpen`.
 
+## How staff learn a paid order is waiting
+
+The staff console does not refresh itself, so a paid order is pushed: one message to a private staff
+Discord channel, within about a minute of the gateway confirming payment (`signing.staffalert`,
+change `staff-paid-order-alert`).
+
+- **Derived from paid orders, not from the confirmation.** A scheduled sweep (every 30 seconds) reads
+  the payment orders marked `PAID` in the last 24 hours and records one `staff_alert` row per
+  agreement that has none. The payment confirmation path is untouched: no listener, no write in its
+  transaction, no outbound call on the webhook thread. An alert cannot roll a payment back, and a
+  crash cannot lose one, because the paid order is the durable trigger.
+- **Gateway-paid only, one per agreement.** A manual staff confirmation or a waiver creates no
+  payment order and raises nothing. A second paid order on an agreement raises no second alert
+  (register row `double-charge-invisible-to-staff`).
+- **Claim, send, record.** The sweep claims a row by a conditional update that counts the attempt
+  and writes the next-attempt time *before* sending; that time is the lease, so a crash mid-send
+  needs no recovery step. The send runs with no transaction open. Delivery is at-least-once.
+- **Bounded.** Ten attempts, backoff 30 seconds doubling to an hour (about three hours in all). A
+  timeout, a 429 or a 5xx is retried; a redirect or any other 4xx fails the alert at once; an alert
+  still pending after 24 hours is failed unsent. `FAILED` is terminal and is reported only as an
+  ERROR log line -- the console queue remains the source of truth for what is waiting.
+- **What the message may contain:** the tracking reference, a two-letter state code and a link to
+  the public site. Never the agreement id (a bearer credential), a party name, a contact, an
+  address, an amount, or any user-entered text -- which is why there is no city.
+- **The webhook URL is a secret** (the token is in its path). Blank or unusable switches the feature
+  off entirely. It is never logged: the adapter catches the HTTP client's exceptions itself, because
+  their messages embed the URL.
+- **One channel.** The sender sits behind `StaffNotifier`; a WhatsApp adapter replaces Discord there
+  (`staff-alert-whatsapp-adapter`).
+
 ## What we are deliberately NOT doing yet
 
 - No microservices, no message broker (add RabbitMQ/Kafka only when multi-step

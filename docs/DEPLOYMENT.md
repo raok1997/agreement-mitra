@@ -378,6 +378,63 @@ agreements that are live in production and remove their PDFs. **Invariant: each
 environment has its own bucket.** Never enable the job on a restored or cloned
 database until its `S3_BUCKET` is confirmed to be that environment's own.
 
+### Staff alert channel
+
+When `STAFF_ALERT_DISCORD_WEBHOOK_URL` is set, a gateway-paid order raises one
+message in a private staff Discord channel within about a minute (change
+`staff-paid-order-alert`). Blank, the default, switches the feature off: nothing
+is recorded and nothing is sent. The message carries the tracking reference, the
+state and a link to the site -- nothing personal.
+
+**Order matters on the first deploy.** A template key missing from the server's
+`backend.env` fails the deploy, so the key is added before the code that reads it:
+
+1. On the server, run `./provision.sh secrets` and leave the new key blank.
+2. Deploy. The migration applies; with the URL blank, behaviour is unchanged.
+3. In Discord, create a **private** channel for staff, then Channel settings ->
+   Integrations -> Webhooks -> New webhook, and copy its URL.
+4. Run `./provision.sh secrets` again, paste the URL, and restart the backend.
+   Orders paid in the previous 24 hours alert once.
+5. Make one test payment and confirm its alert arrives.
+
+**Phone notifications are a per-person setting.** Discord mutes ordinary channel
+messages on mobile by default, and the alert deliberately pings nobody. Each staff
+member sets the channel to notify on **All messages** on their phone; without that
+the alert arrives silently.
+
+**The URL is a secret.** Anyone holding it can post to the channel. An alert is a
+prompt to open the console, never an instruction to act on its own.
+
+- **Rotate** in this order, so there is no gap: create a new webhook -> set its URL
+  with `./provision.sh secrets` -> restart the backend -> delete the old webhook.
+- **Review channel membership** whenever staff change. Tracking references
+  accumulate there; one alone grants no access to an agreement, but the channel
+  is still staff-only.
+
+**A failed alert is not re-sent.** A deleted or mistyped webhook fails each alert
+on its first attempt, and the only trace is an ERROR line beginning `Staff alert
+for agreement` -- either `... failed and will not be retried` (refused, or out
+of attempts) or `... closed without a recorded delivery` (pending for more than
+24 hours, or a last attempt whose outcome was never recorded). The staff console
+queue still lists every waiting order. After fixing the URL, re-queue the recent failures:
+
+```sql
+UPDATE staff_alert
+   SET status = 'PENDING', attempts = 0, next_attempt_at = now(), created_at = now()
+ WHERE status = 'FAILED' AND created_at > now() - interval '24 hours';
+```
+
+`created_at` is reset because an alert pending for more than 24 hours is failed
+unsent.
+
+**Rollback:** blank the URL and restart. Alerts left pending for more than 24
+hours are marked failed, not sent, when the feature is switched back on.
+
+**What raises no alert:** an order that never passes through the gateway. A
+payment staff confirm by hand, and a waiver, reach the queue silently in either
+`PAYMENT_MODE`. A second payment on an already-alerted agreement raises none
+either (`docs/ROADMAP.md`, `double-charge-invisible-to-staff`).
+
 ### Why the `sandbox` profile is required
 
 Without it the app boots and serves the SPA, but the **template catalog is

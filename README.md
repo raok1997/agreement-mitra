@@ -158,6 +158,7 @@ them; that step is UX, and the server refusal is the actual gate.
 | `DELIVERY_SMS_ENABLED` | `false` | Declared, **no adapter**. Enabling it without one makes dispatch fail loudly. |
 | `DELIVERY_WHATSAPP_ENABLED` | `false` | Declared, **no adapter**. Same. |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | Where the customer-facing app lives; recovery links are built from it. Blank means no link can be built, so none is sent. |
+| `STAFF_ALERT_DISCORD_WEBHOOK_URL` | blank | **Secret.** Incoming-webhook URL of the private staff Discord channel. When set, a gateway-paid order raises one alert there (tracking reference, state, site link - nothing personal). Blank switches staff alerts off. |
 
 A channel absent from configuration is **disabled, not enabled**. A disabled
 channel never satisfies reachability whatever contact is stored for it, and the

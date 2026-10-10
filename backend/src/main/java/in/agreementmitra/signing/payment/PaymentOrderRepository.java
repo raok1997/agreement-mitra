@@ -39,4 +39,15 @@ interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID> {
    */
   List<PaymentOrder> findByStatusAndCreatedAtLessThanOrderByCreatedAtAsc(
       PaymentOrderStatus status, Instant createdBefore, Pageable pageable);
+
+  /**
+   * Agreements with an order confirmed paid at or after {@code cutoff} - the staff alert look-back.
+   * The status is a literal, not a parameter, so the planner can use the partial index on {@code
+   * confirmed_at} (V27).
+   */
+  @Query(
+      "select distinct o.agreementId from PaymentOrder o"
+          + " where o.status = in.agreementmitra.signing.payment.PaymentOrderStatus.PAID"
+          + " and o.confirmedAt >= :cutoff")
+  List<UUID> findAgreementIdsPaidSince(@Param("cutoff") Instant cutoff);
 }

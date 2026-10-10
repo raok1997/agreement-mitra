@@ -1,6 +1,8 @@
 package in.agreementmitra.signing.payment;
 
 import in.agreementmitra.signing.PaymentOrderQuery;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -20,5 +22,10 @@ class PaymentOrderQueryAdapter implements PaymentOrderQuery {
   @Override
   public boolean existsForAgreement(UUID agreementId) {
     return repository.countByAgreementId(agreementId) > 0;
+  }
+
+  @Override
+  public List<UUID> agreementsWithOrderPaidSince(Instant cutoff) {
+    return repository.findAgreementIdsPaidSince(cutoff);
   }
 }
