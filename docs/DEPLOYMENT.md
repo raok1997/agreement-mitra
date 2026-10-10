@@ -644,10 +644,11 @@ is not active -- see the note in section 3.
 
 `deploy/deploy.sh` records the running release before the restart, never pulls
 (`up --pull never`), and fails the deploy (`postcheck:minio`) if the release
-differs afterwards; the release is on every deploy-log line. What stays manual,
-until the storage-health-indicator CR lands, is **one real storage write after
-every deploy**: in the browser, start an agreement at `/start`, fill it in and
-press **Generate**. A 500 there with MinIO up is this failure, not an application
+differs afterwards; the release is on every deploy-log line. What the deploy
+itself still cannot prove, until the storage-health-indicator CR lands, is **one
+real storage write after every deploy**. `npm run smoke` in `deploy/e2e`
+(section 5.6) makes it: it drafts an agreement, generates its PDF and deletes the
+draft. A failed Generate there with MinIO up is this failure, not an application
 bug. Never run `docker compose pull` on this box -- it fetches whatever `latest`
 is today.
 
@@ -711,8 +712,9 @@ What it does, each step only if the previous one passed:
    rotatable log -- losing it means the next deploy re-seeds) and remove image tags
    no longer needed for rollback.
 
-Then make the storage write above and run `deploy/smoke-prod.sh` from your
-workstation (section 5.6).
+Then run `deploy/smoke-prod.sh` and the browser check (`npm run smoke` in
+`deploy/e2e`, which makes the storage write above) from your workstation
+(section 5.6).
 
 **Flags.** `--dry-run`; `--allow-downtime` (network change); `--allow-downgrade`
 (deploy an older `main` commit); `--refresh-base` (pull fresh base images and
@@ -931,6 +933,32 @@ every deploy. It checks the apex (200) and `www` (301), the 413 body ceiling, th
 `__Host-` / `Secure` / `SameSite=Lax` CSRF cookie, `cf-cache-status: DYNAMIC` on
 the API, that both webhook paths reach the application (401) rather than a
 challenge, and that no response carries `cf-mitigated`.
+
+**The browser check** -- `deploy/e2e/smoke-ui.mjs`, also from your workstation
+after every deploy. It drives your installed Google Chrome through what a person
+used to do by hand: pick a template, fill the required sections with dummy data,
+**Save & continue** (which renders the PDF and writes it to object storage), then
+delete the draft from "My agreements".
+
+```sh
+cd deploy/e2e && npm ci      # first time only
+npm run login                # sign in to Google by hand; the session lasts 24 hours
+npm run smoke                # add `-- --headless` to hide the window
+```
+
+- **Sign-in is never automated and no password is stored.** `login` saves the
+  session cookie to `~/.config/agreementmitra/` (mode 0600, outside the
+  repository). Use an account **without** the STAFF role: the check needs none,
+  so a leaked file is never a staff session. `login` warns if the account has it.
+- **It stops at save.** It places no order and takes no payment, because a paid
+  order cannot be deleted and nothing marks one as a test (register row
+  `prod-test-order-lifecycle`). The staff alert, the stamp queue and the Discord
+  message are still checked by hand after a payment-path release.
+- **A run that fails part-way still deletes its draft**, and says so loudly when
+  it cannot. `-- --no-login` drafts anonymously for a local stack
+  (`npm run smoke -- --no-login http://localhost:5173`); that draft has no owner,
+  cannot be deleted, and stays until the 90-day purge, so the script refuses it
+  on production.
 
 **That a forged header does not become the source** (once per deploy of items 4
 or 6) is its opt-in last check:

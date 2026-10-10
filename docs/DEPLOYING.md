@@ -15,8 +15,17 @@ cases, see [`DEPLOYMENT.md`](DEPLOYMENT.md) §4.
    git show origin/main:deploy/deploy.sh | bash -s -- <commit>             # the real deploy
    ```
 
-4. **Run the smoke check from your laptop:** `deploy/smoke-prod.sh`. Then make one real
-   agreement in the browser (Generate) to prove storage works.
+4. **Run both checks from your laptop:** `deploy/smoke-prod.sh`, then the browser check, which
+   drafts an agreement, generates its PDF to prove storage works, and deletes the draft:
+
+   ```sh
+   cd deploy/e2e && npm ci      # first time only
+   npm run login                # once a day: sign in to Google in the window that opens
+   npm run smoke
+   ```
+
+   It stops at save. Anything behind payment (the staff alert, the stamp queue) is still
+   checked by hand.
 
 That is all. Expect 5–10 minutes, most of it the image build, and about a minute of downtime
 while the backend restarts.
