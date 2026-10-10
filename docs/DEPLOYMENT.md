@@ -393,9 +393,20 @@ state and a link to the site -- nothing personal.
 2. Deploy. The migration applies; with the URL blank, behaviour is unchanged.
 3. In Discord, create a **private** channel for staff, then Channel settings ->
    Integrations -> Webhooks -> New webhook, and copy its URL.
-4. Run `./provision.sh secrets` again, paste the URL, and restart the backend.
-   Orders paid in the previous 24 hours alert once.
+4. Run `./provision.sh secrets` again, paste the URL, and **recreate** the backend
+   (below). Orders paid in the previous 24 hours alert once.
 5. Make one test payment and confirm its alert arrives.
+
+**"Restart" here means recreate.** The backend reads `backend.env` through
+`env_file`, which compose applies only when it creates the container; `docker
+compose restart backend` keeps the old values. Wherever this section says to
+restart the backend after changing the URL, run this from `deploy/`:
+
+```sh
+docker compose -f docker-compose.prod.yml up -d --no-build --pull never --no-deps --wait backend
+```
+
+It reuses the deployed image (`DEPLOY_TAG` in `deploy/.env`) and builds nothing.
 
 **Phone notifications are a per-person setting.** Discord mutes ordinary channel
 messages on mobile by default, and the alert deliberately pings nobody. Each staff
