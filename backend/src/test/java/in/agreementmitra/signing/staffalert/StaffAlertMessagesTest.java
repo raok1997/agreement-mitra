@@ -35,7 +35,8 @@ class StaffAlertMessagesTest {
 
   @Test
   void theMessageCarriesTheReferenceAndStateAndNothingPersonal() {
-    StaffAlertMessage message = StaffAlertMessages.from(view("TG"), BASE_URL);
+    StaffAlertMessage message =
+        StaffAlertMessages.from(StaffAlertKind.ORDER_PAID, view("TG"), BASE_URL);
 
     assertThat(message.trackingReference()).isEqualTo("AM7K2P9Q");
     assertThat(message.stateCode()).isEqualTo("TG");
@@ -52,11 +53,45 @@ class StaffAlertMessagesTest {
         .doesNotContain(AGREEMENT_ID.toString());
   }
 
+  @Test
+  void aDuplicatePaymentMessageIsToldApartAndCarriesNothingMore() {
+    StaffAlertMessage paid =
+        StaffAlertMessages.from(StaffAlertKind.ORDER_PAID, view("TG"), BASE_URL);
+    StaffAlertMessage duplicate =
+        StaffAlertMessages.from(StaffAlertKind.DUPLICATE_PAYMENT, view("TG"), BASE_URL);
+
+    assertThat(duplicate.kind()).isEqualTo(StaffAlertKind.DUPLICATE_PAYMENT);
+    assertThat(duplicate.trackingReference()).isEqualTo(paid.trackingReference());
+    assertThat(duplicate.stateCode()).isEqualTo(paid.stateCode());
+    assertThat(duplicate.siteLink()).isEqualTo(paid.siteLink());
+
+    String paidText = DiscordStaffNotifier.content(paid);
+    String duplicateText = DiscordStaffNotifier.content(duplicate);
+    assertThat(paidText)
+        .startsWith("Paid order waiting for a stamp: **AM7K2P9Q** (TG)")
+        .doesNotContainIgnoringCase("duplicate")
+        .doesNotContainIgnoringCase("refund");
+    assertThat(duplicateText)
+        .startsWith("Possible duplicate payment - check before refunding: **AM7K2P9Q** (TG)")
+        .doesNotContain("waiting for a stamp");
+    for (String text : List.of(paidText, duplicateText, paid.toString(), duplicate.toString())) {
+      assertThat(text)
+          .doesNotContain(AGREEMENT_ID.toString())
+          .doesNotContain("pay_")
+          .doesNotContain("order_")
+          .doesNotContain("499")
+          .doesNotContain("INR")
+          .doesNotContain("Asha")
+          .doesNotContain("Hyderabad");
+    }
+  }
+
   @ParameterizedTest
   @NullSource
   @ValueSource(strings = {"Telangana", "tg", "T", "TGX", "T1"})
   void aStateThatIsNotTwoCapitalLettersIsOmitted(String templateState) {
-    StaffAlertMessage message = StaffAlertMessages.from(view(templateState), BASE_URL);
+    StaffAlertMessage message =
+        StaffAlertMessages.from(StaffAlertKind.ORDER_PAID, view(templateState), BASE_URL);
 
     assertThat(message.stateCode()).isNull();
     assertThat(DiscordStaffNotifier.content(message))
@@ -70,7 +105,8 @@ class StaffAlertMessagesTest {
   @ValueSource(
       strings = {"", "   ", "http://localhost:5173", "app.example.test", "/start", "ht tp://x"})
   void aSiteAddressThatIsNotSecureAndAbsoluteIsOmitted(String publicBaseUrl) {
-    StaffAlertMessage message = StaffAlertMessages.from(view("TG"), publicBaseUrl);
+    StaffAlertMessage message =
+        StaffAlertMessages.from(StaffAlertKind.ORDER_PAID, view("TG"), publicBaseUrl);
 
     assertThat(message.siteLink()).isNull();
     assertThat(DiscordStaffNotifier.content(message)).doesNotContain("http").doesNotContain("\n");
@@ -78,7 +114,10 @@ class StaffAlertMessagesTest {
 
   @Test
   void anHttpsSiteAddressIsLinkedTrimmedAndOtherwiseAsConfigured() {
-    assertThat(StaffAlertMessages.from(view("TG"), " https://app.example.test/ ").siteLink())
+    assertThat(
+            StaffAlertMessages.from(
+                    StaffAlertKind.ORDER_PAID, view("TG"), " https://app.example.test/ ")
+                .siteLink())
         .isEqualTo(URI.create("https://app.example.test/"));
   }
 }

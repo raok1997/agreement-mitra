@@ -64,7 +64,7 @@ public class PaymentService {
             agreementId,
             amount,
             blankTo(currency, DEFAULT_CURRENCY).toUpperCase(Locale.ROOT),
-            normalizeReference(reference),
+            PaymentConfirmation.normalizeReference(reference),
             Instant.now());
     try {
       PaymentStateResponse response =
@@ -91,14 +91,6 @@ public class PaymentService {
   /** The agreement's payment state as read/reported. */
   public PaymentStateResponse view(UUID agreementId) {
     return agreementService.paymentView(agreementId);
-  }
-
-  private static String normalizeReference(String reference) {
-    if (reference == null) {
-      return null;
-    }
-    String trimmed = reference.trim().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
-    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private static String blankTo(String value, String fallback) {

@@ -9,13 +9,17 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import in.agreementmitra.identity.IdentityService;
 import in.agreementmitra.identity.oauth.HandoffService;
 import in.agreementmitra.identity.session.SessionService;
 import in.agreementmitra.signing.PaymentOrderQuery;
 import in.agreementmitra.support.HarnessTestConfig;
+import in.agreementmitra.support.LogCapture;
 import in.agreementmitra.support.MailTestConfig;
+import in.agreementmitra.support.PaymentOrders;
+import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
@@ -26,6 +30,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -119,6 +124,12 @@ class RazorpayPaymentIntegrationTest {
   @Autowired private SessionService sessionService;
   @Autowired private RecordingEmailSender mail;
   @Autowired private PaymentOrderQuery paymentOrderQuery;
+  @Autowired private PaymentOrderService paymentOrderService;
+  @Autowired private javax.sql.DataSource dataSource;
+
+  /** DEBUG so an absence assertion over the surplus line is not an assertion over nothing. */
+  @RegisterExtension
+  final LogCapture confirmationLogs = LogCapture.of(PaymentConfirmations.class, Level.DEBUG);
 
   private String customerToken;
   private String otherCustomerToken;
@@ -395,6 +406,316 @@ class RazorpayPaymentIntegrationTest {
 
     assertThat(paymentOrderQuery.agreementsWithOrderPaidSince(Instant.EPOCH))
         .doesNotContain(agreementId);
+  }
+
+  // --- a second payment is kept as surplus (double-charge-invisible-to-staff) ------------------
+
+  /** Payment ids and order ids are unique per test: the container is shared across classes. */
+  private static String unique(String prefix) {
+    return prefix + UUID.randomUUID().toString().substring(0, 13).replace("-", "");
+  }
+
+  /** An order placed directly, so a test can choose its status. Its amount is 49900 paise. */
+  private String orderIn(UUID agreementId, String status) {
+    return PaymentOrders.providerOrderId(PaymentOrders.insert(jdbc, agreementId, status, null));
+  }
+
+  private ResponseEntity<String> capture(String providerOrderId, String paymentId) {
+    return deliverSignedWebhook(paymentCapturedBody(providerOrderId, paymentId, 49_900L));
+  }
+
+  private Map<String, Object> orderRow(String providerOrderId) {
+    return jdbc.queryForMap(
+        "SELECT status, surplus, provider_payment_id FROM payment_order"
+            + " WHERE provider_order_id = ?",
+        providerOrderId);
+  }
+
+  private Map<String, Object> recordedPayment(UUID agreementId) {
+    return jdbc.queryForMap(
+        "SELECT payment_state, payment_reference, payment_amount, payment_currency,"
+            + " payment_actor_identity_id, payment_recorded_at FROM agreement WHERE id = ?",
+        agreementId);
+  }
+
+  /** An agreement paid through one gateway order, with an earlier order left in {@code status}. */
+  private UUID paidWithAnEarlierOrder(String earlierStatus, String[] earlierOrderOut) {
+    UUID agreementId = createAgreement();
+    earlierOrderOut[0] = orderIn(agreementId, earlierStatus);
+    String paidOrder = orderIn(agreementId, "CREATED");
+    assertThat(capture(paidOrder, unique("pay_FIRST")).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(orderRow(paidOrder)).containsEntry("status", "PAID").containsEntry("surplus", false);
+    return agreementId;
+  }
+
+  private ResponseEntity<String> staffConfirms(UUID agreementId, String reference) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
+    return rest.postForEntity(
+        "/api/staff/payments/" + agreementId + "/confirm",
+        new HttpEntity<>(
+            "{\"amount\":\"499.00\",\"currency\":\"INR\",\"reference\":\"" + reference + "\"}",
+            headers),
+        String.class);
+  }
+
+  @Test
+  void aLatePaymentOnAnExpiredOrderIsKeptAsSurplusAndLeavesTheFirstPaymentRecorded() {
+    String[] expired = new String[1];
+    UUID agreementId = paidWithAnEarlierOrder("EXPIRED", expired);
+    Map<String, Object> before = recordedPayment(agreementId);
+    mail.reset();
+    String latePaymentId = unique("pay_LATE");
+
+    ResponseEntity<String> ack = capture(expired[0], latePaymentId);
+
+    // Acknowledged exactly as any confirmed payment is, so the gateway does not redeliver.
+    assertThat(ack.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(orderRow(expired[0]))
+        .containsEntry("status", "PAID")
+        .containsEntry("surplus", true)
+        .containsEntry("provider_payment_id", latePaymentId);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    // 6.3: the customer already has their link; a second charge must not send a second one.
+    assertThat(mail.sent()).isEmpty();
+    // The line that marks it names neither the money nor a usable identifier.
+    assertThat(confirmationLogs.events())
+        .filteredOn(e -> e.getLevel() == Level.WARN)
+        .extracting(e -> e.getFormattedMessage())
+        .singleElement()
+        .satisfies(
+            line ->
+                assertThat(line)
+                    .contains("surplus")
+                    .doesNotContain(latePaymentId)
+                    .doesNotContain(expired[0])
+                    .doesNotContain(agreementId.toString())
+                    .doesNotContain("49900"));
+
+    // Redelivered, as the gateway would retry: nothing changes and it is still surplus.
+    assertThat(capture(expired[0], latePaymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(capture(expired[0], unique("pay_OTHER")).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(orderRow(expired[0]))
+        .containsEntry("status", "PAID")
+        .containsEntry("surplus", true)
+        .containsEntry("provider_payment_id", latePaymentId);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    assertThat(mail.sent()).isEmpty();
+  }
+
+  @Test
+  void aLatePaymentOnAFailedOrderIsKeptAsSurplus() {
+    String[] failed = new String[1];
+    UUID agreementId = paidWithAnEarlierOrder("FAILED", failed);
+    Map<String, Object> before = recordedPayment(agreementId);
+
+    assertThat(capture(failed[0], unique("pay_LATE")).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(failed[0])).containsEntry("status", "PAID").containsEntry("surplus", true);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+  }
+
+  @Test
+  void aThirdPaymentIsAlsoKeptAsSurplus() {
+    String[] second = new String[1];
+    UUID agreementId = paidWithAnEarlierOrder("EXPIRED", second);
+    String third = orderIn(agreementId, "FAILED");
+    Map<String, Object> before = recordedPayment(agreementId);
+
+    capture(second[0], unique("pay_SECOND"));
+    capture(third, unique("pay_THIRD"));
+
+    assertThat(orderRow(second[0])).containsEntry("status", "PAID").containsEntry("surplus", true);
+    assertThat(orderRow(third)).containsEntry("status", "PAID").containsEntry("surplus", true);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    assertThat(paymentOrderQuery.surplusOrdersPaidSince(Instant.now().minusSeconds(60)))
+        .filteredOn(surplus -> surplus.agreementId().equals(agreementId))
+        .hasSize(2);
+  }
+
+  @Test
+  void aGatewayPaymentAfterAManualConfirmationUnderAnotherReferenceIsSurplus() {
+    UUID agreementId = createAgreement();
+    assertThat(staffConfirms(agreementId, "NEFT-" + UUID.randomUUID()).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+    Map<String, Object> before = recordedPayment(agreementId);
+    assertThat(before.get("payment_actor_identity_id")).isNotNull();
+    String order = orderIn(agreementId, "CREATED");
+    mail.reset();
+    Instant beforeConfirmation = Instant.now().minusSeconds(1);
+
+    assertThat(capture(order, unique("pay_GATEWAY")).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID").containsEntry("surplus", true);
+    // The reference and the actor are still those of the staff confirmation.
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    assertThat(mail.sent()).isEmpty();
+    // A surplus order is reported to the sweep as surplus and never as a paid order.
+    assertThat(paymentOrderQuery.agreementsWithOrderPaidSince(beforeConfirmation))
+        .doesNotContain(agreementId);
+    assertThat(paymentOrderQuery.surplusOrdersPaidSince(beforeConfirmation))
+        .extracting(surplus -> surplus.agreementId())
+        .containsOnlyOnce(agreementId);
+  }
+
+  /**
+   * Staff typed the gateway's own payment id by hand - in another case, with stray spaces - and the
+   * gateway then confirms that same payment. It is one payment, not two: not surplus, and it is the
+   * confirmation that sends the customer their link, because the manual path sends none.
+   */
+  @Test
+  void aGatewayPaymentStaffAlreadyRecordedByHandIsTheSamePaymentAndNotSurplus() {
+    UUID agreementId = createAgreement();
+    String paymentId = unique("pay_SameOne");
+    assertThat(
+            staffConfirms(agreementId, "  " + paymentId.toLowerCase(java.util.Locale.ROOT) + " ")
+                .getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+    Map<String, Object> before = recordedPayment(agreementId);
+    String order = orderIn(agreementId, "CREATED");
+    mail.reset();
+
+    assertThat(capture(order, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order))
+        .containsEntry("status", "PAID")
+        .containsEntry("surplus", false)
+        .containsEntry("provider_payment_id", paymentId);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
+    assertThat(mail.sentTo("tara@example.com")).hasSize(1);
+  }
+
+  @Test
+  void aGatewayPaymentAfterAWaiverIsTheAgreementsPaymentAndNotSurplus() {
+    UUID agreementId = createAgreement();
+    Payments.waive(jdbc, agreementId);
+    String order = orderIn(agreementId, "CREATED");
+    String paymentId = unique("pay_WAIVED");
+
+    assertThat(capture(order, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID").containsEntry("surplus", false);
+    assertThat(recordedPayment(agreementId))
+        .containsEntry("payment_state", "PAID")
+        .containsEntry("payment_reference", paymentId)
+        .containsEntry("payment_actor_identity_id", null);
+  }
+
+  @Test
+  void aFirstPaymentIsNotSurplusAndSendsTheRecoveryLink() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    String paymentId = unique("pay_ONLY");
+
+    assertThat(capture(order, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID").containsEntry("surplus", false);
+    assertThat(recordedPayment(agreementId))
+        .containsEntry("payment_state", "PAID")
+        .containsEntry("payment_reference", paymentId);
+    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
+    assertThat(mail.sentTo("tara@example.com")).hasSize(1);
+  }
+
+  /**
+   * Two orders of one unpaid agreement, each with a captured payment, confirmed at the same
+   * instant. They serialise on the agreement's row lock: exactly one is recorded, the other is
+   * surplus - never two recorded, and never one silently overwriting the other.
+   *
+   * <p>The overlap is forced, not hoped for: the test holds the agreement's row lock itself until
+   * both confirmations are waiting on it. Without the lock in {@code recordGatewayPayment} both
+   * would have read {@code UNPAID} by then, and both would record.
+   *
+   * <p>Uses all four connections of the test pool at its peak (the holder, the two confirmations,
+   * the poll). A confirmation path that ever takes a second connection makes this time out.
+   */
+  @Test
+  void twoOrdersOfOneAgreementConfirmedConcurrentlyGiveOneRecordedPaymentAndOneSurplus()
+      throws Exception {
+    UUID agreementId = createAgreement();
+    String orderA = orderIn(agreementId, "EXPIRED");
+    String orderB = orderIn(agreementId, "CREATED");
+    String paymentA = unique("pay_RACEA");
+    String paymentB = unique("pay_RACEB");
+    java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(2);
+    try (java.sql.Connection holder = dataSource.getConnection()) {
+      holder.setAutoCommit(false);
+      try (java.sql.PreparedStatement lock =
+          holder.prepareStatement("SELECT id FROM agreement WHERE id = ? FOR UPDATE")) {
+        lock.setObject(1, agreementId);
+        lock.execute();
+      }
+      java.util.concurrent.Future<ResponseEntity<String>> a =
+          pool.submit(() -> capture(orderA, paymentA));
+      java.util.concurrent.Future<ResponseEntity<String>> b =
+          pool.submit(() -> capture(orderB, paymentB));
+      org.awaitility.Awaitility.await()
+          .atMost(java.time.Duration.ofSeconds(20))
+          .until(() -> sessionsWaitingOnALock() >= 2);
+      holder.commit();
+
+      assertThat(a.get(30, java.util.concurrent.TimeUnit.SECONDS).getStatusCode())
+          .isEqualTo(HttpStatus.ACCEPTED);
+      assertThat(b.get(30, java.util.concurrent.TimeUnit.SECONDS).getStatusCode())
+          .isEqualTo(HttpStatus.ACCEPTED);
+    } finally {
+      pool.shutdownNow();
+    }
+
+    Map<String, Object> rowA = orderRow(orderA);
+    Map<String, Object> rowB = orderRow(orderB);
+    assertThat(rowA).containsEntry("status", "PAID");
+    assertThat(rowB).containsEntry("status", "PAID");
+    assertThat(List.of(rowA.get("surplus"), rowB.get("surplus")))
+        .containsExactlyInAnyOrder(true, false);
+    String credited = Boolean.TRUE.equals(rowA.get("surplus")) ? paymentB : paymentA;
+    assertThat(recordedPayment(agreementId))
+        .containsEntry("payment_state", "PAID")
+        .containsEntry("payment_reference", credited);
+  }
+
+  private int sessionsWaitingOnALock() {
+    return jdbc.queryForObject(
+        "SELECT count(*) FROM pg_stat_activity"
+            + " WHERE datname = current_database() AND wait_event_type = 'Lock'",
+        Integer.class);
+  }
+
+  /**
+   * One gateway payment id belongs to one payment order. Both orders are on the SAME agreement, so
+   * the agreement's own unique reference cannot be what refuses this - only the index on the
+   * order's payment id can.
+   */
+  @Test
+  void aPaymentIdAlreadyHeldByAnotherOrderIsRefusedAsADuplicateReference() {
+    UUID agreementId = createAgreement();
+    String expired = orderIn(agreementId, "EXPIRED");
+    String paid = orderIn(agreementId, "CREATED");
+    String paymentId = unique("pay_HELD");
+    assertThat(capture(paid, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    Map<String, Object> before = recordedPayment(agreementId);
+    mail.reset();
+
+    ConfirmationOutcome outcome =
+        paymentOrderService.applyConfirmation(expired, paymentId, 49_900L, "INR");
+
+    assertThat(outcome).isEqualTo(ConfirmationOutcome.DUPLICATE_REFERENCE);
+    assertThat(orderRow(expired))
+        .containsEntry("status", "EXPIRED")
+        .containsEntry("surplus", false)
+        .containsEntry("provider_payment_id", null);
+    assertThat(recordedPayment(agreementId)).isEqualTo(before);
+    assertThat(mail.sent()).isEmpty();
+    // Through the webhook the same refusal is acknowledged like everything else.
+    assertThat(capture(expired, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(orderRow(expired)).containsEntry("status", "EXPIRED");
   }
 
   // --- the browser callback is NOT authoritative -----------------------------

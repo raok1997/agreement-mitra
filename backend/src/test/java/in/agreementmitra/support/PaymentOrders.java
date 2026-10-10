@@ -23,18 +23,34 @@ public final class PaymentOrders {
    */
   public static UUID insert(
       JdbcTemplate jdbc, UUID agreementId, String status, Instant confirmedAt) {
+    return insert(jdbc, agreementId, status, confirmedAt, false);
+  }
+
+  /**
+   * @param surplus whether the order is marked surplus - a payment captured on an agreement that
+   *     already held one; only meaningful with {@code PAID}
+   * @return the new order's id
+   */
+  public static UUID insert(
+      JdbcTemplate jdbc, UUID agreementId, String status, Instant confirmedAt, boolean surplus) {
     UUID id = UUID.randomUUID();
     jdbc.update(
         "INSERT INTO payment_order (id, agreement_id, provider, provider_order_id, receipt,"
-            + " amount_minor_units, currency, status, created_at, confirmed_at)"
-            + " VALUES (?, ?, 'razorpay', ?, ?, 49900, 'INR', ?, ?, ?)",
+            + " amount_minor_units, currency, status, created_at, confirmed_at, surplus)"
+            + " VALUES (?, ?, 'razorpay', ?, ?, 49900, 'INR', ?, ?, ?, ?)",
         id,
         agreementId,
-        "order_" + id,
+        providerOrderId(id),
         id.toString(),
         status,
         Timestamp.from(Instant.now()),
-        confirmedAt == null ? null : Timestamp.from(confirmedAt));
+        confirmedAt == null ? null : Timestamp.from(confirmedAt),
+        surplus);
     return id;
+  }
+
+  /** The provider order id {@link #insert} gives the order with this id. */
+  public static String providerOrderId(UUID id) {
+    return "order_" + id;
   }
 }

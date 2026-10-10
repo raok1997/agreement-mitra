@@ -109,7 +109,7 @@ class DiscordStaffNotifier implements StaffNotifier {
   }
 
   static String content(StaffAlertMessage message) {
-    StringBuilder text = new StringBuilder("Paid order waiting for a stamp: **");
+    StringBuilder text = new StringBuilder(lead(message.kind())).append(": **");
     text.append(message.trackingReference()).append("**");
     if (message.stateCode() != null) {
       text.append(" (").append(message.stateCode()).append(')');
@@ -118,6 +118,17 @@ class DiscordStaffNotifier implements StaffNotifier {
       text.append('\n').append(message.siteLink());
     }
     return text.toString();
+  }
+
+  /**
+   * The fixed words that open a message. The duplicate-payment lead asks for a check, because the
+   * system infers a double charge and cannot know that two references are not one payment.
+   */
+  private static String lead(StaffAlertKind kind) {
+    return switch (kind) {
+      case ORDER_PAID -> "Paid order waiting for a stamp";
+      case DUPLICATE_PAYMENT -> "Possible duplicate payment - check before refunding";
+    };
   }
 
   /**

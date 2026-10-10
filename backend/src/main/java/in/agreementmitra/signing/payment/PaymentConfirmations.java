@@ -1,6 +1,7 @@
 package in.agreementmitra.signing.payment;
 
 import in.agreementmitra.signing.PaymentConfirmation;
+import in.agreementmitra.signing.PaymentRecording;
 import in.agreementmitra.signing.agreement.AgreementService;
 import java.time.Instant;
 import java.util.Optional;
@@ -21,14 +22,22 @@ import org.springframework.transaction.annotation.Transactional;
  * genuinely sits outside the boundary, rather than being silently bypassed by self-invocation.
  *
  * <p><b>Ordering of the two locks.</b> The payment order row is locked first, then the agreement
- * row (inside {@code recordPayment}). Every payment path takes them in that order, so there is no
- * lock-ordering deadlock. The order lock is what makes concurrent deliveries safe: the second
+ * row (inside {@code recordGatewayPayment}). Every payment path takes them in that order, so there
+ * is no lock-ordering deadlock. The order lock is what makes concurrent deliveries safe: the second
  * delivery blocks, then observes the {@code PAID} the first wrote and applies nothing.
  *
  * <p><b>Never writes gate state directly.</b> The agreement becomes {@code PAID} through {@link
- * AgreementService#recordPayment}, the vendor-neutral confirmation seam - the same one the manual
- * STAFF path uses. Razorpay is a second producer of a {@link PaymentConfirmation}, not a second way
- * to set payment state.
+ * AgreementService#recordGatewayPayment}, which takes the same vendor-neutral {@link
+ * PaymentConfirmation} the manual STAFF path records and differs from it in one way: it leaves an
+ * agreement that is already paid alone. Razorpay is a second producer of a confirmation, not a
+ * second way to set payment state.
+ *
+ * <p><b>A second payment is kept, not credited.</b> When the agreement already holds a payment
+ * under another reference, the order is still marked {@code PAID} - the money was captured - and is
+ * marked <em>surplus</em>; the agreement's first payment record is untouched and no {@link
+ * PaymentConfirmedEvent} is published. Staff learn of it from the alert sweep, which reads the mark
+ * later; nothing is added to this transaction but that one column on the order row it already
+ * writes.
  */
 @Service
 class PaymentConfirmations {
@@ -61,7 +70,8 @@ class PaymentConfirmations {
    * @param reportedMinorUnits the amount reported, in paise
    * @param reportedCurrency the currency reported
    * @throws org.springframework.dao.DataIntegrityViolationException if the payment id is already
-   *     recorded against another agreement; the caller maps it to {@link
+   *     held by another payment order, or - when this confirmation records the agreement's payment
+   *     - already recorded against another agreement; the caller maps it to {@link
    *     ConfirmationOutcome#DUPLICATE_REFERENCE} outside this transaction
    */
   @Transactional
@@ -101,22 +111,32 @@ class PaymentConfirmations {
     }
 
     Instant confirmedAt = Instant.now();
-    // Through the seam, never by writing gate state here. The actor is null: this transition was
-    // caused by the gateway, not by a staff member, and inventing an identity for it would make the
-    // audit trail lie.
-    agreementService.recordPayment(
-        order.agreementId(),
-        new PaymentConfirmation(
+    // Through the seam, never by writing gate state here. It records the payment with no actor -
+    // this transition was caused by the gateway, not by a staff member - unless the agreement
+    // already holds one, which it decides under the agreement's row lock.
+    PaymentRecording recording =
+        agreementService.recordGatewayPayment(
             order.agreementId(),
-            order.amount().toMajorUnits(),
-            order.currency(),
-            providerPaymentId,
-            confirmedAt),
-        null);
-    order.markPaid(providerPaymentId, confirmedAt);
+            new PaymentConfirmation(
+                order.agreementId(),
+                order.amount().toMajorUnits(),
+                order.currency(),
+                providerPaymentId,
+                confirmedAt));
+    boolean surplus = recording == PaymentRecording.SURPLUS;
+    // Paid either way: the money was captured, and the order row is the durable record of that.
+    order.markPaid(providerPaymentId, confirmedAt, surplus);
     orders.save(order);
+    if (surplus) {
+      // No event: the agreement's first confirmation already had its effects. No amount and no
+      // payment id in the line - the order row holds them, and the alert sweep tells staff.
+      log.warn(
+          "Payment for order {} is surplus: its agreement already holds a payment",
+          redact(providerOrderId));
+      return ConfirmationOutcome.CONFIRMED;
+    }
     // Published here and nowhere else: this is the one line all three producers converge on, and it
-    // is reached exactly once per order because an already-settled order returns above. Listeners
+    // is reached at most once per order because an already-settled order returns above. Listeners
     // run after commit, so nothing outbound happens for a payment that could still roll back.
     events.publishEvent(new PaymentConfirmedEvent(order.agreementId()));
     log.debug("Payment confirmed for order {}", redact(providerOrderId));

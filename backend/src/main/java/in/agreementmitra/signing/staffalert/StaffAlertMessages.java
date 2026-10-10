@@ -16,9 +16,10 @@ final class StaffAlertMessages {
 
   private StaffAlertMessages() {}
 
-  static StaffAlertMessage from(StaffAgreementView view, String publicBaseUrl) {
+  static StaffAlertMessage from(
+      StaffAlertKind kind, StaffAgreementView view, String publicBaseUrl) {
     return new StaffAlertMessage(
-        view.trackingReference(), stateCode(view.templateState()), siteLink(publicBaseUrl));
+        kind, view.trackingReference(), stateCode(view.templateState()), siteLink(publicBaseUrl));
   }
 
   /** The template state is a free string in template metadata; only a two-letter code is sent. */

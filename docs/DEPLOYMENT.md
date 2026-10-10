@@ -413,7 +413,8 @@ prompt to open the console, never an instruction to act on its own.
 
 **A failed alert is not re-sent.** A deleted or mistyped webhook fails each alert
 on its first attempt, and the only trace is an ERROR line beginning `Staff alert
-for agreement` -- either `... failed and will not be retried` (refused, or out
+ORDER_PAID for agreement` or `Staff alert DUPLICATE_PAYMENT for agreement` --
+either `... failed and will not be retried` (refused, or out
 of attempts) or `... closed without a recorded delivery` (pending for more than
 24 hours, or a last attempt whose outcome was never recorded). The staff console
 queue still lists every waiting order. After fixing the URL, re-queue the recent failures:
@@ -427,13 +428,74 @@ UPDATE staff_alert
 `created_at` is reset because an alert pending for more than 24 hours is failed
 unsent.
 
+#### "Possible duplicate payment - check before refunding"
+
+A second alert, with this lead, means the gateway captured a payment for an
+agreement that **already had one recorded** -- a late payment on an expired or
+failed order, or a gateway payment on an agreement staff had confirmed by hand
+(change `double-charge-invisible-to-staff`). The first payment's record on the
+agreement is kept; the extra payment's order is marked `surplus`. It replaces the
+"Paid order waiting for a stamp" alert for that payment, it does not add to it.
+
+The system **refunds nothing**. The alert is a prompt to check, and it is worded
+as "possible" on purpose: if staff recorded a gateway payment by hand under some
+other reference (a UTR, or none), the same single payment looks like two.
+
+The message carries only the tracking reference. Two alerts for one agreement
+read the same, and a send may repeat, so the database is the truth. Look the
+agreement up by the tracking reference from the alert:
+
+```sql
+SELECT o.receipt, o.status, o.surplus, o.amount_minor_units, o.currency,
+       q.stamp_value_minor_units, o.created_at, o.confirmed_at
+  FROM payment_order o
+  JOIN agreement a ON a.id = o.agreement_id
+  LEFT JOIN stamp_quote q ON q.payment_order_id = o.id
+ WHERE a.tracking_reference = 'AM7K2P9Q'
+ ORDER BY o.created_at;
+```
+
+Then, in this order:
+
+1. **Confirm two captured payments** for that agreement in the gateway dashboard
+   (search by the `receipt`). One captured payment means no refund is owed -- it
+   was recorded twice under two references.
+2. **Refund only the order marked `surplus`**, never the credited one, and only
+   **through the gateway to the original payment method**. Never by bank
+   transfer to details received in a message.
+3. **Before buying the stamp, check which order was credited** (`surplus = false`)
+   and buy the stamp for **that row's** `stamp_value_minor_units` (paise). The
+   stamp queue and the payment-progress view read the agreement's *newest*
+   order, which is not always the credited one (register row
+   `checkout-ignores-agreement-paid-state`).
+
+Never paste an agreement id into the channel: it is a bearer credential, and the
+`receipt` column above **is** the agreement id (with a retry suffix). The tracking
+reference is enough to talk about an order.
+
+**If an alert may have been lost** (channel unset or down, or the sweep stopped
+for more than 24 hours), the surplus mark is still on the order. List every
+surplus payment in a period:
+
+```sql
+SELECT a.tracking_reference, o.receipt, o.amount_minor_units, o.currency, o.confirmed_at
+  FROM payment_order o
+  JOIN agreement a ON a.id = o.agreement_id
+ WHERE o.surplus
+   AND o.confirmed_at > now() - interval '30 days'
+ ORDER BY o.confirmed_at;
+```
+
+Orders paid before this release are not marked: a duplicate from before it does
+not appear in either query.
+
 **Rollback:** blank the URL and restart. Alerts left pending for more than 24
 hours are marked failed, not sent, when the feature is switched back on.
 
 **What raises no alert:** an order that never passes through the gateway. A
 payment staff confirm by hand, and a waiver, reach the queue silently in either
-`PAYMENT_MODE`. A second payment on an already-alerted agreement raises none
-either (`docs/ROADMAP.md`, `double-charge-invisible-to-staff`).
+`PAYMENT_MODE`. A second gateway payment on an already-paid agreement raises no
+second "paid order" alert; it raises the duplicate-payment alert above instead.
 
 ### Why the `sandbox` profile is required
 

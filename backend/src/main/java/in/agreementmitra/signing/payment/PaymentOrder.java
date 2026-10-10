@@ -76,6 +76,13 @@ class PaymentOrder implements Persistable<UUID> {
   @Column(name = "confirmed_at")
   private Instant confirmedAt;
 
+  /**
+   * The payment was captured but not recorded as the agreement's payment, because the agreement
+   * already held one. Set once, when the order is marked paid, and never changed afterwards.
+   */
+  @Column(name = "surplus", nullable = false)
+  private boolean surplus;
+
   @Version
   @Column(name = "version", nullable = false)
   private long version;
@@ -119,16 +126,19 @@ class PaymentOrder implements Persistable<UUID> {
 
   /**
    * Record the confirmed payment. Idempotent by construction: an order that is already {@code PAID}
-   * keeps its original payment id and confirmation time, so a redelivered webhook or a second event
-   * for the same payment changes nothing.
+   * keeps its original payment id, confirmation time and surplus mark, so a redelivered webhook or
+   * a second event for the same payment changes nothing.
+   *
+   * @param surplus whether the agreement already held a payment when this one was confirmed
    */
-  void markPaid(String providerPaymentId, Instant confirmedAt) {
+  void markPaid(String providerPaymentId, Instant confirmedAt, boolean surplus) {
     if (status.settled()) {
       return;
     }
     this.status = PaymentOrderStatus.PAID;
     this.providerPaymentId = providerPaymentId;
     this.confirmedAt = confirmedAt;
+    this.surplus = surplus;
   }
 
   /** The provider reports this order failed. Never applied to a settled order (no going back). */
@@ -205,6 +215,10 @@ class PaymentOrder implements Persistable<UUID> {
 
   Instant confirmedAt() {
     return confirmedAt;
+  }
+
+  boolean surplus() {
+    return surplus;
   }
 
   @Override

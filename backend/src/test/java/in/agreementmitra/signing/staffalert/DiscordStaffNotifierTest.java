@@ -37,7 +37,8 @@ class DiscordStaffNotifierTest {
   private static final String TOKEN = "tok-9f3aSECRETc41d";
   private static final String HOOK_PATH = "/api/webhooks/1/" + TOKEN;
   private static final StaffAlertMessage MESSAGE =
-      new StaffAlertMessage("AM7K2P9Q", "TG", URI.create("https://app.example.test"));
+      new StaffAlertMessage(
+          StaffAlertKind.ORDER_PAID, "AM7K2P9Q", "TG", URI.create("https://app.example.test"));
 
   @RegisterExtension final LogCapture logs = LogCapture.root("in.agreementmitra", Level.DEBUG);
 
@@ -95,6 +96,34 @@ class DiscordStaffNotifierTest {
     assertThat(channel.getAllServeEvents().get(0).getRequest().getBodyAsString())
         .contains("AM7K2P9Q")
         .contains("TG");
+  }
+
+  @Test
+  void aDuplicatePaymentAlertIsPostedWithItsOwnLeadAndTheSameSuppression() {
+    channelAnswers(204);
+    StaffAlertMessage duplicate =
+        new StaffAlertMessage(
+            StaffAlertKind.DUPLICATE_PAYMENT,
+            "AM7K2P9Q",
+            "TG",
+            URI.create("https://app.example.test"));
+
+    assertThatCode(() -> notifier(hookUrl()).send(duplicate)).doesNotThrowAnyException();
+
+    channel.verify(
+        1,
+        postRequestedFor(urlPathEqualTo(HOOK_PATH))
+            .withRequestBody(
+                equalToJson("{\"allowed_mentions\":{\"parse\":[]},\"flags\":4}", true, true)));
+    assertThat(channel.getAllServeEvents().get(0).getRequest().getBodyAsString())
+        .contains("Possible duplicate payment - check before refunding: **AM7K2P9Q** (TG)")
+        .doesNotContain("waiting for a stamp");
+  }
+
+  @Test
+  void aPaidOrderAlertKeepsItsLead() {
+    assertThat(DiscordStaffNotifier.content(MESSAGE))
+        .isEqualTo("Paid order waiting for a stamp: **AM7K2P9Q** (TG)\nhttps://app.example.test");
   }
 
   @ParameterizedTest

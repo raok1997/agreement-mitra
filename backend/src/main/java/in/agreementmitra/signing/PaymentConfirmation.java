@@ -3,6 +3,7 @@ package in.agreementmitra.signing;
 import in.agreementmitra.AgreementIds;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -29,6 +30,19 @@ import java.util.UUID;
  */
 public record PaymentConfirmation(
     UUID agreementId, BigDecimal amount, String currency, String reference, Instant confirmedAt) {
+
+  /**
+   * The one normal form of an external payment reference: trimmed, inner whitespace collapsed,
+   * upper-cased, and {@code null} when nothing is left. A manually recorded reference is stored in
+   * this form, and two references are the same payment exactly when their normal forms are equal.
+   */
+  public static String normalizeReference(String reference) {
+    if (reference == null) {
+      return null;
+    }
+    String normalized = reference.trim().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
+    return normalized.isEmpty() ? null : normalized;
+  }
 
   /** The agreement id redacted and the reference cut to its last four - never a usable value. */
   @Override

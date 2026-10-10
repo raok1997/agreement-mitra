@@ -37,7 +37,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -52,7 +55,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>The scheduled job stays off (test profile); every step is called directly with an explicit
  * time, so a retry is "advance the clock", not "wait". Payment orders are inserted directly: how an
- * order becomes paid is the Razorpay tests' subject, and this change does not touch that path.
+ * order becomes paid, or surplus, is the Razorpay tests' subject. One test here does go through the
+ * gateway webhook, to join the two ends.
  *
  * <p>Every assertion is scoped to the test's own agreement, because the sweep sees every paid order
  * in this context's database, including the ones other tests in this class left behind.
@@ -68,6 +72,7 @@ class StaffAlertIntegrationTest {
   private static final String SITE = "https://app.example.test";
   private static final String PARTY_FIRST_NAME = "Ashalata";
   private static final String CITY = "Warangal";
+  private static final String GATEWAY_WEBHOOK_KEY = "it-alert-wh-mac";
 
   private static final WireMockServer CHANNEL = new WireMockServer(options().dynamicPort());
 
@@ -83,6 +88,9 @@ class StaffAlertIntegrationTest {
   static void channelProperties(DynamicPropertyRegistry registry) {
     registry.add("staff-alert.discord.webhook-url", StaffAlertIntegrationTest::hookUrl);
     registry.add("delivery.public-base-url", () -> SITE);
+    // Fabricated. Lets one test deliver a signed gateway webhook, so the surplus path is exercised
+    // from the confirmation to the alert rather than from an inserted row.
+    registry.add("payment.razorpay.webhook-secret", () -> GATEWAY_WEBHOOK_KEY);
   }
 
   @AfterAll
@@ -158,25 +166,44 @@ class StaffAlertIntegrationTest {
     CHANNEL.stubFor(post(urlPathEqualTo(HOOK_PATH)).willReturn(aResponse().withStatus(status)));
   }
 
+  /** Paid-order alerts for the agreement - at most one, keyed by the agreement itself. */
   private int alertCount(UUID agreementId) {
     return jdbc.queryForObject(
-        "SELECT count(*) FROM staff_alert WHERE agreement_id = ?", Integer.class, agreementId);
+        "SELECT count(*) FROM staff_alert WHERE agreement_id = ? AND kind = 'ORDER_PAID'",
+        Integer.class,
+        agreementId);
   }
 
-  private Map<String, Object> alert(UUID agreementId) {
-    return jdbc.queryForMap("SELECT * FROM staff_alert WHERE agreement_id = ?", agreementId);
+  /** Duplicate-payment alerts for the agreement - one per surplus order, keyed by the order. */
+  private int duplicateAlertCount(UUID agreementId) {
+    return jdbc.queryForObject(
+        "SELECT count(*) FROM staff_alert WHERE agreement_id = ? AND kind = 'DUPLICATE_PAYMENT'",
+        Integer.class,
+        agreementId);
   }
 
-  private String statusOf(UUID agreementId) {
-    return (String) alert(agreementId).get("status");
+  /**
+   * One alert by its key: the agreement id for a paid-order alert, the payment order id for a
+   * duplicate-payment one.
+   */
+  private Map<String, Object> alert(UUID alertId) {
+    return jdbc.queryForMap("SELECT * FROM staff_alert WHERE id = ?", alertId);
   }
 
-  private int attemptsOf(UUID agreementId) {
-    return ((Number) alert(agreementId).get("attempts")).intValue();
+  private String statusOf(UUID alertId) {
+    return (String) alert(alertId).get("status");
   }
 
-  private Instant nextAttemptOf(UUID agreementId) {
-    return ((Timestamp) alert(agreementId).get("next_attempt_at")).toInstant();
+  private int attemptsOf(UUID alertId) {
+    return ((Number) alert(alertId).get("attempts")).intValue();
+  }
+
+  private Instant nextAttemptOf(UUID alertId) {
+    return ((Timestamp) alert(alertId).get("next_attempt_at")).toInstant();
+  }
+
+  private UUID surplusOrder(UUID agreementId, Instant confirmedAt) {
+    return PaymentOrders.insert(jdbc, agreementId, "PAID", confirmedAt, true);
   }
 
   private String trackingReferenceOf(UUID agreementId) {
@@ -184,11 +211,23 @@ class StaffAlertIntegrationTest {
         "SELECT tracking_reference FROM agreement WHERE id = ?", String.class, agreementId);
   }
 
-  /** Requests the channel received that name this agreement's tracking reference. */
+  private static final String PAID_LEAD = "Paid order waiting for a stamp";
+  private static final String DUPLICATE_LEAD =
+      "Possible duplicate payment - check before refunding";
+
+  /** Requests the channel received that name this agreement's tracking reference, of any kind. */
   private List<LoggedRequest> requestsFor(UUID agreementId) {
     return CHANNEL.findAll(
         postRequestedFor(urlPathEqualTo(HOOK_PATH))
             .withRequestBody(containing(trackingReferenceOf(agreementId))));
+  }
+
+  /** The same, narrowed to the messages that open with {@code lead}. */
+  private List<LoggedRequest> requestsFor(UUID agreementId, String lead) {
+    return CHANNEL.findAll(
+        postRequestedFor(urlPathEqualTo(HOOK_PATH))
+            .withRequestBody(containing(trackingReferenceOf(agreementId)))
+            .withRequestBody(containing(lead)));
   }
 
   private void assertNothingSecretWasLogged(UUID agreementId) {
@@ -378,7 +417,7 @@ class StaffAlertIntegrationTest {
   void aTransientFailureOnTheLastAttemptFailsTheAlert() {
     UUID agreementId = paidAndEnqueued();
     jdbc.update(
-        "UPDATE staff_alert SET attempts = ? WHERE agreement_id = ?",
+        "UPDATE staff_alert SET attempts = ? WHERE id = ?",
         StaffAlertBackoff.MAX_ATTEMPTS - 1,
         agreementId);
     channelAnswers(500);
@@ -394,7 +433,7 @@ class StaffAlertIntegrationTest {
   void anAlertLeftPendingAfterItsLastAttemptIsFailedWithoutAnotherSend() {
     UUID agreementId = paidAndEnqueued();
     jdbc.update(
-        "UPDATE staff_alert SET attempts = ? WHERE agreement_id = ?",
+        "UPDATE staff_alert SET attempts = ? WHERE id = ?",
         StaffAlertBackoff.MAX_ATTEMPTS,
         agreementId);
     channelAnswers(204);
@@ -411,7 +450,7 @@ class StaffAlertIntegrationTest {
     UUID agreementId = paidAndEnqueued();
     Instant stale = now.minus(Duration.ofHours(25));
     jdbc.update(
-        "UPDATE staff_alert SET created_at = ?, next_attempt_at = ? WHERE agreement_id = ?",
+        "UPDATE staff_alert SET created_at = ?, next_attempt_at = ? WHERE id = ?",
         Timestamp.from(stale),
         Timestamp.from(stale),
         agreementId);
@@ -478,7 +517,7 @@ class StaffAlertIntegrationTest {
   void aDeliveredAlertThatCannotBeRecordedStaysPendingAndIsNotReportedAsASendFailure() {
     UUID agreementId = paidAndEnqueued();
     jdbc.update(
-        "UPDATE staff_alert SET attempts = ? WHERE agreement_id = ?",
+        "UPDATE staff_alert SET attempts = ? WHERE id = ?",
         StaffAlertBackoff.MAX_ATTEMPTS - 1,
         agreementId);
     channelAnswers(204);
@@ -552,10 +591,7 @@ class StaffAlertIntegrationTest {
   @Test
   void aFullSweepRecordsAndSendsAFreshPaidOrder() {
     // Settle everything earlier tests left behind, so the sweep's batch is this test's own row.
-    jdbc.update(
-        "INSERT INTO staff_alert (agreement_id, status, attempts, next_attempt_at, created_at,"
-            + " sent_at) SELECT DISTINCT agreement_id, 'SENT', 1, now(), now(), now()"
-            + " FROM payment_order WHERE status = 'PAID' ON CONFLICT DO NOTHING");
+    settleEverythingLeftBehind();
     jdbc.update("UPDATE staff_alert SET status = 'SENT', sent_at = now() WHERE status = 'PENDING'");
     UUID agreementId = createAgreement();
     PaymentOrders.insert(jdbc, agreementId, "PAID", Instant.now().minusSeconds(5));
@@ -567,5 +603,229 @@ class StaffAlertIntegrationTest {
     assertThat(attemptsOf(agreementId)).isEqualTo(1);
     assertThat(requestsFor(agreementId)).hasSize(1);
     CHANNEL.verify(1, postRequestedFor(urlPathEqualTo(HOOK_PATH)));
+  }
+
+  /**
+   * Give every paid order in this context's database a terminal alert of its kind - paid-order for
+   * a credited order, duplicate-payment for a surplus one - so a full sweep's batch is the calling
+   * test's own rows.
+   */
+  private void settleEverythingLeftBehind() {
+    jdbc.update(
+        "INSERT INTO staff_alert (id, kind, agreement_id, status, attempts, next_attempt_at,"
+            + " created_at, sent_at) SELECT DISTINCT agreement_id, 'ORDER_PAID', agreement_id,"
+            + " 'SENT', 1, now(), now(), now() FROM payment_order"
+            + " WHERE status = 'PAID' AND NOT surplus ON CONFLICT DO NOTHING");
+    jdbc.update(
+        "INSERT INTO staff_alert (id, kind, agreement_id, status, attempts, next_attempt_at,"
+            + " created_at, sent_at) SELECT id, 'DUPLICATE_PAYMENT', agreement_id, 'SENT', 1,"
+            + " now(), now(), now() FROM payment_order"
+            + " WHERE status = 'PAID' AND surplus ON CONFLICT DO NOTHING");
+    jdbc.update("UPDATE staff_alert SET status = 'SENT', sent_at = now() WHERE status = 'PENDING'");
+  }
+
+  // --- the duplicate-payment alert (double-charge-invisible-to-staff 6.6) --------
+
+  @Test
+  void aSurplusOrderRaisesOnePendingDuplicatePaymentAlertHoweverOftenTheSweepRuns() {
+    UUID agreementId = paidAndEnqueued();
+    UUID surplus = surplusOrder(agreementId, now.minusSeconds(10));
+
+    dispatcher.enqueue(now);
+    dispatcher.enqueue(now.plusSeconds(30));
+
+    assertThat(duplicateAlertCount(agreementId)).isEqualTo(1);
+    Map<String, Object> row = alert(surplus);
+    assertThat(row.get("kind")).isEqualTo("DUPLICATE_PAYMENT");
+    assertThat(row.get("agreement_id")).isEqualTo(agreementId);
+    assertThat(row.get("status")).isEqualTo("PENDING");
+    assertThat(attemptsOf(surplus)).isZero();
+    // The agreement's own paid-order alert is untouched, and nothing has been sent yet.
+    assertThat(alertCount(agreementId)).isEqualTo(1);
+    assertThat(requestsFor(agreementId)).isEmpty();
+  }
+
+  @Test
+  void aThirdPaymentRaisesItsOwnDuplicatePaymentAlert() {
+    UUID agreementId = paidAndEnqueued();
+    UUID second = surplusOrder(agreementId, now.minusSeconds(20));
+    UUID third = surplusOrder(agreementId, now.minusSeconds(10));
+
+    dispatcher.enqueue(now);
+
+    assertThat(duplicateAlertCount(agreementId)).isEqualTo(2);
+    assertThat(statusOf(second)).isEqualTo("PENDING");
+    assertThat(statusOf(third)).isEqualTo("PENDING");
+    assertThat(alertCount(agreementId)).isEqualTo(1);
+  }
+
+  @Test
+  void aPaidOrderThatIsNotSurplusRaisesNoDuplicatePaymentAlert() {
+    UUID agreementId = paidAndEnqueued();
+    // A second paid order that was NOT marked surplus (paid before the mark existed).
+    PaymentOrders.insert(jdbc, agreementId, "PAID", now.minusSeconds(10));
+
+    dispatcher.enqueue(now.plusSeconds(30));
+
+    assertThat(duplicateAlertCount(agreementId)).isZero();
+    assertThat(alertCount(agreementId)).isEqualTo(1);
+  }
+
+  @Test
+  void aSurplusOrderPaidBeforeTheLookBackWindowRaisesNoAlert() {
+    UUID agreementId = createAgreement();
+    surplusOrder(agreementId, now.minus(Duration.ofHours(25)));
+
+    dispatcher.enqueue(now);
+
+    assertThat(duplicateAlertCount(agreementId)).isZero();
+    assertThat(alertCount(agreementId)).isZero();
+  }
+
+  /**
+   * Staff confirmed by hand, then the gateway captured a payment too: the order is surplus, and it
+   * raises the duplicate-payment alert <em>instead of</em> "paid order waiting for a stamp" - which
+   * would announce work on an agreement staff already handled.
+   */
+  @Test
+  void aSurplusOrderAfterAManualStaffConfirmationRaisesOnlyTheDuplicatePaymentAlert() {
+    UUID agreementId = createAgreement();
+    Payments.markPaid(jdbc, agreementId, "NEFT-" + UUID.randomUUID());
+    surplusOrder(agreementId, now.minusSeconds(60));
+
+    dispatcher.enqueue(now);
+
+    assertThat(duplicateAlertCount(agreementId)).isEqualTo(1);
+    assertThat(alertCount(agreementId)).isZero();
+  }
+
+  @Test
+  void aDueDuplicatePaymentAlertIsPostedOnceWithItsOwnLeadAndMarkedSent() {
+    UUID agreementId = paidAndEnqueued();
+    UUID surplus = surplusOrder(agreementId, now.minusSeconds(10));
+    dispatcher.enqueue(now);
+    channelAnswers(204);
+
+    dispatcher.dispatchOne(surplus, now);
+
+    assertThat(statusOf(surplus)).isEqualTo("SENT");
+    assertThat(attemptsOf(surplus)).isEqualTo(1);
+    assertThat(alert(surplus).get("sent_at")).isNotNull();
+    // Only the duplicate-payment alert was dispatched; the paid-order one is still pending.
+    assertThat(statusOf(agreementId)).isEqualTo("PENDING");
+    assertThat(requestsFor(agreementId, PAID_LEAD)).isEmpty();
+    List<LoggedRequest> requests = requestsFor(agreementId, DUPLICATE_LEAD);
+    assertThat(requests).hasSize(1);
+    assertThat(requests.get(0).getBodyAsString())
+        .contains(trackingReferenceOf(agreementId))
+        .contains("(TG)")
+        .contains(SITE)
+        .doesNotContain(agreementId.toString())
+        .doesNotContain(surplus.toString())
+        .doesNotContain(PaymentOrders.providerOrderId(surplus))
+        .doesNotContain(PARTY_FIRST_NAME)
+        .doesNotContain(CITY);
+
+    // Sent is terminal: a later sweep neither re-sends nor re-enqueues it.
+    dispatcher.enqueue(now.plusSeconds(60));
+    dispatcher.dispatchOne(surplus, now.plusSeconds(60));
+    assertThat(requestsFor(agreementId, DUPLICATE_LEAD)).hasSize(1);
+    assertThat(duplicateAlertCount(agreementId)).isEqualTo(1);
+  }
+
+  @Test
+  void aFailedDuplicatePaymentAlertNamesItsKindAndNeverItsKey() {
+    UUID agreementId = paidAndEnqueued();
+    UUID surplus = surplusOrder(agreementId, now.minusSeconds(10));
+    dispatcher.enqueue(now);
+    channelAnswers(404);
+
+    dispatcher.dispatchOne(surplus, now);
+
+    assertThat(statusOf(surplus)).isEqualTo("FAILED");
+    assertThat(statusOf(agreementId)).isEqualTo("PENDING");
+    assertThat(logs.events())
+        .filteredOn(e -> e.getLevel() == Level.ERROR)
+        .extracting(e -> e.getFormattedMessage())
+        .anyMatch(
+            m ->
+                m.contains("DUPLICATE_PAYMENT")
+                    && m.contains(AgreementIds.redact(agreementId))
+                    && m.contains("404"));
+    assertThat(logs.messages()).noneMatch(m -> m.contains(surplus.toString()));
+    assertNothingSecretWasLogged(agreementId);
+  }
+
+  /** The row a V27 database carried over: its key is the agreement, so nothing is raised again. */
+  @Test
+  void aSentAlertKeyedByTheAgreementBlocksANewPaidOrderAlert() {
+    UUID agreementId = createAgreement();
+    jdbc.update(
+        "INSERT INTO staff_alert (id, kind, agreement_id, status, attempts, next_attempt_at,"
+            + " created_at, sent_at) VALUES (?, 'ORDER_PAID', ?, 'SENT', 1, now(), now(), now())",
+        agreementId,
+        agreementId);
+    PaymentOrders.insert(jdbc, agreementId, "PAID", now.minusSeconds(60));
+
+    dispatcher.enqueue(now);
+
+    assertThat(alertCount(agreementId)).isEqualTo(1);
+    assertThat(statusOf(agreementId)).isEqualTo("SENT");
+  }
+
+  /**
+   * End to end: the gateway's own webhook confirms a second payment. Confirming it writes no alert
+   * row and contacts nobody - the surplus mark on the order is all that is written - and the next
+   * sweep then posts exactly one duplicate-payment alert.
+   */
+  @Test
+  void aSurplusPaymentConfirmedByTheWebhookIsAlertedByTheNextSweepAndNotBefore() {
+    UUID agreementId = paidAndEnqueued();
+    UUID lateOrder = PaymentOrders.insert(jdbc, agreementId, "EXPIRED", null);
+    Payments.markPaid(jdbc, agreementId, "pay_FIRST" + UUID.randomUUID());
+    channelAnswers(204);
+
+    String body =
+        "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":\"pay_LATE"
+            + UUID.randomUUID()
+            + "\",\"order_id\":\""
+            + PaymentOrders.providerOrderId(lateOrder)
+            + "\",\"amount\":49900,\"currency\":\"INR\",\"status\":\"captured\"}}}}";
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    headers.set("X-Razorpay-Signature", hmacSha256Hex(body, GATEWAY_WEBHOOK_KEY));
+    ResponseEntity<String> ack =
+        rest.postForEntity("/api/webhooks/razorpay", new HttpEntity<>(body, headers), String.class);
+
+    assertThat(ack.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(
+            jdbc.queryForMap("SELECT status, surplus FROM payment_order WHERE id = ?", lateOrder))
+        .containsEntry("status", "PAID")
+        .containsEntry("surplus", true);
+    // While confirming: no alert row for the surplus order, and no request to the channel.
+    assertThat(duplicateAlertCount(agreementId)).isZero();
+    CHANNEL.verify(0, postRequestedFor(urlPathEqualTo(HOOK_PATH)));
+
+    Instant sweep = Instant.now().truncatedTo(ChronoUnit.MICROS);
+    dispatcher.enqueue(sweep);
+    dispatcher.dispatchOne(lateOrder, sweep);
+
+    assertThat(duplicateAlertCount(agreementId)).isEqualTo(1);
+    assertThat(statusOf(lateOrder)).isEqualTo("SENT");
+    assertThat(requestsFor(agreementId, DUPLICATE_LEAD)).hasSize(1);
+    assertThat(requestsFor(agreementId, PAID_LEAD)).isEmpty();
+  }
+
+  private static String hmacSha256Hex(String body, String key) {
+    try {
+      javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+      mac.init(
+          new javax.crypto.spec.SecretKeySpec(
+              key.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+      return java.util.HexFormat.of()
+          .formatHex(mac.doFinal(body.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    } catch (java.security.GeneralSecurityException e) {
+      throw new IllegalStateException(e);
+    }
   }
 }

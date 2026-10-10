@@ -2,6 +2,7 @@ package in.agreementmitra.signing.staffalert;
 
 import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.PaymentOrderQuery;
+import in.agreementmitra.signing.SurplusPayment;
 import in.agreementmitra.signing.agreement.AgreementService;
 import in.agreementmitra.signing.agreement.StaffAgreementView;
 import in.agreementmitra.signing.contact.DeliveryChannelProperties;
@@ -16,8 +17,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.stereotype.Component;
 
 /**
- * The staff alert sweep: record an alert for each agreement the gateway has marked paid, then send
- * the ones that are due.
+ * The staff alert sweep: record a paid-order alert for each agreement the gateway has marked paid
+ * and a duplicate-payment alert for each surplus payment order, then send the ones that are due.
+ * Both kinds share the one claim, lease, backoff and outcome machinery.
  *
  * <p><b>Alerts are derived from paid payment orders, not from the confirmation.</b> The paid order
  * is already the durable record of the trigger, so reading it needs no listener and no write in the
@@ -67,9 +69,9 @@ class StaffAlertDispatcher {
       return;
     }
     enqueue(Instant.now());
-    for (UUID agreementId : dueAgreementIds(Instant.now())) {
+    for (UUID alertId : dueAlertIds(Instant.now())) {
       try {
-        dispatchOne(agreementId, Instant.now());
+        dispatchOne(alertId, Instant.now());
       } catch (RuntimeException e) {
         // One alert's failure must not abort the batch. Class only - never the throwable.
         log.warn("Staff alert dispatch skipped one alert ({})", e.getClass().getSimpleName());
@@ -77,35 +79,47 @@ class StaffAlertDispatcher {
     }
   }
 
-  /** Record a pending alert for each agreement paid inside the look-back window that has none. */
+  /**
+   * Record a pending alert for each agreement paid, and each surplus order paid, inside the
+   * look-back window that has none. The two reads are disjoint: a surplus order raises only the
+   * duplicate-payment alert.
+   */
   void enqueue(Instant now) {
     if (!notifier.configured()) {
       return;
     }
-    List<UUID> paid =
-        paymentOrders.agreementsWithOrderPaidSince(now.minus(StaffAlertBackoff.WINDOW));
-    if (!paid.isEmpty()) {
-      persistence.enqueue(paid, now);
+    Instant cutoff = now.minus(StaffAlertBackoff.WINDOW);
+    List<UUID> paid = paymentOrders.agreementsWithOrderPaidSince(cutoff);
+    List<SurplusPayment> surplus = paymentOrders.surplusOrdersPaidSince(cutoff);
+    if (!paid.isEmpty() || !surplus.isEmpty()) {
+      persistence.enqueue(paid, surplus, now);
     }
   }
 
-  List<UUID> dueAgreementIds(Instant now) {
+  List<UUID> dueAlertIds(Instant now) {
     if (!notifier.configured()) {
       return List.of();
     }
-    return persistence.dueAgreementIds(now, StaffAlertBackoff.BATCH_SIZE);
+    return persistence.dueIds(now, StaffAlertBackoff.BATCH_SIZE);
   }
 
-  /** Send one alert if it is pending and due, and record what happened. */
-  void dispatchOne(UUID agreementId, Instant now) {
+  /**
+   * Send one alert if it is pending and due, and record what happened.
+   *
+   * @param alertId the alert's key - never logged, since for a paid-order alert it is the agreement
+   *     id
+   */
+  void dispatchOne(UUID alertId, Instant now) {
     if (!notifier.configured()) {
       return;
     }
-    Optional<StaffAlert> found = persistence.find(agreementId);
+    Optional<StaffAlert> found = persistence.find(alertId);
     if (found.isEmpty() || found.get().status() != StaffAlertStatus.PENDING) {
       return;
     }
     StaffAlert alert = found.get();
+    StaffAlertKind kind = alert.kind();
+    UUID agreementId = alert.agreementId();
     int seen = alert.attempts();
     if (alert.nextAttemptAt().isAfter(now)) {
       return;
@@ -114,30 +128,36 @@ class StaffAlertDispatcher {
         || seen >= StaffAlertBackoff.MAX_ATTEMPTS) {
       // Stale, or the last attempt ended without an outcome being recorded (a crash, or a database
       // failure after the send). Failed without another send - which is not proof nothing arrived.
-      if (persistence.markFailed(agreementId, seen)) {
+      if (persistence.markFailed(alertId, seen)) {
         log.error(
-            "Staff alert for agreement {} closed without a recorded delivery after {} attempt(s)",
+            "Staff alert {} for agreement {} closed without a recorded delivery after {}"
+                + " attempt(s)",
+            kind,
             AgreementIds.redact(agreementId),
             seen);
       }
       return;
     }
     int attempt = seen + 1;
-    if (!persistence.claim(agreementId, seen, now, now.plus(StaffAlertBackoff.after(attempt)))) {
+    if (!persistence.claim(alertId, seen, now, now.plus(StaffAlertBackoff.after(attempt)))) {
       return; // another run holds it
     }
 
     Kind failure;
     int status = StaffAlertDeliveryException.NO_STATUS;
     try {
-      notifier.send(compose(agreementId));
+      notifier.send(compose(agreementId, kind));
       failure = null;
     } catch (StaffAlertDeliveryException e) {
       failure = e.kind();
       status = e.status();
     } catch (RuntimeException e) {
       // Anything unexpected while composing or sending is worth another attempt. Class only.
-      log.warn("Staff alert attempt failed unexpectedly ({})", e.getClass().getSimpleName());
+      log.warn(
+          "Staff alert {} for agreement {} attempt failed unexpectedly ({})",
+          kind,
+          AgreementIds.redact(agreementId),
+          e.getClass().getSimpleName());
       failure = Kind.TRANSIENT;
     }
 
@@ -145,12 +165,13 @@ class StaffAlertDispatcher {
       // Outside the try: a failure to RECORD a delivered alert must never be read as a failure to
       // send it. If this throws, the row stays pending and is resent - a duplicate, never a
       // delivered alert marked failed.
-      persistence.markSent(agreementId, attempt, now);
+      persistence.markSent(alertId, attempt, now);
     } else if (failure == Kind.PERMANENT || attempt >= StaffAlertBackoff.MAX_ATTEMPTS) {
-      if (persistence.markFailed(agreementId, attempt)) {
+      if (persistence.markFailed(alertId, attempt)) {
         log.error(
-            "Staff alert for agreement {} failed and will not be retried ({}, status {}, attempt"
-                + " {})",
+            "Staff alert {} for agreement {} failed and will not be retried ({}, status {},"
+                + " attempt {})",
+            kind,
             AgreementIds.redact(agreementId),
             failure,
             status,
@@ -159,19 +180,21 @@ class StaffAlertDispatcher {
     } else {
       // The claim already scheduled the retry; nothing to write.
       log.warn(
-          "Staff alert for agreement {} not delivered (status {}, attempt {}); it will be retried",
+          "Staff alert {} for agreement {} not delivered (status {}, attempt {}); it will be"
+              + " retried",
+          kind,
           AgreementIds.redact(agreementId),
           status,
           attempt);
     }
   }
 
-  private StaffAlertMessage compose(UUID agreementId) {
+  private StaffAlertMessage compose(UUID agreementId, StaffAlertKind kind) {
     StaffAgreementView view =
         agreements.staffViewsByAgreementId(List.of(agreementId)).get(agreementId);
     if (view == null || view.trackingReference() == null) {
       throw new StaffAlertDeliveryException(Kind.PERMANENT, StaffAlertDeliveryException.NO_STATUS);
     }
-    return StaffAlertMessages.from(view, channels.publicBaseUrl());
+    return StaffAlertMessages.from(kind, view, channels.publicBaseUrl());
   }
 }

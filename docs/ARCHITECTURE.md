@@ -157,9 +157,17 @@ change `staff-paid-order-alert`).
   agreement that has none. The payment confirmation path is untouched: no listener, no write in its
   transaction, no outbound call on the webhook thread. An alert cannot roll a payment back, and a
   crash cannot lose one, because the paid order is the durable trigger.
-- **Gateway-paid only, one per agreement.** A manual staff confirmation or a waiver creates no
-  payment order and raises nothing. A second paid order on an agreement raises no second alert
-  (register row `double-charge-invisible-to-staff`).
+- **Gateway-paid only, one paid-order alert per agreement.** A manual staff confirmation or a waiver
+  creates no payment order and raises nothing.
+- **A second payment raises a different alert.** A gateway payment confirmed for an agreement that
+  already holds one under another reference is still marked `PAID` (the money was captured) but is
+  marked **surplus** on its `payment_order` row: the agreement's first payment record is kept and no
+  second recovery link is sent. `AgreementService.recordGatewayPayment` decides this under the
+  agreement's row lock. The sweep raises one `DUPLICATE_PAYMENT` alert per surplus order -- *instead
+  of* the paid-order alert, never both -- worded "Possible duplicate payment - check before
+  refunding". `staff_alert` is keyed by the alert's subject: the agreement for `ORDER_PAID`, the
+  payment order for `DUPLICATE_PAYMENT`. A gateway payment after a waiver is the agreement's one
+  payment, not a surplus. The system refunds nothing itself; the runbook is in `docs/DEPLOYMENT.md`.
 - **Claim, send, record.** The sweep claims a row by a conditional update that counts the attempt
   and writes the next-attempt time *before* sending; that time is the lease, so a crash mid-send
   needs no recovery step. The send runs with no transaction open. Delivery is at-least-once.
@@ -167,8 +175,8 @@ change `staff-paid-order-alert`).
   timeout, a 429 or a 5xx is retried; a redirect or any other 4xx fails the alert at once; an alert
   still pending after 24 hours is failed unsent. `FAILED` is terminal and is reported only as an
   ERROR log line -- the console queue remains the source of truth for what is waiting.
-- **What the message may contain:** the tracking reference, a two-letter state code and a link to
-  the public site. Never the agreement id (a bearer credential), a party name, a contact, an
+- **What the message may contain:** a fixed lead naming the kind of alert, the tracking reference, a
+  two-letter state code and a link to the public site. Never the agreement id (a bearer credential), a party name, a contact, an
   address, an amount, or any user-entered text -- which is why there is no city.
 - **The webhook URL is a secret** (the token is in its path). Blank or unusable switches the feature
   off entirely. It is never logged: the adapter catches the HTTP client's exceptions itself, because

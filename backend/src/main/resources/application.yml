@@ -286,7 +286,8 @@ payment:
     webhook-secret: ${RZP_WEBHOOK_SECRET:}
 
 # Staff alert (staff-paid-order-alert). A scheduled sweep finds payment orders the gateway marked
-# paid in the last 24 hours and posts ONE alert per agreement to the staff Discord channel. It only
+# paid in the last 24 hours and posts ONE paid-order alert per agreement to the staff Discord channel,
+# plus one duplicate-payment alert per surplus order (double-charge-invisible-to-staff). It only
 # reads payment orders; the payment confirmation path does not know it exists.
 #
 # `discord.webhook-url` is a SECRET - the token is in the URL path and anyone holding it can post to

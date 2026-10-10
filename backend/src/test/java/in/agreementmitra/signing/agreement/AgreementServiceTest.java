@@ -14,13 +14,17 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.signing.PaymentConfirmation;
 import in.agreementmitra.signing.PaymentOrderQuery;
+import in.agreementmitra.signing.PaymentRecording;
+import in.agreementmitra.signing.PaymentState;
 import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SigningRequestQuery;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.CreateAgreementRequest;
 import in.agreementmitra.signing.api.CreateAgreementRequest.SignerRequest;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Unit-tests the entity-to-response mapping via the service with a mocked repository (no Spring, no
@@ -369,6 +374,107 @@ class AgreementServiceTest {
     assertThatThrownBy(() -> service.update(agreement.getId(), UUID.randomUUID(), minimalRequest()))
         .isInstanceOf(ResourceNotFoundException.class);
     verify(repository, never()).save(any());
+  }
+
+  // --- recordGatewayPayment (double-charge-invisible-to-staff D1) -----------------
+
+  private static PaymentConfirmation gatewayConfirmation(Agreement agreement, String reference) {
+    return new PaymentConfirmation(
+        agreement.getId(), new BigDecimal("499.00"), "INR", reference, Instant.now());
+  }
+
+  private static Object actorOf(Agreement agreement) {
+    return ReflectionTestUtils.getField(agreement, "paymentActorIdentityId");
+  }
+
+  private Agreement lockedForUpdate(Agreement agreement) {
+    when(repository.findByIdForUpdate(agreement.getId())).thenReturn(Optional.of(agreement));
+    return agreement;
+  }
+
+  @Test
+  void aGatewayPaymentOnAnUnpaidAgreementIsRecordedWithNoActor() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+
+    PaymentRecording result =
+        service.recordGatewayPayment(
+            agreement.getId(), gatewayConfirmation(agreement, "pay_first"));
+
+    assertThat(result).isEqualTo(PaymentRecording.RECORDED);
+    assertThat(agreement.paymentState()).isEqualTo(PaymentState.PAID);
+    assertThat(agreement.paymentReference()).isEqualTo("pay_first");
+    assertThat(actorOf(agreement)).isNull();
+    verify(repository).save(agreement);
+  }
+
+  @Test
+  void aGatewayPaymentOnAWaivedAgreementIsRecordedAsItsPayment() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+    agreement.waivePayment(UUID.randomUUID(), Instant.now());
+
+    PaymentRecording result =
+        service.recordGatewayPayment(
+            agreement.getId(), gatewayConfirmation(agreement, "pay_after_waiver"));
+
+    assertThat(result).isEqualTo(PaymentRecording.RECORDED);
+    assertThat(agreement.paymentState()).isEqualTo(PaymentState.PAID);
+    assertThat(agreement.paymentReference()).isEqualTo("pay_after_waiver");
+    assertThat(actorOf(agreement)).isNull();
+    verify(repository).save(agreement);
+  }
+
+  @Test
+  void aGatewayPaymentStaffAlreadyRecordedByHandIsNotWrittenAgain() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+    UUID staff = UUID.randomUUID();
+    agreement.recordPayment(gatewayConfirmation(agreement, "PAY_SAME"), staff);
+
+    PaymentRecording result =
+        service.recordGatewayPayment(agreement.getId(), gatewayConfirmation(agreement, "pay_Same"));
+
+    assertThat(result).isEqualTo(PaymentRecording.ALREADY_RECORDED);
+    assertThat(agreement.paymentReference()).isEqualTo("PAY_SAME");
+    assertThat(actorOf(agreement)).isEqualTo(staff);
+    verify(repository, never()).save(any());
+  }
+
+  @Test
+  void aGatewayPaymentOnAnAgreementPaidUnderAnotherReferenceIsSurplusAndWritesNothing() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+    UUID staff = UUID.randomUUID();
+    PaymentConfirmation first = gatewayConfirmation(agreement, "NEFT-2026-77");
+    agreement.recordPayment(first, staff);
+
+    PaymentRecording result =
+        service.recordGatewayPayment(
+            agreement.getId(),
+            new PaymentConfirmation(
+                agreement.getId(),
+                new BigDecimal("999.00"),
+                "INR",
+                "pay_second",
+                first.confirmedAt().plusSeconds(3600)));
+
+    assertThat(result).isEqualTo(PaymentRecording.SURPLUS);
+    assertThat(agreement.paymentReference()).isEqualTo("NEFT-2026-77");
+    assertThat(agreement.paymentAmount()).isEqualByComparingTo("499.00");
+    assertThat(actorOf(agreement)).isEqualTo(staff);
+    assertThat(agreement.paymentRecordedAt()).isEqualTo(first.confirmedAt());
+    verify(repository, never()).save(any());
+  }
+
+  @Test
+  void aGatewayPaymentForAnUnknownAgreementIsNotFound() {
+    UUID unknown = UUID.randomUUID();
+    when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                service.recordGatewayPayment(
+                    unknown,
+                    new PaymentConfirmation(
+                        unknown, new BigDecimal("499.00"), "INR", "pay_x", Instant.now())))
+        .isInstanceOf(ResourceNotFoundException.class);
   }
 
   private static Agreement anUnownedAgreement() {
