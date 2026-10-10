@@ -306,6 +306,29 @@ behind their seams (`EsignProvider`, `StampProvider`) when accounts arrive
      term-aware hint under the capture form's escalation field so a term of 12 months or less
      reads "applies when you renew" (wording drafted in the `stamp-quote-deed-parity`
      discussion, 2026-10-06).
+6. **Multi-party signers** — more than one owner and/or tenant on one agreement.
+   Storage and the API already hold several parties per role, but the capture form,
+   the deed (`AgreementDocumentMapper` takes the first signer per role), the
+   `esign:<role>` anchor and the two-lane every-page strip all assume one owner and
+   one tenant, so a hand-built request with two owners yields a deed that omits one
+   signatory and overlapping signatures. Direction agreed 2026-10-10 and **not yet
+   proposed**; branch `multi-party-signers`. Decisions:
+   - **Cap: 4 parties in total, at least one owner and one tenant.** Set by the
+     every-page strip: a 95pt box with an 8pt gap fits four across the page and the
+     26–66pt band holds one row. Enforced once, in `SignerSetValidator`; the form
+     reads the cap from the API rather than keeping its own copy.
+   - Flat price unchanged; `SEQUENTIAL` signing, owners then tenants; each party
+     still needs a distinct email; residential templates only (commercial stays one
+     lessor and one lessee).
+   - **Go/no-go before any design work:** one ZOOP sandbox `/v5/init` with four
+     dummy signers and a coordinate on every page. No public source states ZOOP's
+     signer or coordinate limit; record the result in `docs/integrations/zoop.md`.
+   - One change, **`multi-party-signers`**, tasks in this order: cap in the
+     validator → repeating-party template construct and mapper → per-signer anchors
+     (`esign:owner-1`, terminated token) → four-lane strip that refuses when the
+     boxes do not fit → capture UI add/remove party → ToS/FAQ → visual check of a
+     real four-signer signed PDF. The collective-party wording ("collectively the
+     Owner, jointly and severally") goes to counsel at proposal time.
 
 ## Track B — ZOOP test access is free and self-serve (no longer blocked)
 
