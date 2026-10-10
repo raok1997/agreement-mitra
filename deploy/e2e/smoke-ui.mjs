@@ -7,14 +7,17 @@
 //
 //   npm run login [-- <base-url>]     sign in to Google once, by hand; the session lasts 24 hours
 //   npm run smoke [-- <base-url>]     default https://agreementmitra.com
-//   npm run smoke -- --no-login       draft anonymously; the draft CANNOT be deleted afterwards
-//                                     and stays until the 90-day purge. For local runs.
-//   npm run smoke -- --keep           skip the delete and leave the window open on the saved
+//   npm run smoke keep                skip the delete and leave the window open on the saved
 //                                     agreement, so you can press "Finalise and pay" by hand
-//   npm run smoke -- --headless
+//   npm run smoke no-login            draft anonymously; the draft CANNOT be deleted afterwards
+//                                     and stays until the 90-day purge. For local runs.
+//   npm run smoke headless
+//
+// Options are plain words because `npm run` swallows a `--flag` unless a bare `--` precedes it.
+// The `--flag` spelling is accepted too, for `node smoke-ui.mjs --keep`.
 //
 // Stops at save. It places no order and takes no payment itself: a paid order cannot be deleted,
-// and nothing marks one as a test (ROADMAP `prod-test-order-lifecycle`). `--keep` hands the saved
+// and nothing marks one as a test (ROADMAP `prod-test-order-lifecycle`). `keep` hands the saved
 // draft to you for a manual payment check; a draft you do not pay is yours to delete from
 // "My agreements".
 //
@@ -41,7 +44,7 @@ const HIDDEN_FIELDS = new Set(["stampDuty"]);
 
 function usage() {
   console.error(
-    "usage: smoke-ui.mjs [login] [--no-login] [--keep] [--headless] [--state=TG] [--type=residential] [base-url]",
+    "usage: smoke-ui.mjs [login] [no-login] [keep] [headless] [state=TG] [type=residential] [base-url]",
   );
   process.exit(2);
 }
@@ -56,13 +59,14 @@ function parseArgs(argv) {
     state: "TG",
     type: "residential",
   };
-  for (const arg of argv) {
+  for (const raw of argv) {
+    const arg = raw.replace(/^--/, "");
     if (arg === "login") opts.command = "login";
-    else if (arg === "--no-login") opts.login = false;
-    else if (arg === "--headless") opts.headless = true;
-    else if (arg === "--keep") opts.keep = true;
-    else if (arg.startsWith("--state=")) opts.state = arg.slice(8);
-    else if (arg.startsWith("--type=")) opts.type = arg.slice(7);
+    else if (arg === "no-login") opts.login = false;
+    else if (arg === "headless") opts.headless = true;
+    else if (arg === "keep") opts.keep = true;
+    else if (arg.startsWith("state=")) opts.state = arg.slice(6);
+    else if (arg.startsWith("type=")) opts.type = arg.slice(5);
     else if (/^https?:\/\//.test(arg)) opts.base = arg.replace(/\/+$/, "");
     else usage();
   }
@@ -320,7 +324,7 @@ async function deleteThroughApi(page, id) {
   }
 }
 
-/** --keep: the draft stays, and a visible window stays open on it until the user closes it. */
+/** keep: the draft stays, and a visible window stays open on it until the user closes it. */
 async function handOver(page, id) {
   console.log(`KEPT the draft ${id} was not deleted`);
   if (opts.headless || page.isClosed()) return;
@@ -357,7 +361,7 @@ async function cleanUp(page, id) {
 async function smoke() {
   if (!opts.login && new URL(opts.base).host.endsWith(new URL(DEFAULT_BASE).host)) {
     console.error(
-      "--no-login is refused on production: its draft could never be deleted. Run: npm run login",
+      "no-login is refused on production: its draft could never be deleted. Run: npm run login",
     );
     process.exit(2);
   }

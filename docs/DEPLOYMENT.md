@@ -940,30 +940,47 @@ used to do by hand: pick a template, fill the required sections with dummy data,
 **Save & continue** (which renders the PDF and writes it to object storage), then
 delete the draft from "My agreements".
 
+All commands run from `deploy/e2e`; the first time, run `npm ci` there.
+
+Production (the default target):
+
 ```sh
-cd deploy/e2e && npm ci      # first time only
-npm run login                # sign in to Google by hand; the session lasts 24 hours
-npm run smoke                # add `-- --headless` to hide the window
+npm run login          # once a day: sign in to Google in the window that opens
+npm run smoke          # draft, Generate, delete
+npm run smoke keep     # same, but skip the delete and leave the window open to pay
 ```
+
+A local stack (add its address):
+
+```sh
+npm run login http://localhost:5173
+npm run smoke http://localhost:5173
+npm run smoke keep http://localhost:5173
+npm run smoke no-login http://localhost:5173   # no Google sign-in; the draft cannot be deleted
+```
+
+Optional words, combinable with any of the above: `headless` (no visible window;
+pointless with `keep`), and `state=KA` or `type=commercial` for a different
+template (the default is Telangana residential). Options are plain words because
+`npm run` swallows a `--flag`.
 
 - **Sign-in is never automated and no password is stored.** `login` saves the
   session cookie to `~/.config/agreementmitra/` (mode 0600, outside the
-  repository). Use an account **without** the STAFF role: the check needs none,
-  so a leaked file is never a staff session. `login` warns if the account has it.
+  repository); it lasts 24 hours. Use an account **without** the STAFF role: the
+  check needs none, so a leaked file is never a staff session. `login` warns if
+  the account has it.
 - **It stops at save.** It places no order and takes no payment, because a paid
   order cannot be deleted and nothing marks one as a test (register row
   `prod-test-order-lifecycle`). The staff alert, the stamp queue and the Discord
   message are still checked by hand after a payment-path release.
-- **`npm run smoke -- --keep` hands the draft to you for the payment check.** It
-  skips the delete and leaves the window open on the saved agreement, so you
-  press **Finalise and pay** yourself. Once paid, that order stays in production
-  data unmarked (the same register row); a draft you do not pay is yours to
-  delete from "My agreements".
+- **`keep` hands the draft to you for that payment check.** Press **Finalise and
+  pay** in the window it leaves open, and close the window when done. Once paid,
+  the order stays in production data unmarked (the same register row); a draft
+  you do not pay is yours to delete from "My agreements".
 - **A run that fails part-way still deletes its draft**, and says so loudly when
-  it cannot. `-- --no-login` drafts anonymously for a local stack
-  (`npm run smoke -- --no-login http://localhost:5173`); that draft has no owner,
-  cannot be deleted, and stays until the 90-day purge, so the script refuses it
-  on production.
+  it cannot.
+- **`no-login` is refused on production.** Its draft has no owner, cannot be
+  deleted, and stays until the 90-day purge.
 
 **That a forged header does not become the source** (once per deploy of items 4
 or 6) is its opt-in last check:

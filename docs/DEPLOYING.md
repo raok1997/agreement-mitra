@@ -21,11 +21,12 @@ cases, see [`DEPLOYMENT.md`](DEPLOYMENT.md) §4.
    ```sh
    cd deploy/e2e && npm ci      # first time only
    npm run login                # once a day: sign in to Google in the window that opens
-   npm run smoke
+   npm run smoke                # draft, Generate, delete
    ```
 
    It stops at save. Anything behind payment (the staff alert, the stamp queue) is still
-   checked by hand.
+   checked by hand: `npm run smoke keep` skips the delete and leaves the window open so you can
+   pay from it.
 
 That is all. Expect 5–10 minutes, most of it the image build, and about a minute of downtime
 while the backend restarts.
