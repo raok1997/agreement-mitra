@@ -12,6 +12,7 @@ import * as authStore from "../api/authStore";
 import type { Ref } from "vue";
 import type { FormSchema } from "../api/templateForm";
 import StampQuoteStep from "./StampQuoteStep.vue";
+import { CONTACT_EMAIL } from "../content/promises";
 import ContactConfirmation, {
   type PartyContact,
 } from "./ContactConfirmation.vue";
@@ -1131,6 +1132,31 @@ describe("CaptureForm: mandatory vs optional sections (M4)", () => {
     await wrapper.find('[data-testid="section-pets"]').trigger("click");
     expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="section-hint"]').exists()).toBe(false);
+  });
+
+  it("a party dialog offers 'More than one <role>?' with a prefilled email; other sections do not", async () => {
+    const schema = schemaWithOptional();
+    schema.sections[0].title = "Owner";
+    mockedGetForm.mockResolvedValue(schema);
+    const wrapper = await mountReady();
+
+    await wrapper.find('[data-testid="section-owner"]').trigger("click");
+    expect(wrapper.find('[data-testid="multi-party-toggle"]').text()).toBe(
+      "More than one owner?",
+    );
+    expect(
+      wrapper.find('[data-testid="multi-party"]').attributes("open"),
+    ).toBeUndefined();
+    expect(
+      wrapper.find('[data-testid="multi-party-email"]').attributes("href"),
+    ).toBe(
+      `mailto:${CONTACT_EMAIL}?subject=Agreement%20with%20more%20than%20one%20owner`,
+    );
+    await wrapper.find('[data-testid="modal-close"]').trigger("click");
+
+    await wrapper.find('[data-testid="section-property"]').trigger("click");
+    expect(wrapper.find('[data-testid="section-modal"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="multi-party"]').exists()).toBe(false);
   });
 
   it("refuses to save Charges & Utilities under Fixed Amount until an amount is entered", async () => {
