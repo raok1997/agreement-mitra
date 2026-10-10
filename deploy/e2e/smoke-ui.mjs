@@ -9,10 +9,14 @@
 //   npm run smoke [-- <base-url>]     default https://agreementmitra.com
 //   npm run smoke -- --no-login       draft anonymously; the draft CANNOT be deleted afterwards
 //                                     and stays until the 90-day purge. For local runs.
+//   npm run smoke -- --keep           skip the delete and leave the window open on the saved
+//                                     agreement, so you can press "Finalise and pay" by hand
 //   npm run smoke -- --headless
 //
-// Stops at save. It places no order and takes no payment: a paid order cannot be deleted, and
-// nothing marks one as a test (ROADMAP `prod-test-order-lifecycle`).
+// Stops at save. It places no order and takes no payment itself: a paid order cannot be deleted,
+// and nothing marks one as a test (ROADMAP `prod-test-order-lifecycle`). `--keep` hands the saved
+// draft to you for a manual payment check; a draft you do not pay is yours to delete from
+// "My agreements".
 //
 // Drives your installed Google Chrome (`playwright-core`, no bundled browser). Google sign-in is
 // never automated and no password is stored: `login` opens a window, you sign in, and the session
@@ -37,7 +41,7 @@ const HIDDEN_FIELDS = new Set(["stampDuty"]);
 
 function usage() {
   console.error(
-    "usage: smoke-ui.mjs [login] [--no-login] [--headless] [--state=TG] [--type=residential] [base-url]",
+    "usage: smoke-ui.mjs [login] [--no-login] [--keep] [--headless] [--state=TG] [--type=residential] [base-url]",
   );
   process.exit(2);
 }
@@ -48,6 +52,7 @@ function parseArgs(argv) {
     base: DEFAULT_BASE,
     login: true,
     headless: false,
+    keep: false,
     state: "TG",
     type: "residential",
   };
@@ -55,6 +60,7 @@ function parseArgs(argv) {
     if (arg === "login") opts.command = "login";
     else if (arg === "--no-login") opts.login = false;
     else if (arg === "--headless") opts.headless = true;
+    else if (arg === "--keep") opts.keep = true;
     else if (arg.startsWith("--state=")) opts.state = arg.slice(8);
     else if (arg.startsWith("--type=")) opts.type = arg.slice(7);
     else if (/^https?:\/\//.test(arg)) opts.base = arg.replace(/\/+$/, "");
@@ -314,7 +320,19 @@ async function deleteThroughApi(page, id) {
   }
 }
 
+/** --keep: the draft stays, and a visible window stays open on it until the user closes it. */
+async function handOver(page, id) {
+  console.log(`KEPT the draft ${id} was not deleted`);
+  if (opts.headless || page.isClosed()) return;
+  console.log(
+    'The window is on the saved agreement: press "Finalise and pay" to test payment. ' +
+      "Close the window when you are done.",
+  );
+  await page.waitForEvent("close", { timeout: 0 });
+}
+
 async function cleanUp(page, id) {
+  if (opts.keep) return handOver(page, id);
   if (!opts.login) {
     console.log(
       `NOTE the draft ${id} has no owner and cannot be deleted; the 90-day purge removes it`,

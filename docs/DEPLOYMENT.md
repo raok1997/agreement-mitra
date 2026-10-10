@@ -954,6 +954,11 @@ npm run smoke                # add `-- --headless` to hide the window
   order cannot be deleted and nothing marks one as a test (register row
   `prod-test-order-lifecycle`). The staff alert, the stamp queue and the Discord
   message are still checked by hand after a payment-path release.
+- **`npm run smoke -- --keep` hands the draft to you for the payment check.** It
+  skips the delete and leaves the window open on the saved agreement, so you
+  press **Finalise and pay** yourself. Once paid, that order stays in production
+  data unmarked (the same register row); a draft you do not pay is yours to
+  delete from "My agreements".
 - **A run that fails part-way still deletes its draft**, and says so loudly when
   it cannot. `-- --no-login` drafts anonymously for a local stack
   (`npm run smoke -- --no-login http://localhost:5173`); that draft has no owner,
