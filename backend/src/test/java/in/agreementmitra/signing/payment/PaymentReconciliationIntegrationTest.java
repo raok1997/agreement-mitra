@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -23,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -343,5 +345,26 @@ class PaymentReconciliationIntegrationTest {
 
     assertThat(paymentStateOf(agreementId)).isEqualTo("UNPAID");
     assertThat(orderStatusOf("order_RECONMM")).isEqualTo("CREATED");
+  }
+
+  /**
+   * Checkout and this job both expire an order from a copy loaded earlier, with no lock. The
+   * version check is what stops that copy overwriting a confirmation, and this pins the exception
+   * it raises - the one {@code PaymentOrderService.reusableOrder} recovers from.
+   */
+  @Test
+  void aStaleCopyCannotExpireAnOrderConfirmedSinceItWasLoaded() {
+    UUID agreementId = createAgreement();
+    UUID orderId = outstandingOrder(agreementId, "order_STALE").getId();
+    PaymentOrder stale = orders.findById(orderId).orElseThrow();
+    PaymentOrder confirmed = orders.findById(orderId).orElseThrow();
+    confirmed.markPaid("pay_STALE", Instant.now(), false);
+    orders.save(confirmed);
+
+    stale.markExpired();
+
+    assertThatThrownBy(() -> orders.save(stale))
+        .isInstanceOf(OptimisticLockingFailureException.class);
+    assertThat(orders.findById(orderId).orElseThrow().status()).isEqualTo(PaymentOrderStatus.PAID);
   }
 }
