@@ -4,8 +4,9 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Writes the stamp-intake audit row.
@@ -31,21 +32,29 @@ class StampIntakeAuditor {
   private static final int MAX_REFERENCE_LENGTH = 32;
 
   private final StampIntakeAuditRepository repository;
+  private final TransactionTemplate ownTransaction;
 
-  StampIntakeAuditor(StampIntakeAuditRepository repository) {
+  StampIntakeAuditor(
+      StampIntakeAuditRepository repository, PlatformTransactionManager transactionManager) {
     this.repository = repository;
+    this.ownTransaction = new TransactionTemplate(transactionManager);
+    this.ownTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
   /**
    * Record one attempt. Never throws: an audit-write failure must not convert an otherwise-correct
    * 200 (or an otherwise-correct 409) into a 500 for the operator. It is logged instead.
+   *
+   * <p>The catch encloses the whole transaction, commit included: caught inside a transactional
+   * method, a failure at flush or commit would escape after the catch had already been left.
    */
-  @Transactional(propagation = Propagation.REQUIRES_NEW)
   void record(UUID staffIdentityId, UUID agreementId, String submittedReference, String outcome) {
     try {
-      repository.save(
-          StampIntakeAudit.record(
-              staffIdentityId, agreementId, truncate(submittedReference), outcome));
+      ownTransaction.executeWithoutResult(
+          status ->
+              repository.save(
+                  StampIntakeAudit.record(
+                      staffIdentityId, agreementId, truncate(submittedReference), outcome)));
     } catch (RuntimeException e) {
       // No submitted value is logged - only the outcome token, which is a fixed constant.
       log.warn("Stamp-intake audit row could not be written for outcome {}", outcome);

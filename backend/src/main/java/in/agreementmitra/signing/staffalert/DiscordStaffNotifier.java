@@ -128,6 +128,14 @@ class DiscordStaffNotifier implements StaffNotifier {
     return switch (kind) {
       case ORDER_PAID -> "Paid order waiting for a stamp";
       case DUPLICATE_PAYMENT -> "Possible duplicate payment - check before refunding";
+      case PAYMENT_NOT_RECORDED ->
+          "Payment captured but not recorded - check before recording or refunding";
+      case PAYMENT_ID_REUSED ->
+          "Payment refused: its reference is already recorded elsewhere - check before recording"
+              + " or refunding";
+      case PAYMENT_AMOUNT_MISMATCH ->
+          "Payment refused: the amount paid differs from the order - check before recording or"
+              + " refunding";
     };
   }
 

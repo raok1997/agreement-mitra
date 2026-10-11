@@ -20,17 +20,18 @@ import org.springframework.data.repository.query.Param;
  * <p>The status is written as a literal in every query rather than bound, so the planner can use
  * the partial index on pending rows (V27).
  */
-interface StaffAlertRepository extends Repository<StaffAlert, UUID> {
+interface StaffAlertRepository extends Repository<StaffAlert, StaffAlertKey> {
 
-  Optional<StaffAlert> findById(UUID id);
+  Optional<StaffAlert> findById(StaffAlertKey key);
 
   /**
-   * Record a pending alert unless one with this key already exists, in any status. One statement,
-   * so there is nothing to catch. {@code 'PENDING'} is a SQL literal and {@code kind} is passed as
-   * its name, because Hibernate does not bind a Java enum to a native parameter as its name.
+   * Record a pending alert unless one with this subject and kind already exists, in any status. One
+   * statement, so there is nothing to catch. {@code 'PENDING'} is a SQL literal and {@code kind} is
+   * passed as its name, because Hibernate does not bind a Java enum to a native parameter as its
+   * name.
    *
    * @param id the alert's subject: the agreement id for {@code ORDER_PAID}, the payment order id
-   *     for {@code DUPLICATE_PAYMENT}
+   *     for every other kind
    * @param kind {@link StaffAlertKind#name()}
    */
   @Modifying
@@ -40,7 +41,7 @@ interface StaffAlertRepository extends Repository<StaffAlert, UUID> {
               + " (id, kind, agreement_id, status, attempts, next_attempt_at, created_at)"
               + " VALUES (:id, :kind, :agreementId, 'PENDING', :attempts, :nextAttemptAt,"
               + " :createdAt)"
-              + " ON CONFLICT (id) DO NOTHING",
+              + " ON CONFLICT (id, kind) DO NOTHING",
       nativeQuery = true)
   int insertPendingIfAbsent(
       @Param("id") UUID id,
@@ -52,11 +53,12 @@ interface StaffAlertRepository extends Repository<StaffAlert, UUID> {
 
   /** Pending alerts whose next attempt is due, oldest first and bounded. */
   @Query(
-      "select a.id from StaffAlert a"
+      "select new in.agreementmitra.signing.staffalert.StaffAlertKey(a.id, a.kind)"
+          + " from StaffAlert a"
           + " where a.status = in.agreementmitra.signing.staffalert.StaffAlertStatus.PENDING"
           + " and a.nextAttemptAt <= :now"
-          + " order by a.nextAttemptAt asc, a.id asc")
-  List<UUID> findDueIds(@Param("now") Instant now, Pageable pageable);
+          + " order by a.nextAttemptAt asc, a.id asc, a.kind asc")
+  List<StaffAlertKey> findDueIds(@Param("now") Instant now, Pageable pageable);
 
   /**
    * <b>The claim.</b> Counts the attempt and pushes the next-attempt time out, but only while the
@@ -70,11 +72,12 @@ interface StaffAlertRepository extends Repository<StaffAlert, UUID> {
   @Modifying(clearAutomatically = true, flushAutomatically = true)
   @Query(
       "update StaffAlert a set a.attempts = :claimed, a.nextAttemptAt = :nextAttemptAt"
-          + " where a.id = :id"
+          + " where a.id = :id and a.kind = :kind"
           + " and a.status = in.agreementmitra.signing.staffalert.StaffAlertStatus.PENDING"
           + " and a.attempts = :seen and a.nextAttemptAt <= :now")
   int claim(
       @Param("id") UUID id,
+      @Param("kind") StaffAlertKind kind,
       @Param("seen") int seen,
       @Param("claimed") int claimed,
       @Param("now") Instant now,
@@ -86,11 +89,14 @@ interface StaffAlertRepository extends Repository<StaffAlert, UUID> {
       "update StaffAlert a"
           + " set a.status = in.agreementmitra.signing.staffalert.StaffAlertStatus.SENT,"
           + " a.sentAt = :sentAt"
-          + " where a.id = :id"
+          + " where a.id = :id and a.kind = :kind"
           + " and a.status = in.agreementmitra.signing.staffalert.StaffAlertStatus.PENDING"
           + " and a.attempts = :attempts")
   int markSent(
-      @Param("id") UUID id, @Param("attempts") int attempts, @Param("sentAt") Instant sentAt);
+      @Param("id") UUID id,
+      @Param("kind") StaffAlertKind kind,
+      @Param("attempts") int attempts,
+      @Param("sentAt") Instant sentAt);
 
   /**
    * Stop: a permanent refusal, the last attempt failing, or an alert closed by the expiry step.
@@ -101,8 +107,9 @@ interface StaffAlertRepository extends Repository<StaffAlert, UUID> {
   @Query(
       "update StaffAlert a"
           + " set a.status = in.agreementmitra.signing.staffalert.StaffAlertStatus.FAILED"
-          + " where a.id = :id"
+          + " where a.id = :id and a.kind = :kind"
           + " and a.status = in.agreementmitra.signing.staffalert.StaffAlertStatus.PENDING"
           + " and a.attempts = :attempts")
-  int markFailed(@Param("id") UUID id, @Param("attempts") int attempts);
+  int markFailed(
+      @Param("id") UUID id, @Param("kind") StaffAlertKind kind, @Param("attempts") int attempts);
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.SurplusPayment;
+import in.agreementmitra.signing.UnrecordedPayment;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -63,6 +64,31 @@ class StaffAlertRedactionTest {
         .contains(AgreementIds.redact(agreementId))
         .doesNotContain(agreementId.toString())
         .doesNotContain(paymentOrderId.toString());
+  }
+
+  @Test
+  void anUnrecordedPaymentPrintsNoFullIdentifier() {
+    UUID paymentOrderId = UUID.randomUUID();
+    UUID agreementId = UUID.randomUUID();
+
+    assertThat(
+            new UnrecordedPayment(paymentOrderId, agreementId, UnrecordedPayment.Reason.ID_REUSED)
+                .toString())
+        .contains("ID_REUSED")
+        .contains(AgreementIds.redact(agreementId))
+        .doesNotContain(agreementId.toString())
+        .doesNotContain(paymentOrderId.toString());
+  }
+
+  /** For a paid-order alert the key's id IS the agreement id. */
+  @Test
+  void theAlertKeyPrintsItsKindAndNeverItsId() {
+    UUID agreementId = UUID.randomUUID();
+
+    assertThat(new StaffAlertKey(agreementId, StaffAlertKind.ORDER_PAID).toString())
+        .contains("ORDER_PAID")
+        .doesNotContain(agreementId.toString())
+        .doesNotContain(agreementId.toString().substring(0, 8));
   }
 
   @Test

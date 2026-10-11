@@ -6,18 +6,19 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Delivery state of one staff alert. An agreement can hold several: one {@link
- * StaffAlertKind#ORDER_PAID} once the gateway has marked a payment order for it paid, and one
- * {@link StaffAlertKind#DUPLICATE_PAYMENT} for each surplus payment order.
+ * StaffAlertKind#ORDER_PAID} once the gateway has marked a payment order for it paid, and one of
+ * each other kind for each payment order it concerns.
  *
- * <p><b>The key is the alert's subject</b>: the agreement id for a paid-order alert (so there is at
- * most one per agreement, enforced by a CHECK), the payment order id for a duplicate-payment alert
- * (one per surplus order).
+ * <p><b>The key is the alert's subject and its kind</b> ({@link StaffAlertKey}). The subject is the
+ * agreement id for a paid-order alert (so there is at most one per agreement, enforced by a CHECK)
+ * and the payment order id for every other kind, so one order can hold one alert of each kind.
  *
  * <p><b>Read-only as an entity.</b> Rows are created by a native upsert and changed only by
  * conditional updates in {@link StaffAlertRepository}; nothing loads one, mutates it and saves it,
@@ -28,12 +29,14 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "staff_alert")
+@IdClass(StaffAlertKey.class)
 class StaffAlert {
 
   @Id
   @Column(name = "id", nullable = false, updatable = false)
   private UUID id;
 
+  @Id
   @Enumerated(EnumType.STRING)
   @Column(name = "kind", nullable = false, updatable = false, length = 24)
   private StaffAlertKind kind;
@@ -58,6 +61,10 @@ class StaffAlert {
   private Instant sentAt;
 
   protected StaffAlert() {}
+
+  StaffAlertKey key() {
+    return new StaffAlertKey(id, kind);
+  }
 
   UUID id() {
     return id;

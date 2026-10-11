@@ -282,7 +282,9 @@ public class SigningRequestService {
       completeDocument(documentId.get());
     } catch (RuntimeException e) {
       // Details/download step failed — ack and defer to reconciliation. No payload logged.
-      log.warn("Webhook acked without completion: status/download step failed");
+      log.warn(
+          "Webhook acked without completion: status/download step failed ({})",
+          FailureSummary.of(e));
     }
     return true;
   }

@@ -45,6 +45,11 @@ public class RazorpayWebhookController {
   /** The header Razorpay presents its body signature in. */
   private static final String SIGNATURE_HEADER = "X-Razorpay-Signature";
 
+  /**
+   * Razorpay's event id. Outside the signature, so not authenticated: a label, never a decision.
+   */
+  private static final String EVENT_ID_HEADER = "X-Razorpay-Event-Id";
+
   /** The route verification-failure events carry: this mapping, never a URI. */
   private static final String ROUTE = "/api/webhooks/razorpay";
 
@@ -65,8 +70,9 @@ public class RazorpayWebhookController {
   public ResponseEntity<Void> onPaymentEvent(
       @RequestBody String payload,
       @RequestHeader(value = SIGNATURE_HEADER, required = false) String signature,
+      @RequestHeader(value = EVENT_ID_HEADER, required = false) String eventId,
       HttpServletRequest request) {
-    if (!webhookService.handle(payload, signature)) {
+    if (!webhookService.handle(payload, signature, eventId)) {
       // Redacted source + route pattern only; never the payload (anonymous-surface-abuse-controls
       // D8).
       securityEvents.webhookVerificationFailed(ROUTE, sources.resolve(request));

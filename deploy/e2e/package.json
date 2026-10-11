@@ -1,0 +1,14 @@
+{
+  "name": "agreementmitra-deploy-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser-driven post-deploy check: draft, Generate, delete. Run from a workstation.",
+  "scripts": {
+    "login": "node smoke-ui.mjs login",
+    "smoke": "node smoke-ui.mjs",
+    "security:scan": "osv-scanner scan --lockfile=package-lock.json"
+  },
+  "devDependencies": {
+    "playwright-core": "1.64.0"
+  }
+}

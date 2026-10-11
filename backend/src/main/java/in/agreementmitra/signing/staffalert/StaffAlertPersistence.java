@@ -1,6 +1,7 @@
 package in.agreementmitra.signing.staffalert;
 
 import in.agreementmitra.signing.SurplusPayment;
+import in.agreementmitra.signing.UnrecordedPayment;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -50,29 +51,47 @@ class StaffAlertPersistence {
     }
   }
 
+  /**
+   * Record a pending alert, due now, for each unrecorded payment that has none of its kind, keyed
+   * by the payment order. <b>Its own transaction</b>, apart from {@link #enqueue}: a refused insert
+   * here rolls back no paid-order or duplicate-payment alert.
+   */
+  @Transactional
+  void enqueueUnrecorded(Collection<UnrecordedPayment> unrecorded, Instant now) {
+    for (UnrecordedPayment payment : unrecorded) {
+      repository.insertPendingIfAbsent(
+          payment.paymentOrderId(),
+          StaffAlertKind.of(payment.reason()).name(),
+          payment.agreementId(),
+          0,
+          now,
+          now);
+    }
+  }
+
   @Transactional(readOnly = true)
-  List<UUID> dueIds(Instant now, int limit) {
+  List<StaffAlertKey> dueIds(Instant now, int limit) {
     return repository.findDueIds(now, PageRequest.of(0, limit));
   }
 
   @Transactional(readOnly = true)
-  Optional<StaffAlert> find(UUID id) {
-    return repository.findById(id);
+  Optional<StaffAlert> find(StaffAlertKey key) {
+    return repository.findById(key);
   }
 
   /** {@code true} when this caller now owns attempt {@code seen + 1}. */
   @Transactional
-  boolean claim(UUID id, int seen, Instant now, Instant nextAttemptAt) {
-    return repository.claim(id, seen, seen + 1, now, nextAttemptAt) == 1;
+  boolean claim(StaffAlertKey key, int seen, Instant now, Instant nextAttemptAt) {
+    return repository.claim(key.id(), key.kind(), seen, seen + 1, now, nextAttemptAt) == 1;
   }
 
   @Transactional
-  boolean markSent(UUID id, int attempts, Instant sentAt) {
-    return repository.markSent(id, attempts, sentAt) == 1;
+  boolean markSent(StaffAlertKey key, int attempts, Instant sentAt) {
+    return repository.markSent(key.id(), key.kind(), attempts, sentAt) == 1;
   }
 
   @Transactional
-  boolean markFailed(UUID id, int attempts) {
-    return repository.markFailed(id, attempts) == 1;
+  boolean markFailed(StaffAlertKey key, int attempts) {
+    return repository.markFailed(key.id(), key.kind(), attempts) == 1;
   }
 }

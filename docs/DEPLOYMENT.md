@@ -384,7 +384,9 @@ When `STAFF_ALERT_DISCORD_WEBHOOK_URL` is set, a gateway-paid order raises one
 message in a private staff Discord channel within about a minute (change
 `staff-paid-order-alert`). Blank, the default, switches the feature off: nothing
 is recorded and nothing is sent. The message carries the tracking reference, the
-state and a link to the site -- nothing personal.
+state and a link to the site -- nothing personal. The same channel carries the
+"possible duplicate payment" alert and the three alerts for a captured payment
+that was refused or not recorded; each has its own section below.
 
 **Order matters on the first deploy.** A template key missing from the server's
 `backend.env` fails the deploy, so the key is added before the code that reads it:
@@ -393,9 +395,22 @@ state and a link to the site -- nothing personal.
 2. Deploy. The migration applies; with the URL blank, behaviour is unchanged.
 3. In Discord, create a **private** channel for staff, then Channel settings ->
    Integrations -> Webhooks -> New webhook, and copy its URL.
-4. Run `./provision.sh secrets` again, paste the URL, and restart the backend.
-   Orders paid in the previous 24 hours alert once.
+4. Run `./provision.sh secrets` again, paste the URL, and **recreate** the backend
+   (below). Orders paid in the previous 24 hours alert once, and so does every
+   order whose captured payment is still failing to record, however long ago it
+   first failed.
 5. Make one test payment and confirm its alert arrives.
+
+**"Restart" here means recreate.** The backend reads `backend.env` through
+`env_file`, which compose applies only when it creates the container; `docker
+compose restart backend` keeps the old values. Wherever this section says to
+restart the backend after changing the URL, run this from `deploy/`:
+
+```sh
+docker compose -f docker-compose.prod.yml up -d --no-build --pull never --no-deps --wait backend
+```
+
+It reuses the deployed image (`DEPLOY_TAG` in `deploy/.env`) and builds nothing.
 
 **Phone notifications are a per-person setting.** Discord mutes ordinary channel
 messages on mobile by default, and the alert deliberately pings nobody. Each staff
@@ -413,16 +428,23 @@ prompt to open the console, never an instruction to act on its own.
 
 **A failed alert is not re-sent.** A deleted or mistyped webhook fails each alert
 on its first attempt, and the only trace is an ERROR line beginning `Staff alert
-ORDER_PAID for agreement` or `Staff alert DUPLICATE_PAYMENT for agreement` --
+<KIND> for agreement`, where the kind is `ORDER_PAID`, `DUPLICATE_PAYMENT`,
+`PAYMENT_NOT_RECORDED`, `PAYMENT_ID_REUSED` or `PAYMENT_AMOUNT_MISMATCH` --
 either `... failed and will not be retried` (refused, or out
 of attempts) or `... closed without a recorded delivery` (pending for more than
 24 hours, or a last attempt whose outcome was never recorded). The staff console
-queue still lists every waiting order. After fixing the URL, re-queue the recent failures:
+queue still lists every waiting order; it does **not** list a payment that was
+captured and not recorded, so for the three `PAYMENT_` kinds use the queries
+under "A captured payment that was refused or not recorded" below. After fixing
+the URL, re-queue the recent failures of the first two kinds (the three
+`PAYMENT_` kinds have their own statement below, which skips orders since
+recorded as paid):
 
 ```sql
 UPDATE staff_alert
    SET status = 'PENDING', attempts = 0, next_attempt_at = now(), created_at = now()
- WHERE status = 'FAILED' AND created_at > now() - interval '24 hours';
+ WHERE status = 'FAILED' AND created_at > now() - interval '24 hours'
+   AND kind IN ('ORDER_PAID', 'DUPLICATE_PAYMENT');
 ```
 
 `created_at` is reset because an alert pending for more than 24 hours is failed
@@ -496,6 +518,125 @@ hours are marked failed, not sent, when the feature is switched back on.
 payment staff confirm by hand, and a waiver, reach the queue silently in either
 `PAYMENT_MODE`. A second gateway payment on an already-paid agreement raises no
 second "paid order" alert; it raises the duplicate-payment alert above instead.
+
+#### A captured payment that was refused or not recorded
+
+Three more leads, all ending "check before recording or refunding" (change
+`payment-recording-failure-staff-alert`). Each means the gateway captured a
+payment for a payment order and the system **did not record it against that
+order**:
+
+| Lead | What happened |
+|---|---|
+| `Payment captured but not recorded` | The database refused to record the payment. The gateway keeps redelivering and each attempt fails the same way. |
+| `Payment refused: its reference is already recorded elsewhere` | The gateway payment id is already held by another order or agreement, so this one was refused. The gateway was acknowledged and will not redeliver. |
+| `Payment refused: the amount paid differs from the order` | The amount or currency captured differs from the order's, so it was refused. The gateway was acknowledged and will not redeliver. |
+
+The alert is raised once per payment order and kind. It does not repeat while the
+failure recurs. It says nothing about the agreement: the agreement **may already
+be paid**, for example when an expired order's customer paid again on a new one,
+and then this is a possible double charge. The system records and refunds
+nothing because of the alert, and until the staff console has a panel for these
+payments the fix is manual.
+
+**Find the attempts** by the tracking reference from the alert:
+
+```sql
+SELECT a.payment_state, a.payment_reference,
+       o.status AS order_status, o.surplus, o.amount_minor_units AS order_amount,
+       e.source, e.outcome, e.provider_payment_id, e.amount_minor_units AS paid_amount,
+       e.currency, e.refused_rule, e.sql_state, e.attempt_count,
+       e.first_received_at, e.last_received_at
+  FROM agreement a
+  JOIN payment_order o ON o.agreement_id = a.id
+  JOIN payment_event e ON e.provider_order_id = o.provider_order_id
+ WHERE a.tracking_reference = 'AM7K2P9Q'
+ ORDER BY e.last_received_at;
+```
+
+Never select `payment_order.receipt` here: it is the agreement id. Never paste a
+gateway id or an amount into the channel.
+
+Then, in this order:
+
+1. **Is this payment already recorded?** Compare `payment_state` and
+   `payment_reference` with the row's `provider_payment_id`, ignoring case and
+   surrounding spaces: a reference recorded by hand is stored in capitals. If
+   they match, the payment is recorded and there is nothing more to do. If they
+   do not, confirm the capture in the gateway dashboard before going on. A
+   channel message is not proof of anything: anyone
+   holding the webhook URL can post one, and a re-queue, a resend or a redeploy
+   after a rollback can repeat an alert already handled.
+2. **Not recorded:** record it by hand in the staff console under the **exact
+   `provider_payment_id` from the ledger row**. Never a UTR, a blank or an
+   altered value. With the exact id, a later delivery finds the payment already
+   recorded and marks the order paid; with any other value the order later
+   confirms as surplus and raises "Possible duplicate payment" for one payment.
+3. **Reference already recorded elsewhere:** if the console refuses the
+   reference, stop and find where it is already recorded. The attempt's
+   `refused_rule` says which place holds it: an agreement
+   (`SELECT tracking_reference FROM agreement WHERE UPPER(BTRIM(payment_reference)) = UPPER(BTRIM('...'))`)
+   or another payment order (`SELECT a.tracking_reference FROM payment_order o
+   JOIN agreement a ON a.id = o.agreement_id WHERE o.provider_payment_id = '...'`).
+   Do not change the reference to get past the refusal.
+4. **Amount differs:** do not record by hand until someone has decided to refund
+   or to accept the payment. An accepted payment is recorded at the amount the
+   gateway captured.
+5. **If "Possible duplicate payment" follows for the same order,** follow that
+   alert's "Confirm two captured payments" step above. It can be a real second
+   charge.
+
+**Every order still stuck,** whether or not its alert was delivered. This reads
+the ledger and not `staff_alert`, and has no time bound:
+
+```sql
+SELECT DISTINCT a.tracking_reference, o.status, e.outcome, e.last_received_at
+  FROM payment_event e
+  JOIN payment_order o ON o.provider_order_id = e.provider_order_id
+  JOIN agreement a ON a.id = o.agreement_id
+ WHERE e.outcome IN ('RECORDING_FAILED', 'DUPLICATE_REFERENCE', 'AMOUNT_MISMATCH')
+   AND e.provider_payment_id IS NOT NULL
+   AND o.status <> 'PAID'
+ ORDER BY e.last_received_at;
+```
+
+**Re-queue a failed alert of these kinds.** The statement under "A failed alert
+is not re-sent" covers only the last 24 hours; an order here can be stuck for
+longer, so this one has no time bound and skips orders since recorded as paid
+(`staff_alert.id` is the payment order id for these kinds):
+
+```sql
+UPDATE staff_alert s
+   SET status = 'PENDING', attempts = 0, next_attempt_at = now(), created_at = now()
+ WHERE s.status = 'FAILED'
+   AND s.kind IN ('PAYMENT_NOT_RECORDED', 'PAYMENT_ID_REUSED', 'PAYMENT_AMOUNT_MISMATCH')
+   AND EXISTS (SELECT 1 FROM payment_order o WHERE o.id = s.id AND o.status <> 'PAID');
+```
+
+**What raises no alert here:** an order whose attempts only ever end `ERRORED`
+(any other error, including a database outage the next delivery clears); an
+attempt with no `provider_payment_id` (a gateway event that carried no payment
+detail is recorded as an amount mismatch at amount 0, with nothing to act on); an
+attempt whose ledger row could not be written (the ledger is best-effort; the
+ERROR line for the recording failure and the webhook's `500` are unchanged); an
+order already recorded as paid when the sweep runs; and an alert that failed to
+deliver, until it is re-queued.
+
+**`Staff alert look-back of the payment event ledger failed (...)`** is an ERROR
+logged every sweep while the ledger read or its insert fails. While it repeats,
+**no** alert of these three kinds is raised; paid-order and duplicate-payment
+alerts are unaffected. Use the stuck-order query above until it is fixed.
+
+**Rolling back past this release is a dump restore, not a schema step.** The
+migration (V30) keys `staff_alert` on `(id, kind)`. The previous build inserts
+with `ON CONFLICT (id)`, which Postgres rejects against that key, and the insert
+runs before any dispatch, so **every** kind of alert would stop -- with a clean
+startup, so nothing else warns of it. Never start a previous build against this
+schema by hand. `deploy.sh rollback` refuses it anyway (the database is past the
+target's migration); the route is under **Rolling back across a migration**
+below. Run the stuck-order query above and keep its output first: the restore
+discards the alert history, so a redeploy alerts again every order still inside
+the 24-hour window.
 
 ### Why the `sandbox` profile is required
 
@@ -633,10 +774,11 @@ is not active -- see the note in section 3.
 
 `deploy/deploy.sh` records the running release before the restart, never pulls
 (`up --pull never`), and fails the deploy (`postcheck:minio`) if the release
-differs afterwards; the release is on every deploy-log line. What stays manual,
-until the storage-health-indicator CR lands, is **one real storage write after
-every deploy**: in the browser, start an agreement at `/start`, fill it in and
-press **Generate**. A 500 there with MinIO up is this failure, not an application
+differs afterwards; the release is on every deploy-log line. What the deploy
+itself still cannot prove, until the storage-health-indicator CR lands, is **one
+real storage write after every deploy**. `npm run smoke` in `deploy/e2e`
+(section 5.6) makes it: it drafts an agreement, generates its PDF and deletes the
+draft. A failed Generate there with MinIO up is this failure, not an application
 bug. Never run `docker compose pull` on this box -- it fetches whatever `latest`
 is today.
 
@@ -700,8 +842,9 @@ What it does, each step only if the previous one passed:
    rotatable log -- losing it means the next deploy re-seeds) and remove image tags
    no longer needed for rollback.
 
-Then make the storage write above and run `deploy/smoke-prod.sh` from your
-workstation (section 5.6).
+Then run `deploy/smoke-prod.sh` and the browser check (`npm run smoke` in
+`deploy/e2e`, which makes the storage write above) from your workstation
+(section 5.6).
 
 **Flags.** `--dry-run`; `--allow-downtime` (network change); `--allow-downgrade`
 (deploy an older `main` commit); `--refresh-base` (pull fresh base images and
@@ -725,6 +868,35 @@ does not -- code-only rollback would then run old code on a newer schema -- and
 prints the dump taken before that migration. Restoring it is manual, and the dump
 is a same-disk rollback point that excludes object storage. It also refuses when
 a target image is missing or not the one recorded.
+
+**Rolling back across a migration: dump restore only, never yet run.** *(Status
+2026-10-11.)* No migration has a rollback (down) script, and none of this is
+automated. When `deploy.sh rollback` refuses with "the database is at migration
+N, past *target*'s M", the only route is restoring the pre-deploy dump it names.
+Know this before touching anything:
+
+- **The restore loses data.** Every database write since that deploy is
+  discarded. Object storage is not restored: PDFs written since stay in MinIO
+  with no row naming them. Take a fresh dump of the current state first, so the
+  discarded rows can still be read.
+- **No restore procedure is written and none has been drilled**
+  (`prod-backups-and-disaster-recovery` in `docs/ROADMAP.md`). Whether a dump
+  restores cleanly is unproven. Work the steps out before running them; do not
+  improvise on the live database.
+- **`deploy.sh rollback` picks the wrong release while the backend is stopped.**
+  A restore needs the backend stopped. With it stopped, `rollback` targets the
+  top of the deploy history. Read the last line of
+  `/var/lib/agreementmitra/deploys.log`: if the release being left never
+  recorded `ok` (a failed deploy), the top is the last good release and
+  stop -> restore -> `deploy.sh rollback` is sound. If it did record `ok`, the top
+  is that same release: `rollback` restarts it and its Flyway re-applies the
+  migrations onto the restored data. There is no scripted route for that case
+  until `rollback-with-stopped-backend` (`docs/ROADMAP.md`) is fixed -- fix it
+  first.
+- **Tested rollback scripts are designed, not built.** The reviewed proposal is
+  parked in `openspec/changes/migration-rollback-scripts/`. Nothing under
+  `backend/db/rollback/` exists; do not assume a script is there, and do not
+  hand-run SQL copied from that design -- it has never been executed.
 
 **Accept:** when a deploy's (or a rollback's) only failure was the ERROR-line scan and the lines are
 benign, `deploy/deploy.sh accept` re-runs the other post-checks and records the
@@ -920,6 +1092,54 @@ every deploy. It checks the apex (200) and `www` (301), the 413 body ceiling, th
 `__Host-` / `Secure` / `SameSite=Lax` CSRF cookie, `cf-cache-status: DYNAMIC` on
 the API, that both webhook paths reach the application (401) rather than a
 challenge, and that no response carries `cf-mitigated`.
+
+**The browser check** -- `deploy/e2e/smoke-ui.mjs`, also from your workstation
+after every deploy. It drives your installed Google Chrome through what a person
+used to do by hand: pick a template, fill the required sections with dummy data,
+**Save & continue** (which renders the PDF and writes it to object storage), then
+delete the draft from "My agreements".
+
+All commands run from `deploy/e2e`; the first time, run `npm ci` there.
+
+Production (the default target):
+
+```sh
+npm run login          # once a day: sign in to Google in the window that opens
+npm run smoke          # draft, Generate, delete
+npm run smoke keep     # same, but skip the delete and leave the window open to pay
+```
+
+A local stack (add its address):
+
+```sh
+npm run login http://localhost:5173
+npm run smoke http://localhost:5173
+npm run smoke keep http://localhost:5173
+npm run smoke no-login http://localhost:5173   # no Google sign-in; the draft cannot be deleted
+```
+
+Optional words, combinable with any of the above: `headless` (no visible window;
+pointless with `keep`), and `state=KA` or `type=commercial` for a different
+template (the default is Telangana residential). Options are plain words because
+`npm run` swallows a `--flag`.
+
+- **Sign-in is never automated and no password is stored.** `login` saves the
+  session cookie to `~/.config/agreementmitra/` (mode 0600, outside the
+  repository); it lasts 24 hours. Use an account **without** the STAFF role: the
+  check needs none, so a leaked file is never a staff session. `login` warns if
+  the account has it.
+- **It stops at save.** It places no order and takes no payment, because a paid
+  order cannot be deleted and nothing marks one as a test (register row
+  `prod-test-order-lifecycle`). The staff alert, the stamp queue and the Discord
+  message are still checked by hand after a payment-path release.
+- **`keep` hands the draft to you for that payment check.** Press **Finalise and
+  pay** in the window it leaves open, and close the window when done. Once paid,
+  the order stays in production data unmarked (the same register row); a draft
+  you do not pay is yours to delete from "My agreements".
+- **A run that fails part-way still deletes its draft**, and says so loudly when
+  it cannot.
+- **`no-login` is refused on production.** Its draft has no owner, cannot be
+  deleted, and stays until the 90-day purge.
 
 **That a forged header does not become the source** (once per deploy of items 4
 or 6) is its opt-in last check:

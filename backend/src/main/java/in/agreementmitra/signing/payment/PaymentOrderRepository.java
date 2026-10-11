@@ -3,6 +3,7 @@ package in.agreementmitra.signing.payment;
 import in.agreementmitra.signing.SurplusPayment;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,4 +65,43 @@ interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID> {
           + " and o.surplus = true"
           + " and o.confirmedAt >= :cutoff")
   List<SurplusPayment> findSurplusPaidSince(@Param("cutoff") Instant cutoff);
+
+  /**
+   * Orders that are not paid and have a ledger attempt, last received at or after {@code cutoff},
+   * with one of {@code outcomes} - the unrecorded-payment look-back. Native, because the ledger has
+   * no entity. The inner join drops an attempt for an order we do not hold.
+   *
+   * <p>An attempt that carried no payment id is left out: the confirmation checks the amount before
+   * the missing id, so a gateway event without payment detail is recorded as an amount mismatch at
+   * amount 0. It is not a captured payment. A real refusal always carries the id.
+   *
+   * <p>The aliases are quoted so Postgres keeps their case and they match the projection's getters.
+   *
+   * @param outcomes {@link PaymentEventOutcome#name()}s, bound by the caller so the list has one
+   *     home
+   */
+  @Query(
+      value =
+          "SELECT DISTINCT o.id AS \"paymentOrderId\", o.agreement_id AS \"agreementId\","
+              + " e.outcome AS \"outcome\""
+              + " FROM payment_event e"
+              + " JOIN payment_order o ON o.provider_order_id = e.provider_order_id"
+              + " WHERE e.outcome IN (:outcomes)"
+              + " AND e.provider_payment_id IS NOT NULL"
+              + " AND e.last_received_at >= :cutoff"
+              + " AND o.status <> 'PAID'",
+      nativeQuery = true)
+  List<UnrecordedAttempt> findUnrecordedSince(
+      @Param("outcomes") Collection<String> outcomes, @Param("cutoff") Instant cutoff);
+
+  /** One row of {@link #findUnrecordedSince}. */
+  interface UnrecordedAttempt {
+
+    UUID getPaymentOrderId();
+
+    UUID getAgreementId();
+
+    /** A {@link PaymentEventOutcome} name. */
+    String getOutcome();
+  }
 }

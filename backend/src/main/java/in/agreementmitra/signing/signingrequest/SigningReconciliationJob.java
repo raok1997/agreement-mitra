@@ -68,8 +68,10 @@ class SigningReconciliationJob {
       try {
         service.completeDocument(documentId);
       } catch (RuntimeException e) {
-        // One row's failure must not abort the batch; details intentionally omitted (no PII/ids).
-        log.warn("Reconciliation skipped one document: completion failed");
+        // One row's failure must not abort the batch. Type, status and throw site only (no
+        // PII/ids).
+        log.warn(
+            "Reconciliation skipped one document: completion failed ({})", FailureSummary.of(e));
       }
     }
   }

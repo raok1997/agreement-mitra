@@ -91,6 +91,11 @@ authoritative stamp-quote notice; it was split out.
   `flyway.clean` is disabled. Each feature CR ships its own migration; never edit an
   applied one. Regenerate the Gradle lockfile after a dep change
   (`./gradlew dependencies --write-locks`).
+  **There are no rollback (down) scripts — rolling back across a migration is a dump restore**
+  (status 2026-10-11, a deliberate beta-stage decision). Tested scripts are designed but parked,
+  unbuilt, in `openspec/changes/migration-rollback-scripts/`. When asked to roll production back,
+  read "Rolling back across a migration" in `docs/DEPLOYMENT.md` first: the restore is undrilled,
+  and `deploy.sh rollback` mis-targets while the backend is stopped.
 - **eSign**: integrated through an `EsignProvider` interface. First adapter is
   Leegality (sandbox). Keep all vendor specifics behind the interface so Digio
   (likely production choice for the KYC bundle) is a one-adapter swap.
@@ -242,6 +247,12 @@ the cost is invisible to whoever is only watching for the green tick.
     becomes browser-reachable; note that a `vue/dist/vue.esm-bundler` alias is *not*
     that trigger — it ships `@vue/compiler-dom`, whose deps are `@vue/compiler-core`,
     not postcss.
+- **Deploy-check dependency scan** — `deploy/e2e` (the browser post-deploy check) has its
+  own npm lockfile holding one package, `playwright-core`, kept out of `frontend/` so it never
+  widens the frontend build's scan. Scan it with `npm run security:scan` from `deploy/e2e`:
+  whole lockfile, fails on any finding, no suppressions. It is **not chained into
+  `npm run smoke`** — a new advisory must not fail a post-deploy health check — so run it
+  when the lockfile changes.
 - **Not yet covered (follow-up CRs):** CI that runs these gates automatically
   (today they run only on local `./gradlew` / `npm run security:scan`). The backend
   `osv-scanner.toml` suppression baseline holds **two** entries, both `spring-webmvc`

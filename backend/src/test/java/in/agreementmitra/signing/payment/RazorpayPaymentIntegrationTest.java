@@ -78,6 +78,14 @@ class RazorpayPaymentIntegrationTest {
 
   private static final String STAFF_HOOK_PATH = "/api/webhooks/1/it-staff-hook";
 
+  /**
+   * The origin for tests that call the confirmation path directly. It is the same distinct attempt
+   * as a real {@code payment.captured} delivery of the same payment, so the two share one ledger
+   * row.
+   */
+  private static final PaymentEventOrigin DIRECT =
+      PaymentEventOrigin.webhook(null, "payment.captured");
+
   private static final WireMockServer WIREMOCK = new WireMockServer(options().dynamicPort());
 
   static {
@@ -126,6 +134,10 @@ class RazorpayPaymentIntegrationTest {
   @Autowired private PaymentOrderQuery paymentOrderQuery;
   @Autowired private PaymentOrderService paymentOrderService;
   @Autowired private javax.sql.DataSource dataSource;
+
+  /** Spied so the ledger, its only user, can be made unwritable; reset after each test. */
+  @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+  private org.springframework.jdbc.core.simple.JdbcClient jdbcClient;
 
   /** DEBUG so an absence assertion over the surplus line is not an assertion over nothing. */
   @RegisterExtension
@@ -280,10 +292,17 @@ class RazorpayPaymentIntegrationTest {
   }
 
   private ResponseEntity<String> deliverWebhook(String body, String signature) {
+    return deliverWebhook(body, signature, null);
+  }
+
+  private ResponseEntity<String> deliverWebhook(String body, String signature, String eventId) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
     if (signature != null) {
       headers.set("X-Razorpay-Signature", signature);
+    }
+    if (eventId != null) {
+      headers.set("X-Razorpay-Event-Id", eventId);
     }
     return rest.postForEntity(
         "/api/webhooks/razorpay", new HttpEntity<>(body, headers), String.class);
@@ -291,6 +310,50 @@ class RazorpayPaymentIntegrationTest {
 
   private ResponseEntity<String> deliverSignedWebhook(String body) {
     return deliverWebhook(body, RazorpaySignatures.hmacSha256Hex(body, WEBHOOK_KEY));
+  }
+
+  private ResponseEntity<String> deliverSignedWebhook(String body, String eventId) {
+    return deliverWebhook(body, RazorpaySignatures.hmacSha256Hex(body, WEBHOOK_KEY), eventId);
+  }
+
+  /** A {@code payment.captured} body whose payment entity also carries {@code payerFields}. */
+  private static String paymentCapturedBodyWithPayer(
+      String orderId, String paymentId, long amount, String payerFields) {
+    return paymentCapturedBody(orderId, paymentId, amount)
+        .replace("\"status\":\"captured\"", "\"status\":\"captured\"," + payerFields);
+  }
+
+  /** The payment event ledger rows for one gateway order, oldest row first. */
+  private List<Map<String, Object>> paymentEvents(String providerOrderId) {
+    return jdbc.queryForList(
+        "SELECT * FROM payment_event WHERE provider_order_id = ? ORDER BY id", providerOrderId);
+  }
+
+  /**
+   * A row's text columns only. The key, the id and the times are hex and digits, so searching them
+   * for a short value such as a card's last four would fail by chance.
+   */
+  private static String textColumns(Map<String, Object> row) {
+    Map<String, Object> text = new java.util.LinkedHashMap<>(row);
+    text.keySet()
+        .removeAll(
+            List.of("id", "attempt_key", "first_received_at", "last_received_at", "attempt_count"));
+    return text.values().toString();
+  }
+
+  private static Instant instant(Map<String, Object> row, String column) {
+    return ((java.sql.Timestamp) row.get(column)).toInstant();
+  }
+
+  private void stubPaidOrderWithCapturedPayment(String orderId, String paymentId) {
+    stubOrderRead(orderId, "paid", 49_900L);
+    WIREMOCK.stubFor(
+        get(urlPathEqualTo(ORDERS_URL + "/" + orderId + "/payments"))
+            .willReturn(
+                okJson(
+                    "{\"count\":1,\"items\":[{\"id\":\""
+                        + paymentId
+                        + "\",\"status\":\"captured\",\"amount\":49900,\"currency\":\"INR\"}]}")));
   }
 
   private String paymentStateOf(UUID agreementId) {
@@ -707,7 +770,7 @@ class RazorpayPaymentIntegrationTest {
     mail.reset();
 
     ConfirmationOutcome outcome =
-        paymentOrderService.applyConfirmation(expired, paymentId, 49_900L, "INR");
+        paymentOrderService.applyConfirmation(DIRECT, expired, paymentId, 49_900L, "INR");
 
     assertThat(outcome).isEqualTo(ConfirmationOutcome.DUPLICATE_REFERENCE);
     assertThat(orderRow(expired))
@@ -719,6 +782,23 @@ class RazorpayPaymentIntegrationTest {
     // Through the webhook the same refusal is acknowledged like everything else.
     assertThat(capture(expired, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
     assertThat(orderRow(expired)).containsEntry("status", "EXPIRED");
+    assertOneDuplicateReferenceRowCountedTwice(expired, PaymentIntegrity.ORDER_PROVIDER_PAYMENT_ID);
+  }
+
+  /**
+   * The direct call and the webhook delivery are one distinct attempt, so the ledger holds one row
+   * for the refused order, counted twice, naming the rule that refused it.
+   */
+  private void assertOneDuplicateReferenceRowCountedTwice(String providerOrderId, String rule) {
+    assertThat(paymentEvents(providerOrderId))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(row)
+                    .containsEntry("outcome", "DUPLICATE_REFERENCE")
+                    .containsEntry("refused_rule", rule)
+                    .containsEntry("sql_state", "23505")
+                    .containsEntry("attempt_count", 2L));
   }
 
   // --- a refused write is a duplicate only for the two uniqueness rules ------------------------
@@ -744,7 +824,7 @@ class RazorpayPaymentIntegrationTest {
     mail.reset();
 
     ConfirmationOutcome outcome =
-        paymentOrderService.applyConfirmation(order, paymentId, 49_900L, "INR");
+        paymentOrderService.applyConfirmation(DIRECT, order, paymentId, 49_900L, "INR");
 
     assertThat(outcome).isEqualTo(ConfirmationOutcome.DUPLICATE_REFERENCE);
     assertThat(capture(order, paymentId).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
@@ -754,22 +834,7 @@ class RazorpayPaymentIntegrationTest {
         .containsEntry("provider_payment_id", null);
     assertThat(recordedPayment(second)).isEqualTo(before).containsEntry("payment_state", "UNPAID");
     assertThat(mail.sent()).isEmpty();
-  }
-
-  /**
-   * A gateway payment id one character longer than {@code payment_order.provider_payment_id} holds.
-   * Postgres refuses the order write with SQL state 22001, which names no constraint: a real
-   * refusal that is not a duplicate, with no test-only seam. It fits {@code
-   * agreement.payment_reference}, so the order write is the only one the database refuses.
-   *
-   * <p>If the column is widened or the id is validated earlier, the tests using this must pick
-   * another provocation. Each one therefore asserts the refusal itself - the failure, the {@code
-   * 500}, or the ERROR line - and not only the unchanged state it leaves.
-   */
-  private static String overLongPaymentId() {
-    String id = (unique("pay_TOOLONG") + "X".repeat(65)).substring(0, 65);
-    assertThat(id).hasSize(65);
-    return id;
+    assertOneDuplicateReferenceRowCountedTwice(order, PaymentIntegrity.AGREEMENT_PAYMENT_REFERENCE);
   }
 
   /**
@@ -784,11 +849,11 @@ class RazorpayPaymentIntegrationTest {
   @Test
   @org.junit.jupiter.api.extension.ExtendWith(
       org.springframework.boot.test.system.OutputCaptureExtension.class)
-  void aWebhookWhosePaymentTheDatabaseRefusesIsNotAcknowledgedAndRecordsNothing(
+  void aWebhookWhosePaymentTheDatabaseRefusesIsNotAcknowledgedAndRecordsNoPayment(
       org.springframework.boot.test.system.CapturedOutput output) {
     UUID agreementId = createAgreement();
     String order = orderIn(agreementId, "CREATED");
-    String paymentId = overLongPaymentId();
+    String paymentId = PaymentOrders.overLongPaymentId();
     Map<String, Object> before = recordedPayment(agreementId);
     mail.reset();
 
@@ -820,6 +885,25 @@ class RazorpayPaymentIntegrationTest {
             "ERROR.*PaymentOrderService.*Payment recording failed for order "
                 + java.util.regex.Pattern.quote(RazorpayClient.redact(order))
                 + ".*SQL state 22001");
+
+    // The ledger is the one durable trace: both deliveries, one row, the payment id whole, and
+    // nothing of the database's error text.
+    assertThat(paymentEvents(order))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row)
+                  .containsEntry("source", "WEBHOOK")
+                  .containsEntry("outcome", "RECORDING_FAILED")
+                  .containsEntry("sql_state", "22001")
+                  .containsEntry("refused_rule", null)
+                  .containsEntry("provider_payment_id", paymentId)
+                  .containsEntry("attempt_count", 2L);
+              assertThat(row.values().toString())
+                  .doesNotContain("character varying")
+                  .doesNotContain("too long")
+                  .doesNotContain("ERROR");
+            });
   }
 
   @Test
@@ -829,7 +913,9 @@ class RazorpayPaymentIntegrationTest {
     Map<String, Object> before = recordedPayment(agreementId);
 
     org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> paymentOrderService.applyConfirmation(order, overLongPaymentId(), 49_900L, "INR"))
+            () ->
+                paymentOrderService.applyConfirmation(
+                    DIRECT, order, PaymentOrders.overLongPaymentId(), 49_900L, "INR"))
         .isInstanceOf(PaymentRecordingFailedException.class)
         .hasNoCause();
 
@@ -851,7 +937,7 @@ class RazorpayPaymentIntegrationTest {
     org.assertj.core.api.Assertions.assertThatThrownBy(
             () ->
                 paymentOrderService.applyConfirmation(
-                    earlier[0], overLongPaymentId(), 49_900L, "INR"))
+                    DIRECT, earlier[0], PaymentOrders.overLongPaymentId(), 49_900L, "INR"))
         .isInstanceOf(PaymentRecordingFailedException.class)
         .hasNoCause();
 
@@ -878,7 +964,7 @@ class RazorpayPaymentIntegrationTest {
             .willReturn(
                 okJson(
                     "{\"count\":1,\"items\":[{\"id\":\""
-                        + overLongPaymentId()
+                        + PaymentOrders.overLongPaymentId()
                         + "\",\"status\":\"captured\",\"amount\":49900,\"currency\":\"INR\"}]}")));
     mail.reset();
 
@@ -1057,7 +1143,7 @@ class RazorpayPaymentIntegrationTest {
   }
 
   @Test
-  void aRedeliveredWebhookRecordsNothingExtraAndChangesNothing() {
+  void aRedeliveredWebhookChangesNoPaymentRecord() {
     UUID agreementId = createAgreement();
     stubOrderCreation("order_IDEM1", 49_900L);
     startCheckout(agreementId, customerToken);
@@ -1303,5 +1389,246 @@ class RazorpayPaymentIntegrationTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+  }
+
+  // --- the payment event ledger (payment-event-ledger) -----------------------------------------
+  // Every test below uses an order of its own and reads the ledger by that order's id: the
+  // database is shared, so "no row" and "one row" only mean anything per order.
+
+  /**
+   * One payment, followed through everything that reports it: the two webhook events, their
+   * redeliveries, a replay under another event id, and the browser callback. A row is one distinct
+   * attempt; a repeat raises its count and adds nothing.
+   */
+  @Test
+  void onePaymentIsRecordedOncePerDistinctAttemptAndItsRepeatsAreCounted() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    String paymentId = unique("pay_LEDGER");
+    Instant began = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+
+    assertThat(
+            deliverSignedWebhook(paymentCapturedBody(order, paymentId, 49_900L), "evt_captured")
+                .getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID");
+    Map<String, Object> captured = paymentEvents(order).get(0);
+    assertThat(paymentEvents(order)).hasSize(1);
+    assertThat(captured)
+        .containsEntry("source", "WEBHOOK")
+        .containsEntry("presented_event_id", "evt_captured")
+        .containsEntry("event_type", "payment.captured")
+        .containsEntry("provider_payment_id", paymentId)
+        .containsEntry("amount_minor_units", 49_900L)
+        .containsEntry("currency", "INR")
+        .containsEntry("outcome", "CONFIRMED")
+        .containsEntry("refused_rule", null)
+        .containsEntry("sql_state", null)
+        .containsEntry("attempt_count", 1L);
+    assertThat(instant(captured, "first_received_at"))
+        .isEqualTo(instant(captured, "last_received_at"))
+        .isAfterOrEqualTo(began);
+
+    // The gateway's second event for the same payment: a second row, and the first is untouched.
+    String orderPaid = orderPaidBody(order, paymentId, 49_900L);
+    deliverSignedWebhook(orderPaid, "evt_paid");
+    assertThat(paymentEvents(order)).hasSize(2);
+    assertThat(paymentEvents(order).get(0)).isEqualTo(captured);
+    assertThat(paymentEvents(order).get(1))
+        .containsEntry("event_type", "order.paid")
+        .containsEntry("outcome", "ALREADY_CONFIRMED")
+        .containsEntry("presented_event_id", "evt_paid")
+        .containsEntry("attempt_count", 1L);
+
+    // Delivered again three times: still two rows.
+    for (int i = 0; i < 3; i++) {
+      deliverSignedWebhook(orderPaid, "evt_paid");
+    }
+    Map<String, Object> repeated = paymentEvents(order).get(1);
+    assertThat(paymentEvents(order)).hasSize(2);
+    assertThat(repeated).containsEntry("attempt_count", 4L);
+    assertThat(instant(repeated, "last_received_at"))
+        .isAfter(instant(repeated, "first_received_at"));
+
+    // A replay of the signed body under a fresh event id is the same attempt; the first id stays.
+    assertThat(deliverSignedWebhook(orderPaid, "evt_replayed").getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+    assertThat(paymentEvents(order)).hasSize(2);
+    assertThat(paymentEvents(order).get(1))
+        .containsEntry("attempt_count", 5L)
+        .containsEntry("presented_event_id", "evt_paid");
+
+    // The same payment reported by the browser is another source, so another row.
+    stubPaidOrderWithCapturedPayment(order, paymentId);
+    String signature = RazorpaySignatures.hmacSha256Hex(order + "|" + paymentId, API_KEY);
+    assertThat(postCallback(agreementId, order, paymentId, signature).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+    assertThat(paymentEvents(order)).hasSize(3);
+    assertThat(paymentEvents(order).get(2))
+        .containsEntry("source", "BROWSER_CALLBACK")
+        .containsEntry("outcome", "ALREADY_CONFIRMED")
+        .containsEntry("presented_event_id", null)
+        .containsEntry("event_type", null)
+        .containsEntry("attempt_count", 1L);
+  }
+
+  @Test
+  void aWebhookForAnOrderWeDoNotHoldIsRecordedAsAnUnknownOrder() {
+    String order = unique("order_NOTHELD");
+
+    assertThat(capture(order, unique("pay_NOTHELD")).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(paymentEvents(order))
+        .singleElement()
+        .satisfies(row -> assertThat(row).containsEntry("outcome", "UNKNOWN_ORDER"));
+  }
+
+  @Test
+  void anAmountMismatchIsRecordedWithTheAmountTheGatewayReported() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+
+    assertThat(
+            deliverSignedWebhook(paymentCapturedBody(order, unique("pay_MM"), 1L)).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "CREATED");
+    assertThat(paymentEvents(order))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(row)
+                    .containsEntry("outcome", "AMOUNT_MISMATCH")
+                    .containsEntry("amount_minor_units", 1L));
+  }
+
+  @Test
+  void anUnverifiedWebhookAndAnEventWeDoNotActOnLeaveNoRecord() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    String body = paymentCapturedBody(order, unique("pay_NOROW"), 49_900L);
+
+    assertThat(deliverWebhook(body, "forged", "evt_forged").getStatusCode())
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertThat(
+            deliverSignedWebhook(body.replace("payment.captured", "payment.failed"), "evt_failed")
+                .getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(paymentEvents(order)).isEmpty();
+    assertThat(orderRow(order)).containsEntry("status", "CREATED");
+  }
+
+  @Test
+  void anEventIdThatIsNotAPlainTokenIsNotRecordedAndChangesNothingElse() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+
+    assertThat(
+            deliverSignedWebhook(
+                    paymentCapturedBody(order, unique("pay_LONGEVT"), 49_900L), "e".repeat(65))
+                .getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID");
+    assertThat(paymentEvents(order))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(row)
+                    .containsEntry("outcome", "CONFIRMED")
+                    .containsEntry("presented_event_id", null));
+  }
+
+  @Test
+  void payerDetailsInTheWebhookBodyNeverReachTheLedger() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    String body =
+        paymentCapturedBodyWithPayer(
+            order,
+            unique("pay_PAYER"),
+            49_900L,
+            "\"email\":\"payer.leak@example.com\",\"contact\":\"+919800000001\","
+                + "\"vpa\":\"payerleak@upi\",\"card\":{\"last4\":\"4242\",\"network\":\"Visa\"}");
+
+    assertThat(deliverSignedWebhook(body).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(paymentEvents(order))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(textColumns(row))
+                    .doesNotContain("payer.leak@example.com")
+                    .doesNotContain("9800000001")
+                    .doesNotContain("payerleak@upi")
+                    .doesNotContain("4242")
+                    .doesNotContain("Visa"));
+  }
+
+  /** The browser presents one payment id; the gateway's own answer is what the ledger holds. */
+  @Test
+  void theBrowserCallbackIsRecordedWithThePaymentIdTheGatewayReported() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    String reported = unique("pay_GATEWAY");
+    String presented = unique("pay_BROWSER");
+    stubPaidOrderWithCapturedPayment(order, reported);
+
+    String signature = RazorpaySignatures.hmacSha256Hex(order + "|" + presented, API_KEY);
+    assertThat(postCallback(agreementId, order, presented, signature).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID");
+    assertThat(paymentEvents(order))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(row)
+                    .containsEntry("source", "BROWSER_CALLBACK")
+                    .containsEntry("presented_event_id", null)
+                    .containsEntry("event_type", null)
+                    .containsEntry("outcome", "CONFIRMED")
+                    .containsEntry("provider_payment_id", reported));
+  }
+
+  // --- a ledger that cannot be written changes no answer ---------------------------------------
+  // Nothing but the ledger uses JdbcClient, so failing it fails the ledger and only the ledger.
+
+  @Test
+  void aLedgerThatCannotBeWrittenStillConfirmsThePaymentAndAcknowledgesTheWebhook() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    theLedgerCannotBeWritten();
+
+    assertThat(capture(order, unique("pay_NOLEDGER")).getStatusCode())
+        .isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(orderRow(order)).containsEntry("status", "PAID");
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    assertThat(paymentEvents(order)).isEmpty();
+  }
+
+  @Test
+  void aLedgerThatCannotBeWrittenStillRefusesToAcknowledgeAnUnrecordedPayment() {
+    UUID agreementId = createAgreement();
+    String order = orderIn(agreementId, "CREATED");
+    theLedgerCannotBeWritten();
+
+    assertThat(capture(order, PaymentOrders.overLongPaymentId()).getStatusCode())
+        .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+
+    assertThat(orderRow(order)).containsEntry("status", "CREATED");
+    assertThat(paymentStateOf(agreementId)).isEqualTo("UNPAID");
+    assertThat(paymentEvents(order)).isEmpty();
+  }
+
+  private void theLedgerCannotBeWritten() {
+    org.mockito.Mockito.doThrow(
+            new org.springframework.dao.DataAccessResourceFailureException("ledger unavailable"))
+        .when(jdbcClient)
+        .sql(org.mockito.ArgumentMatchers.anyString());
   }
 }
