@@ -54,7 +54,7 @@ final class PaymentIntegrity {
   }
 
   /** The first SQL state in the cause chain, or {@code null} when there is none. */
-  static String sqlState(DataIntegrityViolationException refused) {
+  static String sqlState(Throwable refused) {
     for (Throwable cause = refused; cause != null; cause = cause.getCause()) {
       if (cause instanceof SQLException sql && sql.getSQLState() != null) {
         return sql.getSQLState();

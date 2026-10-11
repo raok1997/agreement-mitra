@@ -55,6 +55,9 @@ public class RazorpayWebhookService {
    *
    * @param rawBody the request body exactly as received - never re-serialised
    * @param presentedSignature the {@code X-Razorpay-Signature} header value
+   * @param presentedEventId the {@code X-Razorpay-Event-Id} header value, or null. The signature
+   *     covers the body only, so this is <b>not authenticated</b>: it is passed down as a label for
+   *     the payment event ledger and decides nothing (payment-event-ledger D5).
    * @return whether the request verified. {@code false} means the caller rejects it with no state
    *     change; {@code true} means it is acknowledged, whether or not it named anything we hold.
    * @throws PaymentRecordingFailedException when the body verified but the database refused to
@@ -62,7 +65,7 @@ public class RazorpayWebhookService {
    *     it, so the gateway delivers the event again. Any other failure while handling a verified
    *     body escapes the same way.
    */
-  public boolean handle(String rawBody, String presentedSignature) {
+  public boolean handle(String rawBody, String presentedSignature, String presentedEventId) {
     if (!RazorpaySignatures.webhookSignatureValid(
         rawBody, presentedSignature, razorpay.webhookSecret())) {
       // No body, no header value, no order id in the log - a rejected webhook tells us nothing
@@ -70,7 +73,7 @@ public class RazorpayWebhookService {
       log.warn("Payment webhook rejected: signature did not verify");
       return false;
     }
-    apply(rawBody);
+    apply(rawBody, presentedEventId);
     return true;
   }
 
@@ -80,7 +83,7 @@ public class RazorpayWebhookService {
    * deliberately. A confirmation that throws is the exception: nothing here catches it, so a
    * payment the database refused to record is never acknowledged.
    */
-  private void apply(String rawBody) {
+  private void apply(String rawBody, String presentedEventId) {
     JsonNode root;
     try {
       root = objectMapper.readTree(rawBody);
@@ -114,6 +117,7 @@ public class RazorpayWebhookService {
 
     ConfirmationOutcome outcome =
         orderService.applyConfirmation(
+            PaymentEventOrigin.webhook(presentedEventId, normalized),
             providerOrderId,
             text(payment, "id"),
             longValue(payment, "amount"),

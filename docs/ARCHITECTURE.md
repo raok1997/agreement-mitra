@@ -184,6 +184,62 @@ change `staff-paid-order-alert`).
 - **One channel.** The sender sits behind `StaffNotifier`; a WhatsApp adapter replaces Discord there
   (`staff-alert-whatsapp-adapter`).
 
+## The payment event ledger
+
+Every gateway payment confirmation attempt is recorded in `payment_event` (change
+`payment-event-ledger`), so "what did the gateway send and what did we do with it" is answered
+from the database and not from the server log beside the gateway dashboard. Nothing reads the
+table yet; the staff alert and console panel for unrecorded payments will.
+
+- **What a row is.** One **distinct** attempt that reached `PaymentOrderService.applyConfirmation`
+  - from the webhook, the browser callback or the reconciliation job - and a count of its repeats.
+  An attempt identical in order id, source, event type, outcome, payment id, amount, currency,
+  refused rule and SQL state raises `attempt_count` and widens `first_received_at` /
+  `last_received_at`; it adds no row. A stuck order re-read every sweep, or a replayed webhook,
+  cannot grow the table.
+- **Written outside the confirmation transaction.** `PaymentEventLedger` writes in its own
+  transaction after the confirmation's has ended, so the row survives a rollback: a payment the
+  database refused (`RECORDING_FAILED`), a refused duplicate, or any other error (`ERRORED`) all
+  leave one. The ledger cannot fail its caller - a row that cannot be written is one WARN and the
+  attempt's result stands.
+- **What is not recorded.** A webhook whose signature fails, a verified body that does not parse,
+  an event type we do not act on, and a gateway read that reports the order unpaid or without a
+  captured payment. None of them is a confirmation attempt.
+- **What is not stored.** No webhook payload and no payer detail (email, phone, UPI id, card
+  digits). No database error text. No foreign key (an unknown order has no row to point at) and no
+  JPA entity (one statement writes the table). No HTTP status: it follows from source and outcome,
+  and a stored copy would drift from the controllers that decide it.
+
+| Outcome | Webhook | Browser callback | Reconciliation |
+|---|---|---|---|
+| `RECORDING_FAILED` | server error | `200` with progress | none; the order is skipped |
+| `ERRORED` | server error | server error | none; the order is skipped |
+| anything else | `202` | `200` with progress | none |
+
+- **`presented_event_id` is not verified.** It is the `X-Razorpay-Event-Id` header, which the
+  webhook signature does not cover. It is kept only when it is a short plain token, nothing
+  decides anything on it, and a replay under a fresh id does not change the one first stored.
+
+**Contract for anything that reads the ledger:**
+
+- Find "what have I not handled yet" by comparing against the reader's own state, never by a time
+  or id watermark: rows are not written in received order, and a row changes after it is written.
+- A row existing does not mean it was handled. A failure that recurs only raises the count on the
+  same row, and every `ERRORED` attempt for one order and source shares one row; compare
+  `last_received_at` with the reader's own handled-at time.
+- `attempt_count` is not severity and not the gateway's retry count, and `last_received_at` is not
+  a gateway delivery time: a replay raises both on a webhook row, and the payer can on a callback
+  row.
+- A `RECORDING_FAILED` or `ERRORED` row does not mean the order is unpaid. `payment_order` and the
+  agreement say whether it is paid.
+- A surplus payment is recorded as `CONFIRMED`; `payment_order.surplus` tells it apart.
+- The strings are gateway-supplied free text: encode them when rendering.
+- `presented_event_id` is not the gateway's: it is whichever value was presented first for that
+  distinct attempt, by whoever got there first.
+- The ledger is best-effort and may be incomplete.
+- A later change to the values that make an attempt distinct, to a column width, or to the key's
+  encoding gives an identical attempt a second row from then on.
+
 ## What we are deliberately NOT doing yet
 
 - No microservices, no message broker (add RabbitMQ/Kafka only when multi-step

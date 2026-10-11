@@ -91,7 +91,9 @@ class PaymentReconciliationJob {
    * customer can start a fresh order.
    */
   private void reconcileOne(PaymentOrder order, Instant now) {
-    ConfirmationOutcome outcome = orderService.readAuthoritatively(order.providerOrderId());
+    ConfirmationOutcome outcome =
+        orderService.readAuthoritatively(
+            PaymentEventOrigin.reconciliation(), order.providerOrderId());
     if (outcome == ConfirmationOutcome.CONFIRMED) {
       log.debug(
           "Reconciliation recovered a payment for order {}",

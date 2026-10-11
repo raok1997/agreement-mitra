@@ -73,6 +73,7 @@ public class PaymentOrderService {
   private final PaymentPricing pricing;
   private final RazorpayClient razorpay;
   private final PaymentConfirmations confirmations;
+  private final PaymentEventLedger ledger;
   private final AgreementService agreementService;
   private final PaymentProperties properties;
   private final PartyReachability reachability;
@@ -86,6 +87,7 @@ public class PaymentOrderService {
       PaymentPricing pricing,
       RazorpayClient razorpay,
       PaymentConfirmations confirmations,
+      PaymentEventLedger ledger,
       AgreementService agreementService,
       PaymentProperties properties,
       PartyReachability reachability,
@@ -102,6 +104,7 @@ public class PaymentOrderService {
     this.pricing = pricing;
     this.razorpay = razorpay;
     this.confirmations = confirmations;
+    this.ledger = ledger;
     this.agreementService = agreementService;
     this.properties = properties;
   }
@@ -490,7 +493,8 @@ public class PaymentOrderService {
     // Verified means "the provider issued this", nothing more. Ask the provider what is actually
     // true before changing anything.
     try {
-      readAuthoritatively(agreementId, request.razorpayOrderId());
+      readAuthoritatively(
+          PaymentEventOrigin.browserCallback(), agreementId, request.razorpayOrderId());
     } catch (PaymentRecordingFailedException alreadyLogged) {
       // The callback is a UX signal, so the customer sees the payment as pending rather than an
       // error page. Nothing here completes it: the failure is already logged at ERROR, and the
@@ -508,16 +512,17 @@ public class PaymentOrderService {
    * <p>The order must be one of ours: a caller cannot name an arbitrary provider order and have it
    * credited somewhere.
    */
-  ConfirmationOutcome readAuthoritatively(UUID agreementId, String providerOrderId) {
+  ConfirmationOutcome readAuthoritatively(
+      PaymentEventOrigin origin, UUID agreementId, String providerOrderId) {
     Optional<PaymentOrder> ours = orders.findByProviderOrderId(providerOrderId);
     if (ours.isEmpty() || (agreementId != null && !ours.get().agreementId().equals(agreementId))) {
       return ConfirmationOutcome.UNKNOWN_ORDER;
     }
-    return readAuthoritatively(providerOrderId);
+    return readAuthoritatively(origin, providerOrderId);
   }
 
   /** As above, with the order already known to be ours (the reconciliation entry point). */
-  ConfirmationOutcome readAuthoritatively(String providerOrderId) {
+  ConfirmationOutcome readAuthoritatively(PaymentEventOrigin origin, String providerOrderId) {
     Optional<RazorpayClient.ProviderOrder> providerOrder = razorpay.fetchOrder(providerOrderId);
     if (providerOrder.isEmpty() || !providerOrder.get().paid()) {
       // Unpaid, failed, expired, or simply unreachable: never a confirmation.
@@ -530,7 +535,7 @@ public class PaymentOrderService {
     }
     RazorpayClient.ProviderPayment payment = captured.get();
     return applyConfirmation(
-        providerOrderId, payment.id(), payment.amountMinorUnits(), payment.currency());
+        origin, providerOrderId, payment.id(), payment.amountMinorUnits(), payment.currency());
   }
 
   // --- confirmation (the single write path) ----------------------------------
@@ -548,19 +553,46 @@ public class PaymentOrderService {
    * would have the webhook acknowledge a captured payment that was never recorded, after which the
    * gateway stops redelivering.
    *
+   * <p><b>Every attempt is recorded in the payment event ledger</b>, on all four exits: the
+   * returned outcome, a refused duplicate, a refused write, and any other error
+   * (payment-event-ledger D1). The ledger writes outside the confirmation's transaction and cannot
+   * fail this method ({@link PaymentEventLedger}), so nothing here guards it. The record after a
+   * returned outcome sits <b>after</b> the {@code try}: inside it, a ledger fault could be caught
+   * and classified as a database refusal of the payment.
+   *
+   * @param origin which caller this attempt came from, and for a webhook what it presented
    * @throws PaymentRecordingFailedException when the database refuses the write for any other
-   *     reason; nothing was recorded
+   *     reason; no payment was recorded
    */
   ConfirmationOutcome applyConfirmation(
+      PaymentEventOrigin origin,
       String providerOrderId,
       String providerPaymentId,
       long reportedMinorUnits,
       String reportedCurrency) {
+    // When the attempt arrived, not when its row was written.
+    Instant receivedAt = Instant.now();
+    ConfirmationOutcome outcome;
     try {
-      return confirmations.apply(
-          providerOrderId, providerPaymentId, reportedMinorUnits, reportedCurrency);
+      outcome =
+          confirmations.apply(
+              providerOrderId, providerPaymentId, reportedMinorUnits, reportedCurrency);
     } catch (DataIntegrityViolationException refused) {
-      if (PaymentIntegrity.refusedBy(PaymentIntegrity.GATEWAY_DUPLICATE_RULES, refused)) {
+      boolean duplicate =
+          PaymentIntegrity.refusedBy(PaymentIntegrity.GATEWAY_DUPLICATE_RULES, refused);
+      ledger.record(
+          origin,
+          providerOrderId,
+          providerPaymentId,
+          reportedMinorUnits,
+          reportedCurrency,
+          receivedAt,
+          duplicate
+              ? PaymentEventOutcome.DUPLICATE_REFERENCE
+              : PaymentEventOutcome.RECORDING_FAILED,
+          PaymentIntegrity.violatedConstraint(refused).orElse(null),
+          PaymentIntegrity.sqlState(refused));
+      if (duplicate) {
         log.warn(
             "Payment confirmation refused: the provider payment for order {} is already recorded",
             RazorpayClient.redact(providerOrderId));
@@ -568,7 +600,32 @@ public class PaymentOrderService {
       }
       throw PaymentIntegrity.loggedFailure(
           log, "order " + RazorpayClient.redact(providerOrderId), refused);
+    } catch (RuntimeException other) {
+      // The payment may be as unrecorded as after a refusal. Only the SQL state is taken from the
+      // error, when it carries one; the server log has the rest.
+      ledger.record(
+          origin,
+          providerOrderId,
+          providerPaymentId,
+          reportedMinorUnits,
+          reportedCurrency,
+          receivedAt,
+          PaymentEventOutcome.ERRORED,
+          null,
+          PaymentIntegrity.sqlState(other));
+      throw other;
     }
+    ledger.record(
+        origin,
+        providerOrderId,
+        providerPaymentId,
+        reportedMinorUnits,
+        reportedCurrency,
+        receivedAt,
+        PaymentEventOutcome.of(outcome),
+        null,
+        null);
+    return outcome;
   }
 
   // --- helpers ---------------------------------------------------------------

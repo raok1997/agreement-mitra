@@ -77,15 +77,26 @@ class RazorpayWebhookServiceTest {
     return RazorpaySignatures.hmacSha256Hex(body, WEBHOOK_KEY);
   }
 
+  /** A delivery presenting no event id, which is what most of these cases are. */
+  private boolean handle(String body, String signature) {
+    return webhooks.handle(body, signature, null);
+  }
+
   // --- verification ----------------------------------------------------------
 
   @Test
   void aVerifiedPaymentCapturedWebhookAppliesAConfirmation() {
     String body = paymentCapturedBody(49_900L);
 
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
 
-    verify(orderService).applyConfirmation(ORDER_ID, PAYMENT_ID, 49_900L, "INR");
+    verify(orderService)
+        .applyConfirmation(
+            PaymentEventOrigin.webhook(null, "payment.captured"),
+            ORDER_ID,
+            PAYMENT_ID,
+            49_900L,
+            "INR");
   }
 
   @Test
@@ -94,19 +105,21 @@ class RazorpayWebhookServiceTest {
     // order and the same payment id, so idempotency downstream records it exactly once.
     String body = orderPaidBody(49_900L);
 
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
 
-    verify(orderService).applyConfirmation(ORDER_ID, PAYMENT_ID, 49_900L, "INR");
+    verify(orderService)
+        .applyConfirmation(
+            PaymentEventOrigin.webhook(null, "order.paid"), ORDER_ID, PAYMENT_ID, 49_900L, "INR");
   }
 
   @Test
   void anUnverifiedWebhookChangesNothingAtAll() {
     String body = paymentCapturedBody(49_900L);
 
-    assertThat(webhooks.handle(body, "not-the-signature")).isFalse();
-    assertThat(webhooks.handle(body, null)).isFalse();
+    assertThat(handle(body, "not-the-signature")).isFalse();
+    assertThat(handle(body, null)).isFalse();
     // Body altered after signing.
-    assertThat(webhooks.handle(paymentCapturedBody(1L), sign(body))).isFalse();
+    assertThat(handle(paymentCapturedBody(1L), sign(body))).isFalse();
 
     verifyNoInteractions(orderService);
   }
@@ -116,8 +129,7 @@ class RazorpayWebhookServiceTest {
     // Crossing the two credentials must fail closed, not silently work.
     String body = paymentCapturedBody(49_900L);
 
-    assertThat(webhooks.handle(body, RazorpaySignatures.hmacSha256Hex(body, "rzp-key-1")))
-        .isFalse();
+    assertThat(handle(body, RazorpaySignatures.hmacSha256Hex(body, "rzp-key-1"))).isFalse();
 
     verifyNoInteractions(orderService);
   }
@@ -127,7 +139,7 @@ class RazorpayWebhookServiceTest {
     when(razorpay.webhookSecret()).thenReturn("");
     String body = paymentCapturedBody(49_900L);
 
-    assertThat(webhooks.handle(body, sign(body))).isFalse();
+    assertThat(handle(body, sign(body))).isFalse();
 
     verifyNoInteractions(orderService);
   }
@@ -146,16 +158,17 @@ class RazorpayWebhookServiceTest {
             + ORDER_ID
             + "\",\"amount\":49900,\"currency\":\"INR\",\"status\":\"failed\"}}}}";
 
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
 
-    verify(orderService, never()).applyConfirmation(anyString(), anyString(), anyLong(), any());
+    verify(orderService, never())
+        .applyConfirmation(any(), anyString(), anyString(), anyLong(), any());
   }
 
   @Test
   void aVerifiedButUnparseableBodyIsAcknowledgedWithoutActing() {
     String body = "not json at all";
 
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
 
     verifyNoInteractions(orderService);
   }
@@ -163,15 +176,15 @@ class RazorpayWebhookServiceTest {
   @Test
   void aVerifiedWebhookForAnUnknownOrderIsAcknowledgedIdenticallyToAKnownOne() {
     // No existence oracle: the caller cannot tell from the response whether we hold the order.
-    when(orderService.applyConfirmation(anyString(), anyString(), anyLong(), any()))
+    when(orderService.applyConfirmation(any(), anyString(), anyString(), anyLong(), any()))
         .thenReturn(ConfirmationOutcome.UNKNOWN_ORDER);
     String body = paymentCapturedBody(49_900L);
 
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
 
-    when(orderService.applyConfirmation(anyString(), anyString(), anyLong(), any()))
+    when(orderService.applyConfirmation(any(), anyString(), anyString(), anyLong(), any()))
         .thenReturn(ConfirmationOutcome.CONFIRMED);
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
   }
 
   @Test
@@ -179,11 +192,11 @@ class RazorpayWebhookServiceTest {
     // Returning true here is what tells the gateway to stop redelivering. A payment the database
     // refused to record must escape instead, so the caller cannot answer 202.
     PaymentRecordingFailedException failure = new PaymentRecordingFailedException(null, "22001");
-    when(orderService.applyConfirmation(anyString(), anyString(), anyLong(), any()))
+    when(orderService.applyConfirmation(any(), anyString(), anyString(), anyLong(), any()))
         .thenThrow(failure);
     String body = paymentCapturedBody(49_900L);
 
-    assertThatThrownBy(() -> webhooks.handle(body, sign(body))).isSameAs(failure);
+    assertThatThrownBy(() -> handle(body, sign(body))).isSameAs(failure);
   }
 
   @Test
@@ -198,9 +211,50 @@ class RazorpayWebhookServiceTest {
             + ORDER_ID
             + "\",\"amount\":499.00,\"currency\":\"INR\"}}}}";
 
-    assertThat(webhooks.handle(body, sign(body))).isTrue();
+    assertThat(handle(body, sign(body))).isTrue();
 
-    verify(orderService).applyConfirmation(eq(ORDER_ID), eq(PAYMENT_ID), eq(0L), eq("INR"));
+    verify(orderService).applyConfirmation(any(), eq(ORDER_ID), eq(PAYMENT_ID), eq(0L), eq("INR"));
+  }
+
+  // --- the origin handed to the confirmation path (payment-event-ledger) ------
+
+  @Test
+  void theOriginCarriesThePresentedEventIdAndTheNormalisedEventType() {
+    String body = paymentCapturedBody(49_900L).replace("payment.captured", " Payment.Captured ");
+
+    assertThat(webhooks.handle(body, sign(body), "evt_RZP7a1")).isTrue();
+
+    verify(orderService)
+        .applyConfirmation(
+            PaymentEventOrigin.webhook("evt_RZP7a1", "payment.captured"),
+            ORDER_ID,
+            PAYMENT_ID,
+            49_900L,
+            "INR");
+  }
+
+  @Test
+  void anEventIdThatIsNotAPlainTokenChangesNothingButTheLabel() {
+    String body = orderPaidBody(49_900L);
+
+    assertThat(webhooks.handle(body, sign(body), "evt 1\nforged")).isTrue();
+
+    verify(orderService)
+        .applyConfirmation(
+            PaymentEventOrigin.webhook(null, "order.paid"), ORDER_ID, PAYMENT_ID, 49_900L, "INR");
+  }
+
+  @Test
+  void anEventNamingNoOrderIsAcknowledgedWithoutActing() {
+    String body =
+        "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{"
+            + "\"id\":\""
+            + PAYMENT_ID
+            + "\",\"amount\":49900,\"currency\":\"INR\"}}}}";
+
+    assertThat(webhooks.handle(body, sign(body), "evt_1")).isTrue();
+
+    verifyNoInteractions(orderService);
   }
 
   // --- redaction -------------------------------------------------------------
@@ -208,8 +262,8 @@ class RazorpayWebhookServiceTest {
   @Test
   void neitherThePayloadNorTheIdentifiersNorTheCredentialReachTheLogs() {
     String body = paymentCapturedBody(49_900L);
-    webhooks.handle(body, sign(body)); // verified
-    webhooks.handle(body, "forged"); // rejected
+    handle(body, sign(body)); // verified
+    handle(body, "forged"); // rejected
 
     // The rejected path logs at WARN, so only a DEBUG event proves the verified path was observed.
     assertThat(logs.hasLevel(Level.DEBUG)).isTrue();

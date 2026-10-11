@@ -175,6 +175,11 @@ class PaymentReconciliationIntegrationTest {
         "SELECT payment_state FROM agreement WHERE id = ?", String.class, agreementId);
   }
 
+  private List<Map<String, Object>> paymentEvents(String providerOrderId) {
+    return jdbc.queryForList(
+        "SELECT * FROM payment_event WHERE provider_order_id = ? ORDER BY id", providerOrderId);
+  }
+
   private String orderStatusOf(String providerOrderId) {
     return jdbc.queryForObject(
         "SELECT status FROM payment_order WHERE provider_order_id = ?",
@@ -200,6 +205,15 @@ class PaymentReconciliationIntegrationTest {
             jdbc.queryForObject(
                 "SELECT payment_reference FROM agreement WHERE id = ?", String.class, agreementId))
         .isEqualTo("pay_RECOVER");
+    assertThat(paymentEvents("order_RECOVER"))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(row)
+                    .containsEntry("source", "RECONCILIATION")
+                    .containsEntry("outcome", "CONFIRMED")
+                    .containsEntry("event_type", null)
+                    .containsEntry("attempt_count", 1L));
   }
 
   @Test
@@ -248,6 +262,8 @@ class PaymentReconciliationIntegrationTest {
     stubCapturedPayment("order_RECONOK", "pay_RECONOK", 49_900L);
 
     job.reconcile();
+    // The order is still outstanding, so the next sweep meets the same refusal.
+    job.reconcile();
 
     assertThat(orderStatusOf("order_RECONFAIL")).isEqualTo("CREATED");
     assertThat(paymentStateOf(failing)).isEqualTo("UNPAID");
@@ -258,6 +274,16 @@ class PaymentReconciliationIntegrationTest {
         .contains("SQL state 22001");
     assertThat(orderStatusOf("order_RECONOK")).isEqualTo("PAID");
     assertThat(paymentStateOf(healthy)).isEqualTo("PAID");
+    // Two sweeps, one ledger row: a stuck order raises a count, it does not grow the table.
+    assertThat(paymentEvents("order_RECONFAIL"))
+        .singleElement()
+        .satisfies(
+            row ->
+                assertThat(row)
+                    .containsEntry("source", "RECONCILIATION")
+                    .containsEntry("outcome", "RECORDING_FAILED")
+                    .containsEntry("sql_state", "22001")
+                    .containsEntry("attempt_count", 2L));
   }
 
   // --- it cannot invent a payment -------------------------------------------
@@ -274,6 +300,9 @@ class PaymentReconciliationIntegrationTest {
     job.reconcile();
 
     assertThat(paymentStateOf(agreementId)).isEqualTo("UNPAID");
+    // Not a confirmation attempt, so not a ledger row: every sweep re-reads every outstanding
+    // order.
+    assertThat(paymentEvents("order_UNPAID")).isEmpty();
   }
 
   @Test
