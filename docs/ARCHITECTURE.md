@@ -165,16 +165,24 @@ change `staff-paid-order-alert`).
   second recovery link is sent. `AgreementService.recordGatewayPayment` decides this under the
   agreement's row lock. The sweep raises one `DUPLICATE_PAYMENT` alert per surplus order -- *instead
   of* the paid-order alert, never both -- worded "Possible duplicate payment - check before
-  refunding". `staff_alert` is keyed by the alert's subject: the agreement for `ORDER_PAID`, the
-  payment order for `DUPLICATE_PAYMENT`. A gateway payment after a waiver is the agreement's one
+  refunding". `staff_alert` is keyed by the alert's subject and its kind: the subject is the
+  agreement for `ORDER_PAID` and the payment order for every other kind, so one order can hold one
+  alert of each kind. A gateway payment after a waiver is the agreement's one
   payment, not a surplus. The system refunds nothing itself; the runbook is in `docs/DEPLOYMENT.md`.
+- **A captured payment that was refused or not recorded raises its own alert.** The same sweep
+  reads the payment event ledger (below) and raises one alert per payment order and kind. That
+  look-back and its insert run first and on their own, in their own transaction: a fault in them is
+  one ERROR line a sweep and stops neither the other two look-backs nor the dispatch, and a fault in
+  those two does not hold it back.
 - **Claim, send, record.** The sweep claims a row by a conditional update that counts the attempt
   and writes the next-attempt time *before* sending; that time is the lease, so a crash mid-send
   needs no recovery step. The send runs with no transaction open. Delivery is at-least-once.
 - **Bounded.** Ten attempts, backoff 30 seconds doubling to an hour (about three hours in all). A
   timeout, a 429 or a 5xx is retried; a redirect or any other 4xx fails the alert at once; an alert
   still pending after 24 hours is failed unsent. `FAILED` is terminal and is reported only as an
-  ERROR log line -- the console queue remains the source of truth for what is waiting.
+  ERROR log line -- the console queue remains the source of truth for what is waiting. That does
+  not hold for the three unrecorded-payment kinds: no console queue lists those orders yet, so
+  the runbook's stuck-order query in `docs/DEPLOYMENT.md` is.
 - **What the message may contain:** a fixed lead naming the kind of alert, the tracking reference, a
   two-letter state code and a link to the public site. Never the agreement id (a bearer credential), a party name, a contact, an
   address, an amount, or any user-entered text -- which is why there is no city.
@@ -188,8 +196,19 @@ change `staff-paid-order-alert`).
 
 Every gateway payment confirmation attempt is recorded in `payment_event` (change
 `payment-event-ledger`), so "what did the gateway send and what did we do with it" is answered
-from the database and not from the server log beside the gateway dashboard. Nothing reads the
-table yet; the staff alert and console panel for unrecorded payments will.
+from the database and not from the server log beside the gateway dashboard.
+
+**One reader today: the staff alert sweep** (change `payment-recording-failure-staff-alert`). Every
+sweep it reads the attempts last received in the past 24 hours whose outcome is `RECORDING_FAILED`,
+`DUPLICATE_REFERENCE` or `AMOUNT_MISMATCH`, joined to `payment_order`, and raises one alert per
+payment order and kind (`PAYMENT_NOT_RECORDED`, `PAYMENT_ID_REUSED`, `PAYMENT_AMOUNT_MISMATCH`)
+for an order whose status is anything but `PAID`. An attempt with no gateway payment id is left
+out: it is an event without payment detail, not a captured payment. Only the order's status is read, never the
+agreement's payment state: an expired order whose customer paid again is still alerted, because it
+is a possible double charge. The three outcomes are listed once, in
+`PaymentOrderQueryAdapter.UNRECORDED_OUTCOMES`. "Already handled" is the `staff_alert` row itself,
+so a failure that recurs raises nothing more. An order whose attempts only ever end `ERRORED`
+raises no alert. The staff console panel for these payments does not exist yet and reads nothing.
 
 - **What a row is.** One **distinct** attempt that reached `PaymentOrderService.applyConfirmation`
   - from the webhook, the browser callback or the reconciliation job - and a count of its repeats.

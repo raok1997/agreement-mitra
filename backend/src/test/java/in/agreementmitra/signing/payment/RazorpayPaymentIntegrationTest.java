@@ -838,22 +838,6 @@ class RazorpayPaymentIntegrationTest {
   }
 
   /**
-   * A gateway payment id one character longer than {@code payment_order.provider_payment_id} holds.
-   * Postgres refuses the order write with SQL state 22001, which names no constraint: a real
-   * refusal that is not a duplicate, with no test-only seam. It fits {@code
-   * agreement.payment_reference}, so the order write is the only one the database refuses.
-   *
-   * <p>If the column is widened or the id is validated earlier, the tests using this must pick
-   * another provocation. Each one therefore asserts the refusal itself - the failure, the {@code
-   * 500}, or the ERROR line - and not only the unchanged state it leaves.
-   */
-  private static String overLongPaymentId() {
-    String id = (unique("pay_TOOLONG") + "X".repeat(65)).substring(0, 65);
-    assertThat(id).hasSize(65);
-    return id;
-  }
-
-  /**
    * The webhook must not acknowledge a payment that was not recorded: {@code 500}, so the gateway
    * delivers it again, and nothing written.
    *
@@ -869,7 +853,7 @@ class RazorpayPaymentIntegrationTest {
       org.springframework.boot.test.system.CapturedOutput output) {
     UUID agreementId = createAgreement();
     String order = orderIn(agreementId, "CREATED");
-    String paymentId = overLongPaymentId();
+    String paymentId = PaymentOrders.overLongPaymentId();
     Map<String, Object> before = recordedPayment(agreementId);
     mail.reset();
 
@@ -931,7 +915,7 @@ class RazorpayPaymentIntegrationTest {
     org.assertj.core.api.Assertions.assertThatThrownBy(
             () ->
                 paymentOrderService.applyConfirmation(
-                    DIRECT, order, overLongPaymentId(), 49_900L, "INR"))
+                    DIRECT, order, PaymentOrders.overLongPaymentId(), 49_900L, "INR"))
         .isInstanceOf(PaymentRecordingFailedException.class)
         .hasNoCause();
 
@@ -953,7 +937,7 @@ class RazorpayPaymentIntegrationTest {
     org.assertj.core.api.Assertions.assertThatThrownBy(
             () ->
                 paymentOrderService.applyConfirmation(
-                    DIRECT, earlier[0], overLongPaymentId(), 49_900L, "INR"))
+                    DIRECT, earlier[0], PaymentOrders.overLongPaymentId(), 49_900L, "INR"))
         .isInstanceOf(PaymentRecordingFailedException.class)
         .hasNoCause();
 
@@ -980,7 +964,7 @@ class RazorpayPaymentIntegrationTest {
             .willReturn(
                 okJson(
                     "{\"count\":1,\"items\":[{\"id\":\""
-                        + overLongPaymentId()
+                        + PaymentOrders.overLongPaymentId()
                         + "\",\"status\":\"captured\",\"amount\":49900,\"currency\":\"INR\"}]}")));
     mail.reset();
 
@@ -1633,7 +1617,7 @@ class RazorpayPaymentIntegrationTest {
     String order = orderIn(agreementId, "CREATED");
     theLedgerCannotBeWritten();
 
-    assertThat(capture(order, overLongPaymentId()).getStatusCode())
+    assertThat(capture(order, PaymentOrders.overLongPaymentId()).getStatusCode())
         .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
 
     assertThat(orderRow(order)).containsEntry("status", "CREATED");

@@ -297,4 +297,92 @@ class FlywayMigrationIntegrationTest {
       jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
     }
   }
+
+  /**
+   * V30 keys {@code staff_alert} on the subject and the kind. Rows written under the earlier key
+   * keep both, one subject can then hold one alert of each kind, and a paid-order alert is still
+   * keyed by its agreement.
+   */
+  @Test
+  void v30KeysStaffAlertsOnSubjectAndKindKeepingTheRowsItFound() {
+    String schema = "v30_key";
+    DriverManagerDataSource scratch =
+        new DriverManagerDataSource(
+            connectionDetails.getJdbcUrl(),
+            connectionDetails.getUsername(),
+            connectionDetails.getPassword());
+    JdbcTemplate jdbc = new JdbcTemplate(scratch);
+    String alerts = schema + ".staff_alert";
+    try {
+      Flyway.configure().dataSource(scratch).schemas(schema).target("29").load().migrate();
+      UUID agreementId =
+          jdbc.queryForObject(
+              "INSERT INTO "
+                  + schema
+                  + ".agreement (id, tracking_reference, property_address, monthly_rent,"
+                  + " security_deposit, term_months, start_date, end_date, created_at)"
+                  + " VALUES (gen_random_uuid(), 'AMV30KEY01', '1 Scratch Road', 1000, 2000, 11,"
+                  + " DATE '2026-01-01', DATE '2026-12-01', now()) RETURNING id",
+              UUID.class);
+      UUID paymentOrderId = UUID.randomUUID();
+      String sent =
+          "INSERT INTO "
+              + alerts
+              + " (id, kind, agreement_id, status, attempts, next_attempt_at, created_at, sent_at)"
+              + " VALUES (?, ?, ?, 'SENT', 1, now(), now(), now())";
+      jdbc.update(sent, agreementId, "ORDER_PAID", agreementId);
+      jdbc.update(sent, paymentOrderId, "DUPLICATE_PAYMENT", agreementId);
+
+      Flyway.configure().dataSource(scratch).schemas(schema).target("30").load().migrate();
+
+      assertThat(
+              jdbc.queryForList(
+                  "SELECT id, kind, status FROM "
+                      + alerts
+                      + " WHERE agreement_id = ? ORDER BY kind DESC",
+                  agreementId))
+          .hasSize(2)
+          .satisfiesExactly(
+              paid ->
+                  assertThat(paid)
+                      .containsEntry("id", agreementId)
+                      .containsEntry("kind", "ORDER_PAID")
+                      .containsEntry("status", "SENT"),
+              duplicate ->
+                  assertThat(duplicate)
+                      .containsEntry("id", paymentOrderId)
+                      .containsEntry("kind", "DUPLICATE_PAYMENT")
+                      .containsEntry("status", "SENT"));
+      String insert =
+          "INSERT INTO "
+              + alerts
+              + " (id, kind, agreement_id, status, attempts, next_attempt_at, created_at)"
+              + " VALUES (?, ?, ?, 'PENDING', 0, now(), now())";
+      // One subject, two kinds: the order that failed recording and was later surplus.
+      jdbc.update(insert, paymentOrderId, "PAYMENT_NOT_RECORDED", agreementId);
+      jdbc.update(insert, paymentOrderId, "PAYMENT_ID_REUSED", agreementId);
+      jdbc.update(insert, paymentOrderId, "PAYMENT_AMOUNT_MISMATCH", agreementId);
+      assertThatThrownBy(
+              () -> jdbc.update(insert, paymentOrderId, "PAYMENT_NOT_RECORDED", agreementId))
+          .as("a second alert of the same kind for the subject collides on the key")
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(() -> jdbc.update(insert, agreementId, "ORDER_PAID", agreementId))
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), "ORDER_PAID", agreementId))
+          .as("a paid-order alert must still be keyed by its agreement")
+          .isInstanceOf(DataIntegrityViolationException.class);
+      assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), "SOMETHING", agreementId))
+          .isInstanceOf(DataIntegrityViolationException.class);
+      // Scoped to the scratch schema: the context's own schema holds an index of this name too.
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT count(*) FROM pg_indexes WHERE schemaname = ? AND tablename ="
+                      + " 'payment_event' AND indexname = 'idx_payment_event_last_received'",
+                  Integer.class,
+                  schema))
+          .isEqualTo(1);
+    } finally {
+      jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
+  }
 }

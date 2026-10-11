@@ -20,11 +20,15 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -124,6 +128,44 @@ class DiscordStaffNotifierTest {
   void aPaidOrderAlertKeepsItsLead() {
     assertThat(DiscordStaffNotifier.content(MESSAGE))
         .isEqualTo("Paid order waiting for a stamp: **AM7K2P9Q** (TG)\nhttps://app.example.test");
+  }
+
+  @Test
+  void everyKindOpensWithItsOwnLead() {
+    List<String> leads =
+        Arrays.stream(StaffAlertKind.values())
+            .map(
+                kind ->
+                    DiscordStaffNotifier.content(
+                        new StaffAlertMessage(kind, "AM7K2P9Q", "TG", null)))
+            .map(content -> content.substring(0, content.indexOf(": **")))
+            .toList();
+
+    assertThat(leads).hasSize(5).doesNotHaveDuplicates();
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "PAYMENT_NOT_RECORDED|Payment captured but not recorded - check before recording or"
+            + " refunding",
+        "PAYMENT_ID_REUSED|Payment refused: its reference is already recorded elsewhere - check"
+            + " before recording or refunding",
+        "PAYMENT_AMOUNT_MISMATCH|Payment refused: the amount paid differs from the order - check"
+            + " before recording or refunding"
+      })
+  void anUnrecordedPaymentAlertCarriesItsLeadTheReferenceAndTheStateAndNothingMore(
+      StaffAlertKind kind, String lead) {
+    String content =
+        DiscordStaffNotifier.content(
+            new StaffAlertMessage(kind, "AM7K2P9Q", "TG", URI.create("https://app.example.test")));
+
+    assertThat(content).isEqualTo(lead + ": **AM7K2P9Q** (TG)\nhttps://app.example.test");
+    // Neither is checked: the agreement may already be paid by another order.
+    assertThat(content.toLowerCase(Locale.ROOT)).doesNotContain("unpaid");
+    assertThat(content)
+        .doesNotContainPattern("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
   }
 
   @ParameterizedTest

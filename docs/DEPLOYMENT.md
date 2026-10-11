@@ -384,7 +384,9 @@ When `STAFF_ALERT_DISCORD_WEBHOOK_URL` is set, a gateway-paid order raises one
 message in a private staff Discord channel within about a minute (change
 `staff-paid-order-alert`). Blank, the default, switches the feature off: nothing
 is recorded and nothing is sent. The message carries the tracking reference, the
-state and a link to the site -- nothing personal.
+state and a link to the site -- nothing personal. The same channel carries the
+"possible duplicate payment" alert and the three alerts for a captured payment
+that was refused or not recorded; each has its own section below.
 
 **Order matters on the first deploy.** A template key missing from the server's
 `backend.env` fails the deploy, so the key is added before the code that reads it:
@@ -394,7 +396,9 @@ state and a link to the site -- nothing personal.
 3. In Discord, create a **private** channel for staff, then Channel settings ->
    Integrations -> Webhooks -> New webhook, and copy its URL.
 4. Run `./provision.sh secrets` again, paste the URL, and **recreate** the backend
-   (below). Orders paid in the previous 24 hours alert once.
+   (below). Orders paid in the previous 24 hours alert once, and so does every
+   order whose captured payment is still failing to record, however long ago it
+   first failed.
 5. Make one test payment and confirm its alert arrives.
 
 **"Restart" here means recreate.** The backend reads `backend.env` through
@@ -424,16 +428,23 @@ prompt to open the console, never an instruction to act on its own.
 
 **A failed alert is not re-sent.** A deleted or mistyped webhook fails each alert
 on its first attempt, and the only trace is an ERROR line beginning `Staff alert
-ORDER_PAID for agreement` or `Staff alert DUPLICATE_PAYMENT for agreement` --
+<KIND> for agreement`, where the kind is `ORDER_PAID`, `DUPLICATE_PAYMENT`,
+`PAYMENT_NOT_RECORDED`, `PAYMENT_ID_REUSED` or `PAYMENT_AMOUNT_MISMATCH` --
 either `... failed and will not be retried` (refused, or out
 of attempts) or `... closed without a recorded delivery` (pending for more than
 24 hours, or a last attempt whose outcome was never recorded). The staff console
-queue still lists every waiting order. After fixing the URL, re-queue the recent failures:
+queue still lists every waiting order; it does **not** list a payment that was
+captured and not recorded, so for the three `PAYMENT_` kinds use the queries
+under "A captured payment that was refused or not recorded" below. After fixing
+the URL, re-queue the recent failures of the first two kinds (the three
+`PAYMENT_` kinds have their own statement below, which skips orders since
+recorded as paid):
 
 ```sql
 UPDATE staff_alert
    SET status = 'PENDING', attempts = 0, next_attempt_at = now(), created_at = now()
- WHERE status = 'FAILED' AND created_at > now() - interval '24 hours';
+ WHERE status = 'FAILED' AND created_at > now() - interval '24 hours'
+   AND kind IN ('ORDER_PAID', 'DUPLICATE_PAYMENT');
 ```
 
 `created_at` is reset because an alert pending for more than 24 hours is failed
@@ -507,6 +518,143 @@ hours are marked failed, not sent, when the feature is switched back on.
 payment staff confirm by hand, and a waiver, reach the queue silently in either
 `PAYMENT_MODE`. A second gateway payment on an already-paid agreement raises no
 second "paid order" alert; it raises the duplicate-payment alert above instead.
+
+#### A captured payment that was refused or not recorded
+
+Three more leads, all ending "check before recording or refunding" (change
+`payment-recording-failure-staff-alert`). Each means the gateway captured a
+payment for a payment order and the system **did not record it against that
+order**:
+
+| Lead | What happened |
+|---|---|
+| `Payment captured but not recorded` | The database refused to record the payment. The gateway keeps redelivering and each attempt fails the same way. |
+| `Payment refused: its reference is already recorded elsewhere` | The gateway payment id is already held by another order or agreement, so this one was refused. The gateway was acknowledged and will not redeliver. |
+| `Payment refused: the amount paid differs from the order` | The amount or currency captured differs from the order's, so it was refused. The gateway was acknowledged and will not redeliver. |
+
+The alert is raised once per payment order and kind. It does not repeat while the
+failure recurs. It says nothing about the agreement: the agreement **may already
+be paid**, for example when an expired order's customer paid again on a new one,
+and then this is a possible double charge. The system records and refunds
+nothing because of the alert, and until the staff console has a panel for these
+payments the fix is manual.
+
+**Find the attempts** by the tracking reference from the alert:
+
+```sql
+SELECT a.payment_state, a.payment_reference,
+       o.status AS order_status, o.surplus, o.amount_minor_units AS order_amount,
+       e.source, e.outcome, e.provider_payment_id, e.amount_minor_units AS paid_amount,
+       e.currency, e.refused_rule, e.sql_state, e.attempt_count,
+       e.first_received_at, e.last_received_at
+  FROM agreement a
+  JOIN payment_order o ON o.agreement_id = a.id
+  JOIN payment_event e ON e.provider_order_id = o.provider_order_id
+ WHERE a.tracking_reference = 'AM7K2P9Q'
+ ORDER BY e.last_received_at;
+```
+
+Never select `payment_order.receipt` here: it is the agreement id. Never paste a
+gateway id or an amount into the channel.
+
+Then, in this order:
+
+1. **Is this payment already recorded?** Compare `payment_state` and
+   `payment_reference` with the row's `provider_payment_id`, ignoring case and
+   surrounding spaces: a reference recorded by hand is stored in capitals. If
+   they match, the payment is recorded and there is nothing more to do. If they
+   do not, confirm the capture in the gateway dashboard before going on. A
+   channel message is not proof of anything: anyone
+   holding the webhook URL can post one, and a re-queue, a resend or a redeploy
+   after a rollback can repeat an alert already handled.
+2. **Not recorded:** record it by hand in the staff console under the **exact
+   `provider_payment_id` from the ledger row**. Never a UTR, a blank or an
+   altered value. With the exact id, a later delivery finds the payment already
+   recorded and marks the order paid; with any other value the order later
+   confirms as surplus and raises "Possible duplicate payment" for one payment.
+3. **Reference already recorded elsewhere:** if the console refuses the
+   reference, stop and find where it is already recorded. The attempt's
+   `refused_rule` says which place holds it: an agreement
+   (`SELECT tracking_reference FROM agreement WHERE UPPER(BTRIM(payment_reference)) = UPPER(BTRIM('...'))`)
+   or another payment order (`SELECT a.tracking_reference FROM payment_order o
+   JOIN agreement a ON a.id = o.agreement_id WHERE o.provider_payment_id = '...'`).
+   Do not change the reference to get past the refusal.
+4. **Amount differs:** do not record by hand until someone has decided to refund
+   or to accept the payment. An accepted payment is recorded at the amount the
+   gateway captured.
+5. **If "Possible duplicate payment" follows for the same order,** follow that
+   alert's "Confirm two captured payments" step above. It can be a real second
+   charge.
+
+**Every order still stuck,** whether or not its alert was delivered. This reads
+the ledger and not `staff_alert`, and has no time bound:
+
+```sql
+SELECT DISTINCT a.tracking_reference, o.status, e.outcome, e.last_received_at
+  FROM payment_event e
+  JOIN payment_order o ON o.provider_order_id = e.provider_order_id
+  JOIN agreement a ON a.id = o.agreement_id
+ WHERE e.outcome IN ('RECORDING_FAILED', 'DUPLICATE_REFERENCE', 'AMOUNT_MISMATCH')
+   AND e.provider_payment_id IS NOT NULL
+   AND o.status <> 'PAID'
+ ORDER BY e.last_received_at;
+```
+
+**Re-queue a failed alert of these kinds.** The statement under "A failed alert
+is not re-sent" covers only the last 24 hours; an order here can be stuck for
+longer, so this one has no time bound and skips orders since recorded as paid
+(`staff_alert.id` is the payment order id for these kinds):
+
+```sql
+UPDATE staff_alert s
+   SET status = 'PENDING', attempts = 0, next_attempt_at = now(), created_at = now()
+ WHERE s.status = 'FAILED'
+   AND s.kind IN ('PAYMENT_NOT_RECORDED', 'PAYMENT_ID_REUSED', 'PAYMENT_AMOUNT_MISMATCH')
+   AND EXISTS (SELECT 1 FROM payment_order o WHERE o.id = s.id AND o.status <> 'PAID');
+```
+
+**What raises no alert here:** an order whose attempts only ever end `ERRORED`
+(any other error, including a database outage the next delivery clears); an
+attempt with no `provider_payment_id` (a gateway event that carried no payment
+detail is recorded as an amount mismatch at amount 0, with nothing to act on); an
+attempt whose ledger row could not be written (the ledger is best-effort; the
+ERROR line for the recording failure and the webhook's `500` are unchanged); an
+order already recorded as paid when the sweep runs; and an alert that failed to
+deliver, until it is re-queued.
+
+**`Staff alert look-back of the payment event ledger failed (...)`** is an ERROR
+logged every sweep while the ledger read or its insert fails. While it repeats,
+**no** alert of these three kinds is raised; paid-order and duplicate-payment
+alerts are unaffected. Use the stuck-order query above until it is fixed.
+
+**Rolling back past this release needs a schema step first.** The migration
+(V30) keys `staff_alert` on `(id, kind)`. The previous build inserts with
+`ON CONFLICT (id)`, which Postgres rejects against that key, and the insert runs
+before any dispatch, so **every** kind of alert would stop. It does start
+cleanly, so nothing else warns of it. Before starting a previous build, **stop
+the backend** (a sweep that inserts a `PAYMENT_` row mid-way makes the
+constraint step fail), run the stuck-order query above and keep its output (off
+the channel), then run this as one transaction:
+
+```sql
+BEGIN;
+DELETE FROM staff_alert
+ WHERE kind IN ('PAYMENT_NOT_RECORDED', 'PAYMENT_ID_REUSED', 'PAYMENT_AMOUNT_MISMATCH');
+ALTER TABLE staff_alert
+    DROP CONSTRAINT staff_alert_pkey,
+    ADD PRIMARY KEY (id),
+    DROP CONSTRAINT staff_alert_kind_check,
+    ADD CONSTRAINT staff_alert_kind_check CHECK (kind IN ('ORDER_PAID', 'DUPLICATE_PAYMENT'));
+DROP INDEX idx_payment_event_last_received;
+DELETE FROM flyway_schema_history WHERE version = '30';
+COMMIT;
+```
+
+The last two statements are what let this release be deployed again: without
+them Flyway skips V30, and this build's `ON CONFLICT (id, kind)` then fails
+against the restored key, again with a clean startup. With them V30 re-applies.
+Deleting the three kinds' rows also deletes "already alerted", so a redeploy
+alerts again every order still inside the 24-hour window.
 
 ### Why the `sandbox` profile is required
 
