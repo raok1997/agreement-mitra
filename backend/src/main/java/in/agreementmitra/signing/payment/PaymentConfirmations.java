@@ -36,10 +36,14 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>A second payment is kept, not credited.</b> When the agreement already holds a payment
  * under another reference, the order is still marked {@code PAID} - the money was captured - and is
- * marked <em>surplus</em>; the agreement's first payment record is untouched and no {@link
- * PaymentConfirmedEvent} is published. Staff learn of it from the alert sweep, which reads the mark
- * later; nothing is added to this transaction but that one column on the order row it already
- * writes.
+ * marked <em>surplus</em>; the agreement's first payment record is untouched. Staff learn of it
+ * from the alert sweep, which reads the mark later; nothing is added to this transaction but that
+ * one column on the order row it already writes.
+ *
+ * <p><b>Publishes nothing.</b> Whether this confirmation settled the agreement for the first time
+ * is decided by {@code AgreementService}, under the agreement's row lock, and it is what publishes
+ * {@link in.agreementmitra.signing.agreement.PaymentSettledEvent}. That event's listeners run after
+ * this method's transaction commits, because it is the outermost one on the gateway path.
  */
 @Service
 class PaymentConfirmations {
@@ -48,15 +52,10 @@ class PaymentConfirmations {
 
   private final PaymentOrderRepository orders;
   private final AgreementService agreementService;
-  private final org.springframework.context.ApplicationEventPublisher events;
 
-  PaymentConfirmations(
-      PaymentOrderRepository orders,
-      AgreementService agreementService,
-      org.springframework.context.ApplicationEventPublisher events) {
+  PaymentConfirmations(PaymentOrderRepository orders, AgreementService agreementService) {
     this.orders = orders;
     this.agreementService = agreementService;
-    this.events = events;
   }
 
   /**
@@ -132,17 +131,13 @@ class PaymentConfirmations {
     order.markPaid(providerPaymentId, confirmedAt, surplus);
     orders.save(order);
     if (surplus) {
-      // No event: the agreement's first confirmation already had its effects. No amount and no
-      // payment id in the line - the order row holds them, and the alert sweep tells staff.
+      // The agreement's first settlement already had its effects. No amount and no payment id in
+      // the line - the order row holds them, and the alert sweep tells staff.
       log.warn(
           "Payment for order {} is surplus: its agreement already holds a payment",
           redact(providerOrderId));
       return ConfirmationOutcome.CONFIRMED;
     }
-    // Published here and nowhere else: this is the one line all three producers converge on, and it
-    // is reached at most once per order because an already-settled order returns above. Listeners
-    // run after commit, so nothing outbound happens for a payment that could still roll back.
-    events.publishEvent(new PaymentConfirmedEvent(order.agreementId()));
     log.debug("Payment confirmed for order {}", redact(providerOrderId));
     return ConfirmationOutcome.CONFIRMED;
   }

@@ -8,7 +8,6 @@ import in.agreementmitra.signing.SignRequest;
 import in.agreementmitra.signing.SignatureStatus;
 import in.agreementmitra.signing.SigningCompletionView;
 import in.agreementmitra.signing.api.StampQueueEntry;
-import in.agreementmitra.signing.payment.PaymentConfirmedEvent;
 import java.lang.reflect.Constructor;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -104,8 +103,8 @@ class AgreementIdToStringRedactionTest {
   }
 
   @Test
-  void paymentConfirmedEvent() {
-    assertRedacted(new PaymentConfirmedEvent(ID));
+  void paymentSettledEvent() {
+    assertRedacted(new PaymentSettledEvent(ID));
   }
 
   @Test

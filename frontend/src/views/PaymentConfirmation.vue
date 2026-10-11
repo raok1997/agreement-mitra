@@ -18,7 +18,8 @@
 //
 // WHAT IT PROMISES MUST BE TRUE. It says a link has been emailed only when there was an address to
 // email; with no contact on file it says so plainly rather than implying a message that will never
-// arrive.
+// arrive. An agreement saved to an account is sent no link at all - the link would not open, its
+// owner signs in - so that case says so and wins over the other two.
 
 import LegalDisclaimer from "../components/LegalDisclaimer.vue";
 
@@ -29,6 +30,8 @@ const props = defineProps<{
   amountLabel: string | null;
   /** Whether any party had a contact we could send the link to. */
   linkSent: boolean;
+  /** The agreement is owned by the signed-in customer. No link is sent; takes precedence. */
+  savedToAccount?: boolean;
 }>();
 
 const emit = defineEmits<{ (e: "continue"): void }>();
@@ -90,7 +93,13 @@ function printReceipt(): void {
     </ol>
 
     <div class="mt-6 rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
-      <template v-if="props.linkSent">
+      <template v-if="props.savedToAccount">
+        <p class="font-medium text-slate-900" data-testid="saved-to-account">
+          This agreement is saved to your account.
+        </p>
+        <p class="mt-1">Sign in to open it at any time.</p>
+      </template>
+      <template v-else-if="props.linkSent">
         <p class="font-medium text-slate-900">
           We have emailed you a link to this agreement.
         </p>

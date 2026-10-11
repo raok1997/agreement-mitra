@@ -572,6 +572,9 @@ Then, in this order:
    altered value. With the exact id, a later delivery finds the payment already
    recorded and marks the order paid; with any other value the order later
    confirms as surplus and raises "Possible duplicate payment" for one payment.
+   Recording by hand emails the parties their recovery link (not for an
+   agreement saved to an account); the later gateway delivery sends no second
+   one.
 3. **Reference already recorded elsewhere:** if the console refuses the
    reference, stop and find where it is already recorded. The attempt's
    `refused_rule` says which place holds it: an agreement

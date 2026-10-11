@@ -122,7 +122,7 @@ recorded here rather than rediscovered.
 | # | Message | Trigger | Per party? | Carries |
 |---|---|---|---|---|
 | 1 | **The draft** | saving contacts (`PATCH /api/agreements/{id}/contacts`) | No | the draft document |
-| 2 | **The recovery link** | payment confirming | No -- one URL for everyone | a link only, no attachment |
+| 2 | **The recovery link** | payment being settled (gateway, staff confirm or waiver) | No -- one URL for everyone | a link only, no attachment |
 | 3 | **Signing invitations** | staff attaching the stamp, which starts signing | **Yes** -- one `sign_url` per signer | that signer's own signing URL |
 
 Three things people get wrong about this:
@@ -158,7 +158,9 @@ change `staff-paid-order-alert`).
   transaction, no outbound call on the webhook thread. An alert cannot roll a payment back, and a
   crash cannot lose one, because the paid order is the durable trigger.
 - **Gateway-paid only, one paid-order alert per agreement.** A manual staff confirmation or a waiver
-  creates no payment order and raises nothing.
+  creates no payment order and raises no staff alert. It does send the recovery link: the link is
+  sent once per agreement, on its first transition out of `UNPAID`, by whichever path makes it
+  (`PaymentSettledEvent`, published by `AgreementService`), and never for an owned agreement.
 - **A second payment raises a different alert.** A gateway payment confirmed for an agreement that
   already holds one under another reference is still marked `PAID` (the money was captured) but is
   marked **surplus** on its `payment_order` row: the agreement's first payment record is kept and no
@@ -168,7 +170,7 @@ change `staff-paid-order-alert`).
   refunding". `staff_alert` is keyed by the alert's subject and its kind: the subject is the
   agreement for `ORDER_PAID` and the payment order for every other kind, so one order can hold one
   alert of each kind. A gateway payment after a waiver is the agreement's one
-  payment, not a surplus. The system refunds nothing itself; the runbook is in `docs/DEPLOYMENT.md`.
+  payment, not a surplus; it sends no second recovery link, because the waiver sent it. The system refunds nothing itself; the runbook is in `docs/DEPLOYMENT.md`.
 - **A captured payment that was refused or not recorded raises its own alert.** The same sweep
   reads the payment event ledger (below) and raises one alert per payment order and kind. That
   look-back and its insert run first and on their own, in their own transaction: a fault in them is

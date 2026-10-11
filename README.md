@@ -101,6 +101,10 @@ Two escape hatches, in the order you should reach for them:
    The normal remedy when money arrives out of band, or the provider is down for
    one customer. Recorded as `WAIVED`, permanently distinguishable from `PAID`, so
    the books never confuse a goodwill decision with money received.
+
+   Waiving, or recording a payment by hand
+   (`POST /api/staff/payments/{id}/confirm`), emails the recovery link to the
+   parties, exactly as a gateway payment does.
 2. **Relax the gate globally** - `PAYMENT_MODE=OPTIONAL`. A configuration change,
    no redeploy of code, no schema change. Payment state is still recorded; it just
    stops blocking. This is the lever if the integration itself is broken.
@@ -166,7 +170,10 @@ UI must never present one as a way a party will be contacted - there is no SMS
 provider, so "we will text you" would be a promise the system cannot keep.
 
 **Recovery.** A customer who paid anonymously and closed the tab gets back in
-through a link emailed to **every** party at payment. The link carries the
+through a link emailed to **every** party when payment is settled - by the
+gateway, by a staff member recording it, or by a waiver. It is sent once per
+agreement, and not for an agreement saved to an account, whose owner signs in
+instead. The link carries the
 agreement identifier and *is* the access - there is no token to redeem and no
 expiry. It stops working when the agreement is claimed into an account, because
 anonymous access to a claimed agreement is refused; that is the revocation, and

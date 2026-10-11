@@ -22,7 +22,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * What {@code apply} does with each answer the agreement gives. The webhook, the browser callback's
@@ -37,7 +36,6 @@ class PaymentConfirmationsTest {
 
   @Mock private PaymentOrderRepository orders;
   @Mock private AgreementService agreementService;
-  @Mock private ApplicationEventPublisher events;
 
   private final UUID agreementId = UUID.randomUUID();
   private PaymentConfirmations confirmations;
@@ -45,7 +43,7 @@ class PaymentConfirmationsTest {
 
   @BeforeEach
   void anOutstandingOrder() {
-    confirmations = new PaymentConfirmations(orders, agreementService, events);
+    confirmations = new PaymentConfirmations(orders, agreementService);
     order =
         PaymentOrder.create(
             agreementId, ORDER_ID, agreementId.toString(), new Money(AMOUNT, "INR"), Instant.now());
@@ -63,8 +61,7 @@ class PaymentConfirmationsTest {
   @EnumSource(
       value = PaymentRecording.class,
       names = {"RECORDED", "ALREADY_RECORDED"})
-  void aPaymentThatIsTheAgreementsOwnMarksTheOrderPaidAndPublishesTheEvent(
-      PaymentRecording recording) {
+  void aPaymentThatIsTheAgreementsOwnMarksTheOrderPaidAndNotSurplus(PaymentRecording recording) {
     theOrderIsHeld();
     theAgreementAnswers(recording);
 
@@ -75,11 +72,10 @@ class PaymentConfirmationsTest {
     assertThat(order.providerPaymentId()).isEqualTo(PAYMENT_ID);
     assertThat(order.surplus()).isFalse();
     verify(orders).save(order);
-    verify(events).publishEvent(new PaymentConfirmedEvent(agreementId));
   }
 
   @Test
-  void aSurplusPaymentMarksTheOrderPaidAndSurplusAndPublishesNothing() {
+  void aSurplusPaymentMarksTheOrderPaidAndSurplus() {
     theOrderIsHeld();
     theAgreementAnswers(PaymentRecording.SURPLUS);
 
@@ -91,7 +87,6 @@ class PaymentConfirmationsTest {
     assertThat(order.confirmedAt()).isNotNull();
     assertThat(order.surplus()).isTrue();
     verify(orders).save(order);
-    verifyNoInteractions(events);
   }
 
   @Test
@@ -128,7 +123,7 @@ class PaymentConfirmationsTest {
 
     assertThat(confirmations.apply(ORDER_ID, PAYMENT_ID, AMOUNT, "INR"))
         .isEqualTo(ConfirmationOutcome.UNKNOWN_ORDER);
-    verifyNoInteractions(agreementService, events);
+    verifyNoInteractions(agreementService);
   }
 
   @Test
@@ -140,7 +135,7 @@ class PaymentConfirmationsTest {
         .isEqualTo(ConfirmationOutcome.ALREADY_CONFIRMED);
     assertThat(order.surplus()).isTrue();
     assertThat(order.providerPaymentId()).isEqualTo(PAYMENT_ID);
-    verifyNoInteractions(agreementService, events);
+    verifyNoInteractions(agreementService);
     verify(orders, never()).save(any());
   }
 
@@ -153,7 +148,7 @@ class PaymentConfirmationsTest {
     assertThat(confirmations.apply(ORDER_ID, PAYMENT_ID, AMOUNT, "USD"))
         .isEqualTo(ConfirmationOutcome.AMOUNT_MISMATCH);
     assertThat(order.status()).isEqualTo(PaymentOrderStatus.CREATED);
-    verifyNoInteractions(agreementService, events);
+    verifyNoInteractions(agreementService);
   }
 
   @Test
@@ -165,6 +160,6 @@ class PaymentConfirmationsTest {
     assertThat(confirmations.apply(ORDER_ID, null, AMOUNT, "INR"))
         .isEqualTo(ConfirmationOutcome.MISSING_REFERENCE);
     assertThat(order.status()).isEqualTo(PaymentOrderStatus.CREATED);
-    verifyNoInteractions(agreementService, events);
+    verifyNoInteractions(agreementService);
   }
 }

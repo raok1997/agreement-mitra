@@ -19,7 +19,6 @@ import in.agreementmitra.support.HarnessTestConfig;
 import in.agreementmitra.support.LogCapture;
 import in.agreementmitra.support.MailTestConfig;
 import in.agreementmitra.support.PaymentOrders;
-import in.agreementmitra.support.Payments;
 import in.agreementmitra.support.RecordingEmailSender;
 import in.agreementmitra.support.SessionCookie;
 import in.agreementmitra.support.StaffSessions;
@@ -98,7 +97,7 @@ class RazorpayPaymentIntegrationTest {
     registry.add("payment.razorpay.key-id", () -> KEY_ID);
     registry.add("payment.razorpay.key-secret", () -> API_KEY);
     registry.add("payment.razorpay.webhook-secret", () -> WEBHOOK_KEY);
-    // The recovery link rides on payment confirmation, so these tests need a base URL
+    // The recovery link rides on payment being settled, so these tests need a base URL
     // and an enabled channel to observe it at all.
     registry.add("delivery.public-base-url", () -> RECOVERY_BASE_URL);
     registry.add("delivery.channels.email.enabled", () -> "true");
@@ -527,6 +526,21 @@ class RazorpayPaymentIntegrationTest {
         String.class);
   }
 
+  private ResponseEntity<String> staffWaives(UUID agreementId) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.add(HttpHeaders.COOKIE, SessionCookie.header(staffToken));
+    return rest.exchange(
+        "/api/staff/payments/" + agreementId + "/waive",
+        HttpMethod.POST,
+        new HttpEntity<>(null, headers),
+        String.class);
+  }
+
+  private void assertOneRecoveryMailPerParty() {
+    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
+    assertThat(mail.sentTo("tara@example.com")).hasSize(1);
+  }
+
   @Test
   void aLatePaymentOnAnExpiredOrderIsKeptAsSurplusAndLeavesTheFirstPaymentRecorded() {
     String[] expired = new String[1];
@@ -631,8 +645,8 @@ class RazorpayPaymentIntegrationTest {
 
   /**
    * Staff typed the gateway's own payment id by hand - in another case, with stray spaces - and the
-   * gateway then confirms that same payment. It is one payment, not two: not surplus, and it is the
-   * confirmation that sends the customer their link, because the manual path sends none.
+   * gateway then confirms that same payment. It is one payment, not two: not surplus. The parties
+   * were sent their link when staff recorded it, so the gateway's confirmation sends no second one.
    */
   @Test
   void aGatewayPaymentStaffAlreadyRecordedByHandIsTheSamePaymentAndNotSurplus() {
@@ -642,6 +656,7 @@ class RazorpayPaymentIntegrationTest {
             staffConfirms(agreementId, "  " + paymentId.toLowerCase(java.util.Locale.ROOT) + " ")
                 .getStatusCode())
         .isEqualTo(HttpStatus.OK);
+    assertOneRecoveryMailPerParty();
     Map<String, Object> before = recordedPayment(agreementId);
     String order = orderIn(agreementId, "CREATED");
     mail.reset();
@@ -653,14 +668,14 @@ class RazorpayPaymentIntegrationTest {
         .containsEntry("surplus", false)
         .containsEntry("provider_payment_id", paymentId);
     assertThat(recordedPayment(agreementId)).isEqualTo(before);
-    assertThat(mail.sentTo("asha@example.com")).hasSize(1);
-    assertThat(mail.sentTo("tara@example.com")).hasSize(1);
+    assertThat(mail.sent()).isEmpty();
   }
 
+  /** The waiver sent the link, so the payment that follows is recorded and sends no second one. */
   @Test
   void aGatewayPaymentAfterAWaiverIsTheAgreementsPaymentAndNotSurplus() {
     UUID agreementId = createAgreement();
-    Payments.waive(jdbc, agreementId);
+    assertThat(staffWaives(agreementId).getStatusCode()).isEqualTo(HttpStatus.OK);
     String order = orderIn(agreementId, "CREATED");
     String paymentId = unique("pay_WAIVED");
 
@@ -671,6 +686,93 @@ class RazorpayPaymentIntegrationTest {
         .containsEntry("payment_state", "PAID")
         .containsEntry("payment_reference", paymentId)
         .containsEntry("payment_actor_identity_id", null);
+    // Exactly one across both steps.
+    assertOneRecoveryMailPerParty();
+  }
+
+  // --- settling by hand sends the recovery link too (recovery-link-on-manual-settlement) --------
+  // Over HTTP on purpose: the listener runs after commit and has no fallback, so only a real proxy
+  // and a real commit prove the mail is sent - and that a refused write sends none.
+
+  @Test
+  void aStaffRecordedPaymentSendsEveryPartyTheRecoveryLink() {
+    UUID agreementId = createAgreement();
+
+    assertThat(staffConfirms(agreementId, "NEFT-" + UUID.randomUUID()).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    assertOneRecoveryMailPerParty();
+    assertThat(mail.sentTo("tara@example.com").get(0).body())
+        .contains(RECOVERY_BASE_URL)
+        .contains(agreementId.toString());
+  }
+
+  @Test
+  void aStaffWaiverSendsEveryPartyTheRecoveryLink() {
+    UUID agreementId = createAgreement();
+
+    assertThat(staffWaives(agreementId).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("WAIVED");
+    assertOneRecoveryMailPerParty();
+  }
+
+  @Test
+  void correctingAStaffRecordedReferenceStoresItAndSendsNoSecondLink() {
+    UUID agreementId = createAgreement();
+    assertThat(staffConfirms(agreementId, "NEFT-TYPO-" + UUID.randomUUID()).getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+    String corrected = "NEFT-RIGHT-" + UUID.randomUUID();
+
+    assertThat(staffConfirms(agreementId, corrected).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    assertThat(recordedPayment(agreementId))
+        .containsEntry("payment_reference", corrected.toUpperCase(java.util.Locale.ROOT));
+    assertOneRecoveryMailPerParty();
+  }
+
+  /**
+   * The unique reference index refuses the write at the commit flush - after the event was
+   * published and before any listener ran. Nothing settled, so nothing is sent.
+   */
+  @Test
+  void aStaffConfirmationRefusedAsADuplicateReferenceSendsNoLink() {
+    String reference = "NEFT-TAKEN-" + UUID.randomUUID();
+    UUID first = createAgreement();
+    assertThat(staffConfirms(first, reference).getStatusCode()).isEqualTo(HttpStatus.OK);
+    UUID second = createAgreement();
+    // Both agreements carry the same party addresses; the first's mail must not be counted.
+    mail.reset();
+
+    assertThat(staffConfirms(second, reference).getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(paymentStateOf(second)).isEqualTo("UNPAID");
+    assertThat(mail.sent()).isEmpty();
+  }
+
+  /** A claimed agreement refuses anonymous access, so its link would not open: none is sent. */
+  @Test
+  void waivingAClaimedAgreementSendsNoLink() {
+    UUID agreementId = createAgreement();
+    claimFor(agreementId, customerToken);
+
+    assertThat(staffWaives(agreementId).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("WAIVED");
+    assertThat(mail.sent()).isEmpty();
+  }
+
+  @Test
+  void aGatewayPaymentOnAClaimedAgreementSendsNoLink() {
+    UUID agreementId = createAgreement();
+    claimFor(agreementId, customerToken);
+    String order = orderIn(agreementId, "CREATED");
+
+    assertThat(capture(order, unique("pay_OWNED")).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+    assertThat(paymentStateOf(agreementId)).isEqualTo("PAID");
+    assertThat(mail.sent()).isEmpty();
   }
 
   @Test
@@ -1064,7 +1166,7 @@ class RazorpayPaymentIntegrationTest {
 
   // --- idempotency -----------------------------------------------------------
 
-  // --- the recovery link that rides on payment confirmation (post-payment-continuity) ----------
+  // --- the recovery link that rides on payment being settled (post-payment-continuity) ---------
 
   /**
    * 9.18 + 9.21b. The whole point of the unprompted send: a customer pays and closes the tab. The
@@ -1098,10 +1200,11 @@ class RazorpayPaymentIntegrationTest {
   }
 
   /**
-   * 9.9. Task 5.2 claims the send is idempotent; nothing asserted it. The guarantee comes from
-   * {@code PaymentConfirmations.apply} taking the order row {@code FOR UPDATE} and returning {@code
-   * ALREADY_CONFIRMED} <b>before</b> it publishes -- so a refactor that moved the publish above
-   * that guard would mail the customer once per provider retry, and Razorpay retries.
+   * 9.9. Task 5.2 claims the send is idempotent; nothing asserted it. The guarantee now has two
+   * layers: {@code PaymentConfirmations.apply} takes the order row {@code FOR UPDATE} and returns
+   * {@code ALREADY_CONFIRMED} before it reaches the agreement, and {@code AgreementService}
+   * publishes only on the first transition out of {@code UNPAID}. Razorpay retries, so losing both
+   * would mail the customer once per retry.
    */
   @Test
   void aRedeliveredWebhookDoesNotMailTheCustomerTwice() {

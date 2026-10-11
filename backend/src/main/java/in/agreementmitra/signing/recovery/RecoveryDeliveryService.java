@@ -1,5 +1,6 @@
 package in.agreementmitra.signing.recovery;
 
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.contact.ChannelDestination;
 import in.agreementmitra.signing.contact.ChannelDispatch;
@@ -25,7 +26,7 @@ import org.springframework.stereotype.Service;
  * tab. It stops working when the agreement is claimed into an account, because anonymous access to
  * a claimed agreement is refused - that is the revocation, and the message says so.
  *
- * <p><b>Never throws.</b> Callers are payment confirmation and the recovery endpoint; neither may
+ * <p><b>Never throws.</b> Callers are payment settlement and the recovery endpoint; neither may
  * fail because a mail server did. Recipients are attempted independently so one party's failure
  * does not deny the other.
  */
@@ -79,7 +80,8 @@ public class RecoveryDeliveryService {
           sent++;
         } catch (RuntimeException failed) {
           log.warn(
-              "Recovery link delivery failed for one recipient on {} ({})",
+              "Recovery link delivery failed for agreement {}, one recipient on {} ({})",
+              AgreementIds.redact(agreement.id()),
               destination.channel(),
               RecipientRedaction.redact(destination.destination()));
         }
