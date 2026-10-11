@@ -91,6 +91,11 @@ authoritative stamp-quote notice; it was split out.
   `flyway.clean` is disabled. Each feature CR ships its own migration; never edit an
   applied one. Regenerate the Gradle lockfile after a dep change
   (`./gradlew dependencies --write-locks`).
+  **There are no rollback (down) scripts — rolling back across a migration is a dump restore**
+  (status 2026-10-11, a deliberate beta-stage decision). Tested scripts are designed but parked,
+  unbuilt, in `openspec/changes/migration-rollback-scripts/`. When asked to roll production back,
+  read "Rolling back across a migration" in `docs/DEPLOYMENT.md` first: the restore is undrilled,
+  and `deploy.sh rollback` mis-targets while the backend is stopped.
 - **eSign**: integrated through an `EsignProvider` interface. First adapter is
   Leegality (sandbox). Keep all vendor specifics behind the interface so Digio
   (likely production choice for the KYC bundle) is a one-adapter swap.

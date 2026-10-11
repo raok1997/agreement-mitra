@@ -627,34 +627,16 @@ logged every sweep while the ledger read or its insert fails. While it repeats,
 **no** alert of these three kinds is raised; paid-order and duplicate-payment
 alerts are unaffected. Use the stuck-order query above until it is fixed.
 
-**Rolling back past this release needs a schema step first.** The migration
-(V30) keys `staff_alert` on `(id, kind)`. The previous build inserts with
-`ON CONFLICT (id)`, which Postgres rejects against that key, and the insert runs
-before any dispatch, so **every** kind of alert would stop. It does start
-cleanly, so nothing else warns of it. Before starting a previous build, **stop
-the backend** (a sweep that inserts a `PAYMENT_` row mid-way makes the
-constraint step fail), run the stuck-order query above and keep its output (off
-the channel), then run this as one transaction:
-
-```sql
-BEGIN;
-DELETE FROM staff_alert
- WHERE kind IN ('PAYMENT_NOT_RECORDED', 'PAYMENT_ID_REUSED', 'PAYMENT_AMOUNT_MISMATCH');
-ALTER TABLE staff_alert
-    DROP CONSTRAINT staff_alert_pkey,
-    ADD PRIMARY KEY (id),
-    DROP CONSTRAINT staff_alert_kind_check,
-    ADD CONSTRAINT staff_alert_kind_check CHECK (kind IN ('ORDER_PAID', 'DUPLICATE_PAYMENT'));
-DROP INDEX idx_payment_event_last_received;
-DELETE FROM flyway_schema_history WHERE version = '30';
-COMMIT;
-```
-
-The last two statements are what let this release be deployed again: without
-them Flyway skips V30, and this build's `ON CONFLICT (id, kind)` then fails
-against the restored key, again with a clean startup. With them V30 re-applies.
-Deleting the three kinds' rows also deletes "already alerted", so a redeploy
-alerts again every order still inside the 24-hour window.
+**Rolling back past this release is a dump restore, not a schema step.** The
+migration (V30) keys `staff_alert` on `(id, kind)`. The previous build inserts
+with `ON CONFLICT (id)`, which Postgres rejects against that key, and the insert
+runs before any dispatch, so **every** kind of alert would stop -- with a clean
+startup, so nothing else warns of it. Never start a previous build against this
+schema by hand. `deploy.sh rollback` refuses it anyway (the database is past the
+target's migration); the route is under **Rolling back across a migration**
+below. Run the stuck-order query above and keep its output first: the restore
+discards the alert history, so a redeploy alerts again every order still inside
+the 24-hour window.
 
 ### Why the `sandbox` profile is required
 
@@ -886,6 +868,35 @@ does not -- code-only rollback would then run old code on a newer schema -- and
 prints the dump taken before that migration. Restoring it is manual, and the dump
 is a same-disk rollback point that excludes object storage. It also refuses when
 a target image is missing or not the one recorded.
+
+**Rolling back across a migration: dump restore only, never yet run.** *(Status
+2026-10-11.)* No migration has a rollback (down) script, and none of this is
+automated. When `deploy.sh rollback` refuses with "the database is at migration
+N, past *target*'s M", the only route is restoring the pre-deploy dump it names.
+Know this before touching anything:
+
+- **The restore loses data.** Every database write since that deploy is
+  discarded. Object storage is not restored: PDFs written since stay in MinIO
+  with no row naming them. Take a fresh dump of the current state first, so the
+  discarded rows can still be read.
+- **No restore procedure is written and none has been drilled**
+  (`prod-backups-and-disaster-recovery` in `docs/ROADMAP.md`). Whether a dump
+  restores cleanly is unproven. Work the steps out before running them; do not
+  improvise on the live database.
+- **`deploy.sh rollback` picks the wrong release while the backend is stopped.**
+  A restore needs the backend stopped. With it stopped, `rollback` targets the
+  top of the deploy history. Read the last line of
+  `/var/lib/agreementmitra/deploys.log`: if the release being left never
+  recorded `ok` (a failed deploy), the top is the last good release and
+  stop -> restore -> `deploy.sh rollback` is sound. If it did record `ok`, the top
+  is that same release: `rollback` restarts it and its Flyway re-applies the
+  migrations onto the restored data. There is no scripted route for that case
+  until `rollback-with-stopped-backend` (`docs/ROADMAP.md`) is fixed -- fix it
+  first.
+- **Tested rollback scripts are designed, not built.** The reviewed proposal is
+  parked in `openspec/changes/migration-rollback-scripts/`. Nothing under
+  `backend/db/rollback/` exists; do not assume a script is there, and do not
+  hand-run SQL copied from that design -- it has never been executed.
 
 **Accept:** when a deploy's (or a rollback's) only failure was the ERROR-line scan and the lines are
 benign, `deploy/deploy.sh accept` re-runs the other post-checks and records the
