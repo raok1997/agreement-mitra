@@ -55,18 +55,59 @@ public final class PaymentEvents {
       String outcome,
       Instant firstReceivedAt,
       Instant lastReceivedAt) {
+    insert(
+        jdbc,
+        providerOrderId,
+        providerPaymentId,
+        amountMinorUnits,
+        "INR",
+        source,
+        outcome,
+        null,
+        null,
+        firstReceivedAt,
+        lastReceivedAt,
+        1);
+  }
+
+  /**
+   * Every column a reader of the ledger reports.
+   *
+   * @param providerPaymentId {@code null} for an event that carried no payment detail
+   * @param refusedRule the constraint that refused the write, or {@code null}
+   * @param sqlState the SQL state of the refusal, or {@code null}
+   * @param attemptCount how many times the attempt was received
+   */
+  public static void insert(
+      JdbcTemplate jdbc,
+      String providerOrderId,
+      String providerPaymentId,
+      long amountMinorUnits,
+      String currency,
+      String source,
+      String outcome,
+      String refusedRule,
+      String sqlState,
+      Instant firstReceivedAt,
+      Instant lastReceivedAt,
+      long attemptCount) {
     jdbc.update(
         "INSERT INTO payment_event (attempt_key, source, provider_order_id, provider_payment_id,"
-            + " amount_minor_units, currency, outcome, first_received_at, last_received_at,"
-            + " attempt_count) VALUES (?, ?, ?, ?, ?, 'INR', ?, ?, ?, 1)",
+            + " amount_minor_units, currency, outcome, refused_rule, sql_state,"
+            + " first_received_at, last_received_at, attempt_count)"
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         uniqueAttemptKey(),
         source,
         providerOrderId,
         providerPaymentId,
         amountMinorUnits,
+        currency,
         outcome,
+        refusedRule,
+        sqlState,
         Timestamp.from(firstReceivedAt),
-        Timestamp.from(lastReceivedAt));
+        Timestamp.from(lastReceivedAt),
+        attemptCount);
   }
 
   /** The same attempt received again at {@code receivedAt}: every row for the order is repeated. */

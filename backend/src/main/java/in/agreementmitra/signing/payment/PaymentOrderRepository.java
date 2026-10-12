@@ -104,4 +104,102 @@ interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID> {
     /** A {@link PaymentEventOutcome} name. */
     String getOutcome();
   }
+
+  /** The columns of an order the staff orders view lists. No receipt: it is the agreement id. */
+  String LISTED_ORDER_COLUMNS =
+      "SELECT o.id AS \"paymentOrderId\", o.agreement_id AS \"agreementId\","
+          + " o.provider_order_id AS \"providerOrderId\", o.status AS \"status\","
+          + " o.amount_minor_units AS \"amountMinorUnits\", o.currency AS \"currency\","
+          + " o.created_at AS \"createdAt\""
+          + " FROM payment_order o";
+
+  /**
+   * What makes a ledger attempt a captured payment that was not recorded: one of the attention
+   * outcomes, carrying a payment id. Shared by the two queries below so they cannot disagree; the
+   * Java side of the same rule is {@link PaymentEventLedger.Attempt#isStuck}.
+   */
+  String STUCK_ATTEMPT = " e.outcome IN (:attention) AND e.provider_payment_id IS NOT NULL";
+
+  /**
+   * Orders of a listed status with a stuck attempt, most recent such attempt first - the staff
+   * orders view's paid-but-stuck group. Driven from the ledger, the small side. No date limit.
+   */
+  @Query(
+      value =
+          LISTED_ORDER_COLUMNS
+              + " JOIN (SELECT e.provider_order_id, max(e.last_received_at) AS latest"
+              + " FROM payment_event e WHERE"
+              + STUCK_ATTEMPT
+              + " GROUP BY e.provider_order_id) s ON s.provider_order_id = o.provider_order_id"
+              + " WHERE o.status IN (:listed)"
+              + " ORDER BY s.latest DESC, o.id"
+              + " LIMIT :limit",
+      nativeQuery = true)
+  List<ListedOrder> findStuck(
+      @Param("attention") Collection<String> attention,
+      @Param("listed") Collection<String> listed,
+      @Param("limit") int limit);
+
+  /**
+   * Orders of a listed status created at or after {@code cutoff} with no stuck attempt, newest
+   * first - the staff orders view's not-paid group.
+   */
+  @Query(
+      value =
+          LISTED_ORDER_COLUMNS
+              + " WHERE o.status IN (:listed) AND o.created_at >= :cutoff"
+              + " AND NOT EXISTS (SELECT 1 FROM payment_event e"
+              + " WHERE e.provider_order_id = o.provider_order_id AND"
+              + STUCK_ATTEMPT
+              + ")"
+              + " ORDER BY o.created_at DESC, o.id"
+              + " LIMIT :limit",
+      nativeQuery = true)
+  List<ListedOrder> findNotPaid(
+      @Param("attention") Collection<String> attention,
+      @Param("listed") Collection<String> listed,
+      @Param("cutoff") Instant cutoff,
+      @Param("limit") int limit);
+
+  /** One row of {@link #findStuck} or {@link #findNotPaid}. */
+  interface ListedOrder {
+
+    UUID getPaymentOrderId();
+
+    UUID getAgreementId();
+
+    String getProviderOrderId();
+
+    /** A {@link PaymentOrderStatus} name. */
+    String getStatus();
+
+    long getAmountMinorUnits();
+
+    String getCurrency();
+
+    Instant getCreatedAt();
+  }
+
+  /**
+   * Orders recorded under one of {@code paymentIds} - who holds a gateway payment id a later
+   * attempt was refused for. By {@code uq_payment_order_provider_payment_id}.
+   */
+  @Query(
+      value =
+          "SELECT o.id AS \"paymentOrderId\", o.provider_payment_id AS \"providerPaymentId\","
+              + " o.agreement_id AS \"agreementId\""
+              + " FROM payment_order o"
+              + " WHERE o.provider_payment_id IN (:paymentIds)",
+      nativeQuery = true)
+  List<PaymentHolder> findHolding(@Param("paymentIds") Collection<String> paymentIds);
+
+  /** One row of {@link #findHolding}. */
+  interface PaymentHolder {
+
+    UUID getPaymentOrderId();
+
+    String getProviderPaymentId();
+
+    UUID getAgreementId();
+  }
 }

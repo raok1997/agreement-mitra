@@ -1,3 +1,22 @@
+## Since this was parked (2026-10-12)
+
+The change `staff-orders-view` shipped the read-only Orders tab while this one was parked. Read
+this before resuming; the rest of this file predates it.
+
+- **Reuse, do not add.** `PaymentOrderQueryAdapter.ATTENTION_OUTCOMES` (the alert's three outcomes
+  plus `ERRORED`) and the ledger read `PaymentEventLedger.attemptsFor` now exist. This design's own
+  `ATTENTION_OUTCOMES` and its planned ledger read are those; add no second of either.
+- **The resolve precondition must be the view's stuck predicate:** an attempt whose outcome is in
+  `ATTENTION_OUTCOMES` and that carries a gateway payment id
+  (`PaymentEventLedger.Attempt.isStuck`, and `PaymentOrderRepository.STUCK_ATTEMPT` in SQL). With
+  any other rule an order can be listed as stuck with no exit, or resolved without being listed.
+- **The route should move** from under `/api/staff/payments/attention/` to
+  `POST /api/staff/payment-orders/{paymentOrderId}/resolve`, beside the view's
+  `GET /api/staff/payment-orders`. Routes under `/api/staff/payments/` are keyed by agreement.
+- **No delta is needed on `staff-orders-view` for `CLOSED`.** Its spec lists only `CREATED`,
+  `EXPIRED` and `FAILED` (`PaymentOrderOverview.LISTED_STATUSES`), so a `CLOSED` order leaves both
+  groups by default. Write a delta only if closed orders should be shown.
+
 ## Context
 
 Slice 1 of 3 of the payments-needing-attention work, cut from

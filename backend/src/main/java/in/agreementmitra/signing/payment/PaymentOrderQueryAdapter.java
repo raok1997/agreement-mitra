@@ -5,8 +5,11 @@ import in.agreementmitra.signing.SurplusPayment;
 import in.agreementmitra.signing.UnrecordedPayment;
 import in.agreementmitra.signing.UnrecordedPayment.Reason;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +30,18 @@ class PaymentOrderQueryAdapter implements PaymentOrderQuery {
           PaymentEventOutcome.RECORDING_FAILED, Reason.NOT_RECORDED,
           PaymentEventOutcome.DUPLICATE_REFERENCE, Reason.ID_REUSED,
           PaymentEventOutcome.AMOUNT_MISMATCH, Reason.AMOUNT_MISMATCH);
+
+  /**
+   * The outcomes that put an order in front of staff: the alert's three, and {@code ERRORED}, which
+   * raises no alert. Derived, so the alert's list cannot drift from the view's.
+   */
+  static final Set<PaymentEventOutcome> ATTENTION_OUTCOMES = attentionOutcomes();
+
+  private static Set<PaymentEventOutcome> attentionOutcomes() {
+    Set<PaymentEventOutcome> outcomes = EnumSet.copyOf(UNRECORDED_OUTCOMES.keySet());
+    outcomes.add(PaymentEventOutcome.ERRORED);
+    return Collections.unmodifiableSet(outcomes);
+  }
 
   private final PaymentOrderRepository repository;
 

@@ -536,10 +536,22 @@ The alert is raised once per payment order and kind. It does not repeat while th
 failure recurs. It says nothing about the agreement: the agreement **may already
 be paid**, for example when an expired order's customer paid again on a new one,
 and then this is a possible double charge. The system records and refunds
-nothing because of the alert, and until the staff console has a panel for these
-payments the fix is manual.
+nothing because of the alert, and the fix is manual.
 
-**Find the attempts** by the tracking reference from the alert:
+**Start in the staff console's Orders tab** (`/staff`, "Orders"). Under "Paid but
+stuck" it lists every such order with its attempts, the agreement's payment
+state, the next step below worked out for that order, and for a reused payment id
+the tracking reference of the agreement that already holds it. It also lists an
+order whose attempts only ever ended `ERRORED`, which raises no alert. It
+replaces the "find the attempts" and "every order still stuck" queries here and
+the two "where is it recorded" queries of step 3; they are kept for when the
+console is unreachable. The tab is read-only. **Recording by hand still needs
+one lookup in SQL:** that staff action is keyed by the agreement id, which the tab
+never shows (`SELECT id FROM agreement WHERE tracking_reference = '...'`; never
+paste the result into the channel).
+
+**Find the attempts** by the tracking reference from the alert (the Orders tab
+shows the same):
 
 ```sql
 SELECT a.payment_state, a.payment_reference,
@@ -589,8 +601,9 @@ Then, in this order:
    alert's "Confirm two captured payments" step above. It can be a real second
    charge.
 
-**Every order still stuck,** whether or not its alert was delivered. This reads
-the ledger and not `staff_alert`, and has no time bound:
+**Every order still stuck,** whether or not its alert was delivered. The Orders
+tab's "Paid but stuck" group is this list, plus the `ERRORED`-only orders. In
+SQL, reading the ledger and not `staff_alert`, with no time bound:
 
 ```sql
 SELECT DISTINCT a.tracking_reference, o.status, e.outcome, e.last_received_at
@@ -628,7 +641,8 @@ deliver, until it is re-queued.
 **`Staff alert look-back of the payment event ledger failed (...)`** is an ERROR
 logged every sweep while the ledger read or its insert fails. While it repeats,
 **no** alert of these three kinds is raised; paid-order and duplicate-payment
-alerts are unaffected. Use the stuck-order query above until it is fixed.
+alerts are unaffected. Use the Orders tab (or the stuck-order query above) until
+it is fixed.
 
 **Rolling back past this release is a dump restore, not a schema step.** The
 migration (V30) keys `staff_alert` on `(id, kind)`. The previous build inserts

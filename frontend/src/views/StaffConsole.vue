@@ -12,6 +12,7 @@ import {
 } from "../api/staffQueue";
 import type { FormField } from "../api/templateForm";
 import DateWidget from "../components/widgets/DateWidget.vue";
+import StaffOrders from "./StaffOrders.vue";
 import { validateField } from "./formModel";
 
 // The staff fulfilment console: every order awaiting an e-stamp, longest-waiting first, with the
@@ -26,6 +27,11 @@ import { validateField } from "./formModel";
 //
 // This screen is STAFF-only. The guard here is presentational: it stops a customer being shown a
 // door that 403s. Authorization itself is entirely server-side.
+
+// Two tabs, held as component state: /staff is the only staff route. The queue is hidden with
+// v-show, not unmounted, so a half-filled stamp upload -- its chosen file included -- survives a
+// look at the Orders tab. The Orders tab is mounted only while open, so it loads on demand.
+const tab = ref<"queue" | "orders">("queue");
 
 const entries = ref<StampQueueEntry[]>([]);
 const loading = ref(true);
@@ -191,7 +197,8 @@ async function load(): Promise<void> {
     // Never surface server internals; distinguish only "not allowed" from "went wrong".
     error.value =
       busyMessage(e) ??
-      (e instanceof StaffQueueHttpError && (e.status === 401 || e.status === 403)
+      (e instanceof StaffQueueHttpError &&
+      (e.status === 401 || e.status === 403)
         ? "This console is for AgreementMitra staff."
         : "Could not load the stamp queue. Please try again.");
   } finally {
@@ -283,302 +290,336 @@ onMounted(load);
 </script>
 
 <template>
-  <section class="flex flex-col gap-3" data-testid="staff-console">
-    <div class="flex items-center justify-between">
-      <h2 class="text-base font-semibold text-slate-800">
-        Orders awaiting an e-stamp
-      </h2>
+  <div class="flex flex-col gap-4" data-testid="staff-console">
+    <nav
+      class="flex gap-2 border-b border-slate-200"
+      aria-label="Staff console"
+    >
       <button
+        v-for="{ id, label } in [
+          { id: 'queue', label: 'Awaiting stamp' },
+          { id: 'orders', label: 'Orders' },
+        ] as const"
+        :key="id"
         type="button"
-        class="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium"
-        data-testid="queue-refresh"
-        @click="load"
+        class="-mb-px border-b-2 px-3 py-2 text-sm font-medium"
+        :class="
+          tab === id
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500'
+        "
+        :aria-current="tab === id ? 'page' : undefined"
+        :data-testid="`staff-tab-${id}`"
+        @click="tab = id"
       >
-        Refresh
+        {{ label }}
       </button>
-    </div>
+    </nav>
 
-    <p
-      v-if="lastResult"
-      class="text-sm text-green-700"
-      data-testid="queue-result"
+    <section
+      v-show="tab === 'queue'"
+      class="flex flex-col gap-3"
+      data-testid="staff-queue"
     >
-      {{ lastResult }}
-    </p>
+      <div class="flex items-center justify-between">
+        <h2 class="text-base font-semibold text-slate-800">
+          Orders awaiting an e-stamp
+        </h2>
+        <button
+          type="button"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium"
+          data-testid="queue-refresh"
+          @click="load"
+        >
+          Refresh
+        </button>
+      </div>
 
-    <p
-      v-if="loading"
-      class="py-6 text-sm text-slate-500"
-      data-testid="queue-loading"
-    >
-      Loading the stamp queue...
-    </p>
-    <p
-      v-else-if="error"
-      class="py-6 text-sm text-red-600"
-      data-testid="queue-error"
-    >
-      {{ error }}
-    </p>
-    <p
-      v-else-if="!entries.length"
-      class="rounded border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500"
-      data-testid="queue-empty"
-    >
-      No orders are waiting for a stamp.
-    </p>
-
-    <ul v-else class="flex flex-col gap-2" data-testid="queue-list">
-      <li
-        v-for="entry in entries"
-        :key="entry.agreementId"
-        class="flex flex-col gap-3 rounded-md border border-slate-200 px-4 py-3"
-        :data-testid="`queue-row-${entry.agreementId}`"
+      <p
+        v-if="lastResult"
+        class="text-sm text-green-700"
+        data-testid="queue-result"
       >
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <p
-                class="truncate font-mono text-sm font-medium text-slate-800"
-                :data-testid="`queue-reference-${entry.agreementId}`"
-              >
-                {{ entry.trackingReference }}
-              </p>
-              <!-- The state selects which stamp paper to buy, so it gets a badge of its own rather
+        {{ lastResult }}
+      </p>
+
+      <p
+        v-if="loading"
+        class="py-6 text-sm text-slate-500"
+        data-testid="queue-loading"
+      >
+        Loading the stamp queue...
+      </p>
+      <p
+        v-else-if="error"
+        class="py-6 text-sm text-red-600"
+        data-testid="queue-error"
+      >
+        {{ error }}
+      </p>
+      <p
+        v-else-if="!entries.length"
+        class="rounded border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500"
+        data-testid="queue-empty"
+      >
+        No orders are waiting for a stamp.
+      </p>
+
+      <ul v-else class="flex flex-col gap-2" data-testid="queue-list">
+        <li
+          v-for="entry in entries"
+          :key="entry.agreementId"
+          class="flex flex-col gap-3 rounded-md border border-slate-200 px-4 py-3"
+          :data-testid="`queue-row-${entry.agreementId}`"
+        >
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <p
+                  class="truncate font-mono text-sm font-medium text-slate-800"
+                  :data-testid="`queue-reference-${entry.agreementId}`"
+                >
+                  {{ entry.trackingReference }}
+                </p>
+                <!-- The state selects which stamp paper to buy, so it gets a badge of its own rather
                    than being a word inside a subtitle. -->
-              <span
-                v-if="entry.templateState"
-                class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700"
-                :data-testid="`queue-state-${entry.agreementId}`"
+                <span
+                  v-if="entry.templateState"
+                  class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700"
+                  :data-testid="`queue-state-${entry.agreementId}`"
+                >
+                  {{ entry.templateState }}
+                </span>
+              </div>
+              <p
+                v-if="entry.templateName"
+                class="truncate text-xs font-medium text-slate-600"
+                :data-testid="`queue-template-${entry.agreementId}`"
               >
-                {{ entry.templateState }}
-              </span>
-            </div>
-            <p
-              v-if="entry.templateName"
-              class="truncate text-xs font-medium text-slate-600"
-              :data-testid="`queue-template-${entry.agreementId}`"
-            >
-              {{ entry.templateName }}
-            </p>
-            <!-- The template was superseded or archived after this agreement pinned it. Say so:
+                {{ entry.templateName }}
+              </p>
+              <!-- The template was superseded or archived after this agreement pinned it. Say so:
                  an operator has to know the state is missing, not guess it from the address. -->
-            <p
-              v-else
-              class="text-xs italic text-amber-700"
-              :data-testid="`queue-template-missing-${entry.agreementId}`"
-            >
-              Template unavailable - check the agreement before buying
-            </p>
-            <p class="text-xs text-slate-500">{{ subtitle(entry) }}</p>
-          </div>
-          <span
-            class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700"
-            :data-testid="`queue-waiting-${entry.agreementId}`"
-          >
-            waiting {{ waitedFor(entry.waitingSeconds) }}
-          </span>
-          <!-- Why the button is dead. An unpaid order stays on the queue on purpose; saying so is
-               what stops an operator debugging a certificate problem that does not exist. -->
-          <span
-            v-if="awaitingPayment(entry)"
-            class="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700"
-            :data-testid="`queue-payment-${entry.agreementId}`"
-          >
-            Awaiting payment
-          </span>
-          <span
-            v-else-if="entry.paymentState"
-            class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"
-            :data-testid="`queue-payment-${entry.agreementId}`"
-          >
-            {{ entry.paymentState === "WAIVED" ? "Payment waived" : "Paid" }}
-          </span>
-          <!-- What to buy: the certificate must carry at least the stamp value paid for. -->
-          <span
-            v-if="entry.paidStampValueMinorUnits != null"
-            class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700"
-            :data-testid="`queue-stamp-value-${entry.agreementId}`"
-          >
-            Stamp {{ formatMinorUnits(entry.paidStampValueMinorUnits, "INR") }}
-            <template v-if="entry.belowDutyChosen">
-              · below duty (customer's choice)</template
-            >
-          </span>
-          <button
-            type="button"
-            class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="awaitingPayment(entry)"
-            :title="
-              awaitingPayment(entry)
-                ? 'This order has not been paid for. Payment must clear, or a staff member must waive it, before an e-stamp is bought.'
-                : undefined
-            "
-            :data-testid="`queue-upload-${entry.agreementId}`"
-            @click="openUpload(entry)"
-          >
-            Upload stamp
-          </button>
-        </div>
-
-        <!-- The names that go on the certificate. Rendered for every row, not only the open one:
-             an operator scanning the queue is deciding what to buy, not just which row to open. -->
-        <dl
-          v-if="entry.parties.length"
-          class="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2"
-          :data-testid="`queue-parties-${entry.agreementId}`"
-        >
-          <div v-if="partiesOf(entry, 'OWNER').length">
-            <dt
-              class="text-xs font-semibold uppercase tracking-wide text-slate-500"
-            >
-              First party
-            </dt>
-            <dd
-              v-for="party in partiesOf(entry, 'OWNER')"
-              :key="`${party.name}-${party.fatherName}`"
-              class="mt-1 text-sm text-slate-800"
-            >
-              {{ party.name }}
-              <span class="block text-xs text-slate-500">{{
-                fatherLabel(party)
-              }}</span>
-            </dd>
-          </div>
-          <div v-if="partiesOf(entry, 'TENANT').length">
-            <dt
-              class="text-xs font-semibold uppercase tracking-wide text-slate-500"
-            >
-              Second party
-            </dt>
-            <dd
-              v-for="party in partiesOf(entry, 'TENANT')"
-              :key="`${party.name}-${party.fatherName}`"
-              class="mt-1 text-sm text-slate-800"
-            >
-              {{ party.name }}
-              <span class="block text-xs text-slate-500">{{
-                fatherLabel(party)
-              }}</span>
-            </dd>
-          </div>
-        </dl>
-
-        <form
-          v-if="openEntryId === entry.agreementId"
-          class="flex flex-col gap-2 border-t border-slate-200 pt-3"
-          :data-testid="`queue-form-${entry.agreementId}`"
-          @submit.prevent="submit(entry)"
-        >
-          <!-- The agreement is identified by THIS row; there is no reference field to mistype. -->
-          <p class="text-xs text-slate-500">
-            Attaching to
-            <span class="font-mono">{{ entry.trackingReference }}</span>
-          </p>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <label class="flex flex-col gap-1 text-xs text-slate-600">
-              Certificate number
-              <input
-                v-model="certificateNumber"
-                type="text"
-                class="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                data-testid="field-certificate-number"
-              />
-              <!-- Explained AT the field: the same rejection arriving as a generic 400 after the
-                   scan has been uploaded sends an operator to check the image instead. -->
-              <span
-                v-if="certificateNumberError"
-                class="text-xs text-red-600"
-                data-testid="field-certificate-number-error"
-                >{{ certificateNumberError }}</span
+              <p
+                v-else
+                class="text-xs italic text-amber-700"
+                :data-testid="`queue-template-missing-${entry.agreementId}`"
               >
-              <span v-else class="text-xs text-slate-400"
-                >Replace with the number on the purchased certificate.</span
-              >
-            </label>
-            <!-- A div, not a label: a label around the input, the picker toggle and the day grid would
-                 forward clicks to the wrong control. The widget names its input with aria-label. -->
-            <div class="flex flex-col gap-1 text-xs text-slate-600">
-              <span>Issue date</span>
-              <DateWidget
-                v-model="issueDate"
-                class="text-sm"
-                :field="ISSUE_DATE_FIELD"
-                :error="issueDateError"
-              />
+                Template unavailable - check the agreement before buying
+              </p>
+              <p class="text-xs text-slate-500">{{ subtitle(entry) }}</p>
             </div>
-            <label class="flex flex-col gap-1 text-xs text-slate-600">
-              Duty amount
-              <input
-                v-model="dutyAmount"
-                type="text"
-                inputmode="decimal"
-                class="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                data-testid="field-duty-amount"
-              />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-600">
-              Jurisdiction
-              <input
-                v-model="jurisdiction"
-                type="text"
-                class="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                data-testid="field-jurisdiction"
-              />
-            </label>
-          </div>
-          <label class="flex flex-col gap-1 text-xs text-slate-600">
-            Scanned certificate (JPEG or PNG)
-            <input
-              type="file"
-              accept="image/jpeg,image/png"
-              class="text-sm"
-              data-testid="field-scan"
-              @change="onScanPicked"
-            />
-          </label>
-          <label class="flex items-start gap-2 text-xs text-slate-600">
-            <input
-              v-model="initiateSigning"
-              type="checkbox"
-              class="mt-0.5"
-              data-testid="field-initiate-signing"
-            />
-            <span>
-              Send for signature after attaching
-              <span class="block text-slate-500">
-                Starts the Aadhaar eSign workflow and invites the first party.
-                Untick to attach the stamp only.
-              </span>
-            </span>
-          </label>
-          <p
-            v-if="submitError"
-            class="text-sm text-red-600"
-            data-testid="queue-submit-error"
-          >
-            {{ submitError }}
-          </p>
-          <div class="flex gap-2">
-            <button
-              type="submit"
-              :disabled="!canSubmit"
-              class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-              :data-testid="`queue-submit-${entry.agreementId}`"
+            <span
+              class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700"
+              :data-testid="`queue-waiting-${entry.agreementId}`"
             >
-              Attach stamp
-            </button>
+              waiting {{ waitedFor(entry.waitingSeconds) }}
+            </span>
+            <!-- Why the button is dead. An unpaid order stays on the queue on purpose; saying so is
+               what stops an operator debugging a certificate problem that does not exist. -->
+            <span
+              v-if="awaitingPayment(entry)"
+              class="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700"
+              :data-testid="`queue-payment-${entry.agreementId}`"
+            >
+              Awaiting payment
+            </span>
+            <span
+              v-else-if="entry.paymentState"
+              class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"
+              :data-testid="`queue-payment-${entry.agreementId}`"
+            >
+              {{ entry.paymentState === "WAIVED" ? "Payment waived" : "Paid" }}
+            </span>
+            <!-- What to buy: the certificate must carry at least the stamp value paid for. -->
+            <span
+              v-if="entry.paidStampValueMinorUnits != null"
+              class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700"
+              :data-testid="`queue-stamp-value-${entry.agreementId}`"
+            >
+              Stamp
+              {{ formatMinorUnits(entry.paidStampValueMinorUnits, "INR") }}
+              <template v-if="entry.belowDutyChosen">
+                · below duty (customer's choice)</template
+              >
+            </span>
             <button
               type="button"
-              class="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium"
-              data-testid="queue-cancel"
-              @click="openEntryId = null"
+              class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="awaitingPayment(entry)"
+              :title="
+                awaitingPayment(entry)
+                  ? 'This order has not been paid for. Payment must clear, or a staff member must waive it, before an e-stamp is bought.'
+                  : undefined
+              "
+              :data-testid="`queue-upload-${entry.agreementId}`"
+              @click="openUpload(entry)"
             >
-              Cancel
+              Upload stamp
             </button>
           </div>
-        </form>
-      </li>
-    </ul>
-  </section>
+
+          <!-- The names that go on the certificate. Rendered for every row, not only the open one:
+             an operator scanning the queue is deciding what to buy, not just which row to open. -->
+          <dl
+            v-if="entry.parties.length"
+            class="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2"
+            :data-testid="`queue-parties-${entry.agreementId}`"
+          >
+            <div v-if="partiesOf(entry, 'OWNER').length">
+              <dt
+                class="text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                First party
+              </dt>
+              <dd
+                v-for="party in partiesOf(entry, 'OWNER')"
+                :key="`${party.name}-${party.fatherName}`"
+                class="mt-1 text-sm text-slate-800"
+              >
+                {{ party.name }}
+                <span class="block text-xs text-slate-500">{{
+                  fatherLabel(party)
+                }}</span>
+              </dd>
+            </div>
+            <div v-if="partiesOf(entry, 'TENANT').length">
+              <dt
+                class="text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                Second party
+              </dt>
+              <dd
+                v-for="party in partiesOf(entry, 'TENANT')"
+                :key="`${party.name}-${party.fatherName}`"
+                class="mt-1 text-sm text-slate-800"
+              >
+                {{ party.name }}
+                <span class="block text-xs text-slate-500">{{
+                  fatherLabel(party)
+                }}</span>
+              </dd>
+            </div>
+          </dl>
+
+          <form
+            v-if="openEntryId === entry.agreementId"
+            class="flex flex-col gap-2 border-t border-slate-200 pt-3"
+            :data-testid="`queue-form-${entry.agreementId}`"
+            @submit.prevent="submit(entry)"
+          >
+            <!-- The agreement is identified by THIS row; there is no reference field to mistype. -->
+            <p class="text-xs text-slate-500">
+              Attaching to
+              <span class="font-mono">{{ entry.trackingReference }}</span>
+            </p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="flex flex-col gap-1 text-xs text-slate-600">
+                Certificate number
+                <input
+                  v-model="certificateNumber"
+                  type="text"
+                  class="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  data-testid="field-certificate-number"
+                />
+                <!-- Explained AT the field: the same rejection arriving as a generic 400 after the
+                   scan has been uploaded sends an operator to check the image instead. -->
+                <span
+                  v-if="certificateNumberError"
+                  class="text-xs text-red-600"
+                  data-testid="field-certificate-number-error"
+                  >{{ certificateNumberError }}</span
+                >
+                <span v-else class="text-xs text-slate-400"
+                  >Replace with the number on the purchased certificate.</span
+                >
+              </label>
+              <!-- A div, not a label: a label around the input, the picker toggle and the day grid would
+                 forward clicks to the wrong control. The widget names its input with aria-label. -->
+              <div class="flex flex-col gap-1 text-xs text-slate-600">
+                <span>Issue date</span>
+                <DateWidget
+                  v-model="issueDate"
+                  class="text-sm"
+                  :field="ISSUE_DATE_FIELD"
+                  :error="issueDateError"
+                />
+              </div>
+              <label class="flex flex-col gap-1 text-xs text-slate-600">
+                Duty amount
+                <input
+                  v-model="dutyAmount"
+                  type="text"
+                  inputmode="decimal"
+                  class="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  data-testid="field-duty-amount"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-slate-600">
+                Jurisdiction
+                <input
+                  v-model="jurisdiction"
+                  type="text"
+                  class="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  data-testid="field-jurisdiction"
+                />
+              </label>
+            </div>
+            <label class="flex flex-col gap-1 text-xs text-slate-600">
+              Scanned certificate (JPEG or PNG)
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                class="text-sm"
+                data-testid="field-scan"
+                @change="onScanPicked"
+              />
+            </label>
+            <label class="flex items-start gap-2 text-xs text-slate-600">
+              <input
+                v-model="initiateSigning"
+                type="checkbox"
+                class="mt-0.5"
+                data-testid="field-initiate-signing"
+              />
+              <span>
+                Send for signature after attaching
+                <span class="block text-slate-500">
+                  Starts the Aadhaar eSign workflow and invites the first party.
+                  Untick to attach the stamp only.
+                </span>
+              </span>
+            </label>
+            <p
+              v-if="submitError"
+              class="text-sm text-red-600"
+              data-testid="queue-submit-error"
+            >
+              {{ submitError }}
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                :disabled="!canSubmit"
+                class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                :data-testid="`queue-submit-${entry.agreementId}`"
+              >
+                Attach stamp
+              </button>
+              <button
+                type="button"
+                class="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium"
+                data-testid="queue-cancel"
+                @click="openEntryId = null"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </li>
+      </ul>
+    </section>
+
+    <StaffOrders v-if="tab === 'orders'" />
+  </div>
 </template>

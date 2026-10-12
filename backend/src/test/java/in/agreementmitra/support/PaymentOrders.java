@@ -34,19 +34,60 @@ public final class PaymentOrders {
   public static UUID insert(
       JdbcTemplate jdbc, UUID agreementId, String status, Instant confirmedAt, boolean surplus) {
     UUID id = UUID.randomUUID();
+    insert(jdbc, id, agreementId, status, Instant.now(), id.toString(), confirmedAt, null, surplus);
+    return id;
+  }
+
+  /**
+   * An order created at {@code createdAt} with the given receipt, not confirmed.
+   *
+   * @param receipt unique per order; production uses the agreement id, suffixed on a retry
+   * @return the new order's id
+   */
+  public static UUID insert(
+      JdbcTemplate jdbc, UUID agreementId, String status, Instant createdAt, String receipt) {
+    UUID id = UUID.randomUUID();
+    insert(jdbc, id, agreementId, status, createdAt, receipt, null, null, false);
+    return id;
+  }
+
+  /**
+   * A {@code PAID} order recorded under {@code providerPaymentId}, confirmed now.
+   *
+   * @return the new order's id
+   */
+  public static UUID insertPaidUnder(
+      JdbcTemplate jdbc, UUID agreementId, String providerPaymentId) {
+    UUID id = UUID.randomUUID();
+    Instant now = Instant.now();
+    insert(jdbc, id, agreementId, "PAID", now, id.toString(), now, providerPaymentId, false);
+    return id;
+  }
+
+  private static void insert(
+      JdbcTemplate jdbc,
+      UUID id,
+      UUID agreementId,
+      String status,
+      Instant createdAt,
+      String receipt,
+      Instant confirmedAt,
+      String providerPaymentId,
+      boolean surplus) {
     jdbc.update(
         "INSERT INTO payment_order (id, agreement_id, provider, provider_order_id, receipt,"
-            + " amount_minor_units, currency, status, created_at, confirmed_at, surplus)"
-            + " VALUES (?, ?, 'razorpay', ?, ?, 49900, 'INR', ?, ?, ?, ?)",
+            + " amount_minor_units, currency, status, created_at, confirmed_at,"
+            + " provider_payment_id, surplus)"
+            + " VALUES (?, ?, 'razorpay', ?, ?, 49900, 'INR', ?, ?, ?, ?, ?)",
         id,
         agreementId,
         providerOrderId(id),
-        id.toString(),
+        receipt,
         status,
-        Timestamp.from(Instant.now()),
+        Timestamp.from(createdAt),
         confirmedAt == null ? null : Timestamp.from(confirmedAt),
+        providerPaymentId,
         surplus);
-    return id;
   }
 
   /**

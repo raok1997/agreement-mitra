@@ -5,6 +5,7 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.signing.AgreementPaymentStanding;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentConfirmation;
@@ -22,10 +23,12 @@ import in.agreementmitra.signing.api.ContactsUpdateRequest;
 import in.agreementmitra.signing.api.CreateAgreementRequest;
 import in.agreementmitra.signing.api.PaymentStateResponse;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -656,6 +659,52 @@ public class AgreementService {
         .findAllById(agreementIds)
         .forEach(agreement -> states.put(agreement.getId(), agreement.paymentState()));
     return states;
+  }
+
+  /**
+   * How each agreement stands on payment, keyed by id - backs the staff orders view. One projection
+   * query; the stored payment reference stays behind {@link AgreementPaymentStanding#paidUnder}.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, AgreementPaymentStanding> paymentStandings(Collection<UUID> agreementIds) {
+    if (agreementIds == null || agreementIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, AgreementPaymentStanding> standings = new LinkedHashMap<>();
+    for (Object[] row : repository.findPaymentStandings(agreementIds)) {
+      standings.put(
+          (UUID) row[0],
+          new AgreementStanding((String) row[1], (PaymentState) row[2], (String) row[3]));
+    }
+    return standings;
+  }
+
+  /**
+   * The tracking reference of the agreement recorded as paid under each of {@code paymentIds},
+   * keyed by the id as the caller gave it. An id nothing holds has no entry.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, String> trackingReferencesHolding(Collection<String> paymentIds) {
+    if (paymentIds == null || paymentIds.isEmpty()) {
+      return Map.of();
+    }
+    // Several ids as given can share one index form (they differ only in case or spacing).
+    Map<String, List<String>> byIndexForm = new LinkedHashMap<>();
+    for (String paymentId : paymentIds) {
+      byIndexForm.computeIfAbsent(indexForm(paymentId), form -> new ArrayList<>()).add(paymentId);
+    }
+    Map<String, String> holders = new LinkedHashMap<>();
+    for (Object[] row : repository.findTrackingReferencesHolding(byIndexForm.keySet())) {
+      for (String paymentId : byIndexForm.get((String) row[0])) {
+        holders.put(paymentId, (String) row[1]);
+      }
+    }
+    return holders;
+  }
+
+  /** A reference as {@code uq_agreement_payment_reference} indexes it: trimmed, upper-cased. */
+  private static String indexForm(String reference) {
+    return reference.strip().toUpperCase(Locale.ROOT);
   }
 
   /** The agreement's payment state as the read/report view. 404 for an unknown agreement. */
