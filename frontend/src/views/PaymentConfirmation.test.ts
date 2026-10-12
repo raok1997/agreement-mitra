@@ -46,6 +46,32 @@ describe("PaymentConfirmation", () => {
     expect(wrapper.text()).toContain("Write down your reference");
   });
 
+  // An owned agreement is sent no link (it would not open), so the screen must not promise one.
+  describe("an agreement saved to an account", () => {
+    it("says to sign in, and does not say a link was emailed", () => {
+      const wrapper = mount(PaymentConfirmation, {
+        props: { ...base, savedToAccount: true },
+      });
+      expect(wrapper.get('[data-testid="saved-to-account"]').text()).toContain(
+        "saved to your account",
+      );
+      expect(wrapper.text()).toContain("Sign in to open it at any time.");
+      expect(wrapper.text()).not.toContain("emailed you a link");
+    });
+
+    it("wins over the no-address wording, and keeps the reference on screen", () => {
+      const wrapper = mount(PaymentConfirmation, {
+        props: { ...base, linkSent: false, savedToAccount: true },
+      });
+      expect(wrapper.text()).toContain("saved to your account");
+      expect(wrapper.text()).not.toContain("Write down your reference");
+      expect(wrapper.text()).not.toContain("emailed you a link");
+      expect(
+        wrapper.get('[data-testid="confirmation-reference"]').text(),
+      ).toBe("AM3G3VXSAKD");
+    });
+  });
+
   // A customer with no account has the reference and nothing else. Taking it off the screen - onto
   // paper or into a PDF - has to be one click away, or it is only ever transcribed by hand.
   describe("keeping a copy", () => {

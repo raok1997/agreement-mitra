@@ -87,6 +87,13 @@ class SecurityConfig {
   /** Waive payment - proceed deliberately without money. */
   private static final String PAYMENT_WAIVE_PATH = "/api/staff/payments/*/waive";
 
+  /**
+   * The staff orders view. Deliberately outside {@code /api/staff/payments/*}: under that wildcard
+   * a one-segment path is already granted to STAFF, so a matcher for it would decide nothing. Here
+   * the exact GET below is what grants access and every other method falls to {@code denyAll}.
+   */
+  private static final String PAYMENT_ORDERS_PATH = "/api/staff/payment-orders";
+
   /** Extend a still-pending signing window on the same provider transaction. */
   private static final String SIGNING_EXTEND_PATH = "/api/staff/signing/*/extend";
 
@@ -208,6 +215,10 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, PAYMENT_CONFIRM_PATH)
                     .hasRole(STAFF_ROLE)
                     .requestMatchers(HttpMethod.POST, PAYMENT_WAIVE_PATH)
+                    .hasRole(STAFF_ROLE)
+                    // The staff orders view: read-only, STAFF-only, decided here before any order
+                    // or agreement is read. GET only - no other method is opened on the route.
+                    .requestMatchers(HttpMethod.GET, PAYMENT_ORDERS_PATH)
                     .hasRole(STAFF_ROLE)
                     // Staff remedies for a stuck in-flight signing request. Both act on the SAME
                     // provider transaction (no new document, no second vendor charge), so they are

@@ -393,7 +393,7 @@ redelivery. One gateway payment id SHALL be held by at most one payment order.
 - **WHEN** the gateway confirms the payment order carrying that payment id
 - **THEN** that order is marked paid and is not surplus
 - **AND** the agreement's recorded payment is unchanged
-- **AND** the parties are sent the recovery link, as for a first gateway confirmation
+- **AND** no further recovery link is sent, because the parties were sent it when staff recorded the payment
 
 #### Scenario: A gateway payment after a waiver
 - **GIVEN** an agreement whose payment staff waived

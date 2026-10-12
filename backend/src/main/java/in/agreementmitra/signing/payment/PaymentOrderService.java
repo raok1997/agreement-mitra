@@ -32,6 +32,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -403,6 +404,17 @@ public class PaymentOrderService {
    * outstanding order on the way past, so the next call may legitimately place a new one.
    */
   PaymentOrder reusableOrder(UUID agreementId) {
+    try {
+      return decideReusableOrder(agreementId);
+    } catch (OptimisticLockingFailureException concurrentWrite) {
+      // The order was written - most likely confirmed paid - while it was being expired here. The
+      // save runs with no lock, so the stale copy loses. Decide again from what is stored now,
+      // once; a second failure is not this race and is left to surface.
+      return decideReusableOrder(agreementId);
+    }
+  }
+
+  private PaymentOrder decideReusableOrder(UUID agreementId) {
     PaymentOrder latest = orders.findTopByAgreementIdOrderByCreatedAtDesc(agreementId).orElse(null);
     if (latest == null) {
       return null;

@@ -2,6 +2,8 @@ package in.agreementmitra.signing.recovery;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import in.agreementmitra.AgreementIds;
 import in.agreementmitra.signing.agreement.Role;
 import in.agreementmitra.signing.api.AgreementResponse;
 import in.agreementmitra.signing.api.AgreementResponse.SignerResponse;
@@ -12,6 +14,7 @@ import in.agreementmitra.signing.contact.DeliveryChannel;
 import in.agreementmitra.signing.contact.DeliveryChannelProperties;
 import in.agreementmitra.signing.contact.DeliveryChannelProperties.ChannelSettings;
 import in.agreementmitra.signing.contact.PartyReachability;
+import in.agreementmitra.support.LogCapture;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -20,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Who the recovery link goes to, and what it may say.
@@ -38,6 +42,9 @@ class RecoveryDeliveryServiceTest {
 
   private static final UUID AGREEMENT_ID = UUID.fromString("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d");
   private static final String REFERENCE = "AM3G3VXSAKD";
+
+  @RegisterExtension
+  final LogCapture logs = LogCapture.of(RecoveryDeliveryService.class, Level.WARN);
 
   /** Captures what was dispatched instead of sending it. */
   private static final class RecordingDispatcher implements ChannelDispatcher {
@@ -134,6 +141,27 @@ class RecoveryDeliveryServiceTest {
     assertThat(dispatcher.sent)
         .extracting(ChannelMessage::destination)
         .containsExactly("tara@example.com");
+  }
+
+  @Test
+  void aFailedSendIsLoggedWithTheRedactedAgreementIdAndNoAddress() {
+    // A waiver has no payment reference, so the redacted id is the only way to trace the failure.
+    RecordingDispatcher dispatcher = new RecordingDispatcher("asha@example.com");
+
+    service(dispatcher, "http://localhost:5173")
+        .sendRecoveryLink(agreement("asha@example.com", "tara@example.com"));
+
+    assertThat(logs.events())
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage())
+                  .contains(AgreementIds.redact(AGREEMENT_ID))
+                  .doesNotContain(AGREEMENT_ID.toString())
+                  .doesNotContain("asha@example.com");
+              assertThat(event.getThrowableProxy()).isNull();
+            });
   }
 
   @Test

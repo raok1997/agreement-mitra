@@ -24,6 +24,7 @@ import in.agreementmitra.signing.api.CheckoutCallbackRequest;
 import in.agreementmitra.signing.contact.PartyReachability;
 import in.agreementmitra.support.LogCapture;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.InOrder;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
@@ -72,7 +74,8 @@ class PaymentOrderServiceTest {
             confirmations,
             ledger,
             agreements,
-            mock(PaymentProperties.class),
+            // Real, so the order lifetime is the default and not a null from a mock.
+            new PaymentProperties(null, null, null, null),
             mock(PartyReachability.class),
             mock(JurisdictionEligibility.class),
             mock(StampQuoting.class),
@@ -345,5 +348,63 @@ class PaymentOrderServiceTest {
             eq(null),
             eq(null));
     verifyNoMoreInteractions(ledger);
+  }
+
+  // --- the order written while checkout was expiring it ------------------------
+
+  private static PaymentOrder abandonedOrder(UUID agreementId) {
+    return PaymentOrder.create(
+        agreementId,
+        ORDER_ID,
+        agreementId.toString(),
+        new Money(49_900L, "INR"),
+        Instant.now().minus(Duration.ofDays(1)));
+  }
+
+  /** The expiring save loses to a concurrent write; the next read sees {@code storedNow}. */
+  private PaymentOrder staleOrderOverwrittenBy(UUID agreementId, PaymentOrder storedNow) {
+    PaymentOrder stale = abandonedOrder(agreementId);
+    when(orders.findTopByAgreementIdOrderByCreatedAtDesc(agreementId))
+        .thenReturn(Optional.of(stale), Optional.of(storedNow));
+    when(orders.save(stale))
+        .thenThrow(new ObjectOptimisticLockingFailureException(PaymentOrder.class, stale.getId()));
+    return stale;
+  }
+
+  @Test
+  void anOrderConfirmedWhileCheckoutWasExpiringItIsReportedAsPaid() {
+    UUID agreementId = UUID.randomUUID();
+    PaymentOrder paid = abandonedOrder(agreementId);
+    paid.markPaid(PAYMENT_ID, Instant.now(), false);
+    staleOrderOverwrittenBy(agreementId, paid);
+
+    assertThat(service.reusableOrder(agreementId)).isSameAs(paid);
+    verify(orders, times(2)).findTopByAgreementIdOrderByCreatedAtDesc(agreementId);
+  }
+
+  @Test
+  void anOrderExpiredByAnotherRequestMeanwhileLeavesANewOrderLegal() {
+    UUID agreementId = UUID.randomUUID();
+    PaymentOrder expired = abandonedOrder(agreementId);
+    expired.markExpired();
+    staleOrderOverwrittenBy(agreementId, expired);
+
+    assertThat(service.reusableOrder(agreementId)).isNull();
+    verify(orders, times(2)).findTopByAgreementIdOrderByCreatedAtDesc(agreementId);
+  }
+
+  @Test
+  void aSecondLostWriteIsNotRetriedAgain() {
+    UUID agreementId = UUID.randomUUID();
+    PaymentOrder stillAbandoned = abandonedOrder(agreementId);
+    when(orders.save(stillAbandoned))
+        .thenThrow(
+            new ObjectOptimisticLockingFailureException(
+                PaymentOrder.class, stillAbandoned.getId()));
+    staleOrderOverwrittenBy(agreementId, stillAbandoned);
+
+    assertThatThrownBy(() -> service.reusableOrder(agreementId))
+        .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    verify(orders, times(2)).findTopByAgreementIdOrderByCreatedAtDesc(agreementId);
   }
 }

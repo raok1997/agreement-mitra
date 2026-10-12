@@ -86,4 +86,16 @@ class PaymentOrderQueryAdapterTest {
             PaymentEventOutcome.CONFIRMED,
             PaymentEventOutcome.ALREADY_CONFIRMED);
   }
+
+  @Test
+  void theOrdersViewAddsErroredToTheAlertOutcomesAndTheAlertKeepsItsThree() {
+    assertThat(PaymentOrderQueryAdapter.ATTENTION_OUTCOMES)
+        .containsExactlyInAnyOrder(
+            PaymentEventOutcome.RECORDING_FAILED,
+            PaymentEventOutcome.DUPLICATE_REFERENCE,
+            PaymentEventOutcome.AMOUNT_MISMATCH,
+            PaymentEventOutcome.ERRORED)
+        .containsAll(PaymentOrderQueryAdapter.UNRECORDED_OUTCOMES.keySet());
+    assertThat(PaymentOrderQueryAdapter.UNRECORDED_OUTCOMES).hasSize(3);
+  }
 }

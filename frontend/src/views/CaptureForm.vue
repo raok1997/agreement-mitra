@@ -910,6 +910,11 @@ const recoveryLinkSent = computed(() =>
   contactParties.value.some((p) => p.email.trim() !== ""),
 );
 
+// An owned agreement is sent no recovery link - the link would not open, its owner signs in - so
+// the confirmation screen must not promise one. `claimed` covers an agreement this session claimed
+// on save; `editMode` covers one reopened from My Agreements, which only its owner can reach.
+const savedToAccount = computed(() => claimed.value || editMode.value);
+
 /** Open the contact step, seeded with whatever the server currently holds for each party. */
 async function openContactStep(): Promise<void> {
   if (!savedId.value) return;
@@ -1141,6 +1146,7 @@ onBeforeUnmount(() => {
     :reference="savedTrackingNumber ?? ''"
     :amount-label="paidAmountLabel"
     :link-sent="recoveryLinkSent"
+    :saved-to-account="savedToAccount"
     @continue="paymentConfirmed = false"
   />
   <div

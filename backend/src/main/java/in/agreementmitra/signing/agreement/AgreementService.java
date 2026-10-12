@@ -5,6 +5,7 @@ import in.agreementmitra.ConflictException;
 import in.agreementmitra.ResourceNotFoundException;
 import in.agreementmitra.documents.api.TemplateCatalogApi;
 import in.agreementmitra.documents.api.TemplateDetail;
+import in.agreementmitra.signing.AgreementPaymentStanding;
 import in.agreementmitra.signing.ClosureReason;
 import in.agreementmitra.signing.ClosureState;
 import in.agreementmitra.signing.PaymentConfirmation;
@@ -22,14 +23,17 @@ import in.agreementmitra.signing.api.ContactsUpdateRequest;
 import in.agreementmitra.signing.api.CreateAgreementRequest;
 import in.agreementmitra.signing.api.PaymentStateResponse;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,16 +54,19 @@ public class AgreementService {
   private final TemplateCatalogApi templateCatalog;
   private final SigningRequestQuery signingRequestQuery;
   private final PaymentOrderQuery paymentOrderQuery;
+  private final ApplicationEventPublisher events;
 
   AgreementService(
       AgreementRepository repository,
       TemplateCatalogApi templateCatalog,
       SigningRequestQuery signingRequestQuery,
-      PaymentOrderQuery paymentOrderQuery) {
+      PaymentOrderQuery paymentOrderQuery,
+      ApplicationEventPublisher events) {
     this.repository = repository;
     this.templateCatalog = templateCatalog;
     this.signingRequestQuery = signingRequestQuery;
     this.paymentOrderQuery = paymentOrderQuery;
+    this.events = events;
   }
 
   @Transactional
@@ -398,8 +405,9 @@ public class AgreementService {
    * decide who to contact; the recovery endpoint answers identically whether this is empty or not
    * (design D1).
    *
-   * <p>Eligibility is both conditions from design D6, evaluated here so no caller can forget one:
-   * paid (or waived), and not yet owned. A claimed agreement is recovered by its owner signing in.
+   * <p>Eligibility is both conditions from design D6, evaluated in {@link #recoverable} so no
+   * caller can forget one: paid (or waived), and not yet owned. A claimed agreement is recovered by
+   * its owner signing in.
    */
   @Transactional(readOnly = true)
   public Optional<AgreementResponse> findRecoverableByTrackingReference(String reference) {
@@ -412,12 +420,25 @@ public class AgreementService {
     }
     return repository
         .findByTrackingReference(normalized)
-        .filter(agreement -> agreement.ownerIdentityId() == null)
-        .filter(
-            agreement ->
-                agreement.paymentState() == PaymentState.PAID
-                    || agreement.paymentState() == PaymentState.WAIVED)
+        .filter(AgreementService::recoverable)
         .map(this::toResponse);
+  }
+
+  /**
+   * Find an agreement that may be sent its recovery link unprompted, by id. The same eligibility as
+   * {@link #findRecoverableByTrackingReference}, from the same definition: the link is a way into
+   * an agreement nobody owns, so one that has been claimed is never sent it.
+   */
+  @Transactional(readOnly = true)
+  public Optional<AgreementResponse> findRecoverableById(UUID id) {
+    return repository.findById(id).filter(AgreementService::recoverable).map(this::toResponse);
+  }
+
+  /** Settled (paid or waived) and not yet owned: the one definition of "may be recovered". */
+  private static boolean recoverable(Agreement agreement) {
+    return agreement.ownerIdentityId() == null
+        && (agreement.paymentState() == PaymentState.PAID
+            || agreement.paymentState() == PaymentState.WAIVED);
   }
 
   private AgreementSummaryResponse toSummary(Agreement agreement) {
@@ -640,6 +661,52 @@ public class AgreementService {
     return states;
   }
 
+  /**
+   * How each agreement stands on payment, keyed by id - backs the staff orders view. One projection
+   * query; the stored payment reference stays behind {@link AgreementPaymentStanding#paidUnder}.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, AgreementPaymentStanding> paymentStandings(Collection<UUID> agreementIds) {
+    if (agreementIds == null || agreementIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, AgreementPaymentStanding> standings = new LinkedHashMap<>();
+    for (Object[] row : repository.findPaymentStandings(agreementIds)) {
+      standings.put(
+          (UUID) row[0],
+          new AgreementStanding((String) row[1], (PaymentState) row[2], (String) row[3]));
+    }
+    return standings;
+  }
+
+  /**
+   * The tracking reference of the agreement recorded as paid under each of {@code paymentIds},
+   * keyed by the id as the caller gave it. An id nothing holds has no entry.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, String> trackingReferencesHolding(Collection<String> paymentIds) {
+    if (paymentIds == null || paymentIds.isEmpty()) {
+      return Map.of();
+    }
+    // Several ids as given can share one index form (they differ only in case or spacing).
+    Map<String, List<String>> byIndexForm = new LinkedHashMap<>();
+    for (String paymentId : paymentIds) {
+      byIndexForm.computeIfAbsent(indexForm(paymentId), form -> new ArrayList<>()).add(paymentId);
+    }
+    Map<String, String> holders = new LinkedHashMap<>();
+    for (Object[] row : repository.findTrackingReferencesHolding(byIndexForm.keySet())) {
+      for (String paymentId : byIndexForm.get((String) row[0])) {
+        holders.put(paymentId, (String) row[1]);
+      }
+    }
+    return holders;
+  }
+
+  /** A reference as {@code uq_agreement_payment_reference} indexes it: trimmed, upper-cased. */
+  private static String indexForm(String reference) {
+    return reference.strip().toUpperCase(Locale.ROOT);
+  }
+
   /** The agreement's payment state as the read/report view. 404 for an unknown agreement. */
   @Transactional(readOnly = true)
   public PaymentStateResponse paymentView(UUID agreementId) {
@@ -668,8 +735,24 @@ public class AgreementService {
                 () ->
                     new ResourceNotFoundException(
                         "Agreement not found: " + AgreementIds.redact(agreementId)));
+    PaymentState before = agreement.paymentState();
     agreement.recordPayment(confirmation, actorIdentityId);
-    return toPaymentView(repository.save(agreement));
+    PaymentStateResponse view = toPaymentView(repository.save(agreement));
+    publishIfFirstSettlement(agreement, before);
+    return view;
+  }
+
+  /**
+   * Announce a settlement, once per agreement: only when the state the caller read <em>before</em>
+   * its write was {@code UNPAID}. All three settling methods hold the agreement's row lock, so two
+   * concurrent settlements cannot both observe {@code UNPAID}. Must be called inside the settling
+   * transaction - the listener runs after commit and has no fallback, so an event published outside
+   * one would be dropped.
+   */
+  private void publishIfFirstSettlement(Agreement agreement, PaymentState before) {
+    if (before == PaymentState.UNPAID) {
+      events.publishEvent(new PaymentSettledEvent(agreement.getId()));
+    }
   }
 
   /**
@@ -699,9 +782,13 @@ public class AgreementService {
                 () ->
                     new ResourceNotFoundException(
                         "Agreement not found: " + AgreementIds.redact(agreementId)));
-    if (agreement.paymentState() != PaymentState.PAID) {
+    PaymentState before = agreement.paymentState();
+    if (before != PaymentState.PAID) {
       agreement.recordPayment(confirmation, null);
       repository.save(agreement);
+      // Recording and announcing are separate questions: a payment on a waived agreement is
+      // recorded, and announces nothing because the waiver already did.
+      publishIfFirstSettlement(agreement, before);
       return PaymentRecording.RECORDED;
     }
     return agreement.paidUnder(confirmation.reference())
@@ -723,8 +810,11 @@ public class AgreementService {
                 () ->
                     new ResourceNotFoundException(
                         "Agreement not found: " + AgreementIds.redact(agreementId)));
+    PaymentState before = agreement.paymentState();
     agreement.waivePayment(actorIdentityId, Instant.now());
-    return toPaymentView(repository.save(agreement));
+    PaymentStateResponse view = toPaymentView(repository.save(agreement));
+    publishIfFirstSettlement(agreement, before);
+    return view;
   }
 
   /**

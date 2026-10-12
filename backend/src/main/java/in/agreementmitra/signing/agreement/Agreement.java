@@ -419,18 +419,12 @@ class Agreement implements Persistable<UUID> {
   }
 
   /**
-   * Whether this agreement is {@code PAID} under {@code reference}. Both sides are compared in the
-   * one normal form ({@link in.agreementmitra.signing.PaymentConfirmation#normalizeReference}), so
-   * a gateway payment id staff typed by hand in another case is still the same payment. Never true
-   * without a reference on both sides.
+   * Whether this agreement is {@code PAID} under {@code reference}. Never true without a reference
+   * on both sides. The comparison has one home, {@link AgreementStanding#paidUnder(PaymentState,
+   * String, String)}.
    */
   boolean paidUnder(String reference) {
-    String stored =
-        in.agreementmitra.signing.PaymentConfirmation.normalizeReference(paymentReference);
-    return paymentState == PaymentState.PAID
-        && stored != null
-        && stored.equals(
-            in.agreementmitra.signing.PaymentConfirmation.normalizeReference(reference));
+    return AgreementStanding.paidUnder(paymentState, paymentReference, reference);
   }
 
   /**

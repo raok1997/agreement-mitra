@@ -3,6 +3,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import StaffConsole from "./StaffConsole.vue";
 import * as staffQueue from "../api/staffQueue";
 import type { StampQueueEntry } from "../api/staffQueue";
+import * as staffOrders from "../api/staffOrders";
 
 // Component tests for the staff fulfilment console. The load-bearing assertion is that an upload
 // carries the ROW's tracking reference: the console exists so nobody re-types it, which removes the
@@ -16,6 +17,13 @@ vi.mock("../api/staffQueue", async () => {
   };
 });
 
+vi.mock("../api/staffOrders", async () => {
+  const actual =
+    await vi.importActual<typeof staffOrders>("../api/staffOrders");
+  return { ...actual, fetchStaffOrders: vi.fn() };
+});
+
+const mockedOrders = vi.mocked(staffOrders.fetchStaffOrders);
 const mockedList = vi.mocked(staffQueue.listStampQueue);
 const mockedUpload = vi.mocked(staffQueue.uploadStampForEntry);
 
@@ -41,6 +49,7 @@ function entry(over: Partial<StampQueueEntry> = {}): StampQueueEntry {
 beforeEach(() => {
   mockedList.mockReset();
   mockedUpload.mockReset();
+  mockedOrders.mockReset();
 });
 
 describe("StaffConsole", () => {
@@ -306,13 +315,15 @@ describe("StaffConsole", () => {
       wrapper.find('[data-testid="queue-submit-ag-1"]').attributes("disabled"),
     ).toBeUndefined();
 
-    await wrapper.find('[data-testid="field-issue-date"]').setValue("31/02/2026");
+    await wrapper
+      .find('[data-testid="field-issue-date"]')
+      .setValue("31/02/2026");
     expect(
       wrapper.find('[data-testid="queue-submit-ag-1"]').attributes("disabled"),
     ).toBeDefined();
-    expect(wrapper.find('[data-testid="field-error-issue-date"]').text()).toMatch(
-      /Issue date is not a real date/,
-    );
+    expect(
+      wrapper.find('[data-testid="field-error-issue-date"]').text(),
+    ).toMatch(/Issue date is not a real date/);
     await wrapper.find('[data-testid="queue-form-ag-1"]').trigger("submit");
     await flushPromises();
     expect(mockedUpload).not.toHaveBeenCalled();
@@ -329,7 +340,9 @@ describe("StaffConsole", () => {
     });
     const wrapper = await filledForm();
     // setValue fires input only -- no blur -- and a form submit is what Enter does.
-    await wrapper.find('[data-testid="field-issue-date"]').setValue("08/01/2026");
+    await wrapper
+      .find('[data-testid="field-issue-date"]')
+      .setValue("08/01/2026");
     await wrapper.find('[data-testid="queue-form-ag-1"]').trigger("submit");
     await flushPromises();
 
@@ -348,8 +361,10 @@ describe("StaffConsole", () => {
 
     expect(mockedUpload).not.toHaveBeenCalled();
     expect(
-      (wrapper.find('[data-testid="field-issue-date"]').element as HTMLInputElement)
-        .value,
+      (
+        wrapper.find('[data-testid="field-issue-date"]')
+          .element as HTMLInputElement
+      ).value,
     ).toBe("20/01/2026");
   });
 
@@ -643,5 +658,74 @@ describe("StaffConsole and the payment gate", () => {
     expect(wrapper.find('[data-testid="queue-parties-ag-1"]').text()).toContain(
       "Asha Rao",
     );
+  });
+});
+
+describe("StaffConsole tabs", () => {
+  const noOrders = {
+    stuck: { entries: [], truncated: false },
+    notPaid: { entries: [], truncated: false },
+  };
+
+  it("opens on the e-stamp queue and does not request the orders list", async () => {
+    mockedList.mockResolvedValue([entry()]);
+
+    const wrapper = mount(StaffConsole);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="staff-queue"]').isVisible()).toBe(true);
+    expect(wrapper.find('[data-testid="queue-row-ag-1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="staff-orders"]').exists()).toBe(false);
+    expect(mockedOrders).not.toHaveBeenCalled();
+  });
+
+  it("requests the orders list once when the Orders tab is opened", async () => {
+    mockedList.mockResolvedValue([entry()]);
+    mockedOrders.mockResolvedValue(noOrders);
+
+    const wrapper = mount(StaffConsole, { attachTo: document.body });
+    await flushPromises();
+    await wrapper.find('[data-testid="staff-tab-orders"]').trigger("click");
+    await flushPromises();
+
+    expect(mockedOrders).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-testid="orders-stuck"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="orders-not-paid"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="staff-queue"]').isVisible()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("keeps a begun stamp upload, its file input included, across a look at the Orders tab", async () => {
+    mockedList.mockResolvedValue([entry()]);
+    mockedOrders.mockResolvedValue(noOrders);
+
+    const wrapper = mount(StaffConsole, { attachTo: document.body });
+    await flushPromises();
+    await wrapper.find('[data-testid="queue-upload-ag-1"]').trigger("click");
+    await wrapper
+      .find('[data-testid="field-certificate-number"]')
+      .setValue("IN-KA1234567890123");
+    const scanInput = wrapper.find('[data-testid="field-scan"]').element;
+
+    await wrapper.find('[data-testid="staff-tab-orders"]').trigger("click");
+    await flushPromises();
+    await wrapper.find('[data-testid="staff-tab-queue"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="queue-form-ag-1"]').isVisible()).toBe(
+      true,
+    );
+    expect(
+      (
+        wrapper.find('[data-testid="field-certificate-number"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("IN-KA1234567890123");
+    // The same DOM node, so a file the operator chose is still chosen. A typed value alone would
+    // survive an unmount too; the node would not.
+    expect(wrapper.find('[data-testid="field-scan"]').element).toBe(scanInput);
+    // The queue was not reloaded by the round trip either.
+    expect(mockedList).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
   });
 });

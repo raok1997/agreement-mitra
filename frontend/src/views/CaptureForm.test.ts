@@ -51,6 +51,7 @@ vi.mock("../api/agreements", async (importOriginal) => {
   return {
     ...actual,
     getAgreement: vi.fn(),
+    updateAgreement: vi.fn(),
     updateAgreementContacts: vi.fn(),
     finaliseAgreement: vi.fn(),
     claimAgreement: vi.fn(),
@@ -914,6 +915,101 @@ describe("CaptureForm (schema-fed preview-centric shell)", () => {
       "agr-1",
       expect.objectContaining({ selection: { stampValueMinorUnits: 130000 } }),
     );
+  });
+
+  // recovery-link-on-manual-settlement D8. An owned agreement is sent no recovery link, so the
+  // confirmation screen must say "sign in" for it and never "we emailed you a link".
+  describe("the confirmation screen for an agreement saved to an account", () => {
+    /** From a saved form: through contacts and the stamp choice to a server-confirmed payment. */
+    async function payToConfirmation(wrapper: ReturnType<typeof mount>) {
+      mockedGetAgreement.mockResolvedValue(agreementWithContacts());
+      mockedFinalise.mockResolvedValue({
+        agreementId: "agr-1",
+        trackingReference: "AM-A5E4D7-010126",
+        status: "PDF_GENERATED",
+      });
+      mockedPay.mockResolvedValue("PAID");
+      vi.mocked(payments.getPaymentProgress).mockRejectedValue(new Error("x"));
+      await wrapper.find('[data-testid="finalise-and-pay"]').trigger("click");
+      await flushPromises();
+      wrapper.findComponent(ContactConfirmation).vm.$emit(
+        "confirm",
+        agreementWithContacts().signers.map((signer) => ({
+          id: signer.id,
+          name: signer.name,
+          role: signer.role,
+          email: signer.email ?? "",
+          mobile: signer.mobile ?? "",
+        })) as PartyContact[],
+      );
+      await flushPromises();
+      wrapper
+        .findComponent(StampQuoteStep)
+        .vm.$emit("confirm", { stampValueMinorUnits: 130000 });
+      await flushPromises();
+      return wrapper.get('[data-testid="payment-confirmation"]');
+    }
+
+    it("says sign in when the agreement was claimed on save", async () => {
+      const signedIn = authStore.isSignedIn as unknown as Ref<boolean>;
+      signedIn.value = true;
+      mockedCreate.mockResolvedValue(fakeAgreement());
+      mockedGenerate.mockResolvedValue();
+      vi.mocked(agreements.claimAgreement)
+        .mockReset()
+        .mockResolvedValue(fakeAgreement());
+      try {
+        const wrapper = await mountReady();
+        await fillAllRequired(wrapper);
+        await wrapper.find('[data-testid="save-continue"]').trigger("click");
+        await flushPromises();
+
+        const screen = await payToConfirmation(wrapper);
+
+        expect(screen.find('[data-testid="saved-to-account"]').exists()).toBe(
+          true,
+        );
+        expect(screen.text()).not.toContain("emailed you a link");
+        wrapper.unmount();
+      } finally {
+        signedIn.value = false;
+      }
+    });
+
+    it("says sign in when an owned agreement was reopened in edit mode", async () => {
+      vi.mocked(agreements.updateAgreement).mockResolvedValue(fakeAgreement());
+      mockedGenerate.mockResolvedValue();
+      const wrapper = mount(CaptureForm, {
+        props: { agreementId: "agr-1", initialAgreement: fakeAgreement() },
+      });
+      await flushPromises();
+      await fillAllRequired(wrapper);
+      await wrapper.find('[data-testid="save-continue"]').trigger("click");
+      await flushPromises();
+
+      const screen = await payToConfirmation(wrapper);
+
+      expect(screen.find('[data-testid="saved-to-account"]').exists()).toBe(
+        true,
+      );
+      expect(screen.text()).not.toContain("emailed you a link");
+    });
+
+    it("still says a link was emailed for an agreement nobody owns", async () => {
+      mockedCreate.mockResolvedValue(fakeAgreement());
+      mockedGenerate.mockResolvedValue();
+      const wrapper = await mountReady();
+      await fillAllRequired(wrapper);
+      await wrapper.find('[data-testid="save-continue"]').trigger("click");
+      await flushPromises();
+
+      const screen = await payToConfirmation(wrapper);
+
+      expect(screen.find('[data-testid="saved-to-account"]').exists()).toBe(
+        false,
+      );
+      expect(screen.text()).toContain("emailed you a link");
+    });
   });
 
   it("shows the stored terms on the stamp step, not the form's working values", async () => {

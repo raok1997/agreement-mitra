@@ -8,8 +8,9 @@ import java.util.HexFormat;
 
 /**
  * One payment confirmation attempt, as the ledger stores it (payment-event-ledger D6, D9). Not a
- * JPA entity: one statement writes the table, and its one reader is the staff alert look-back, a
- * native query in {@link PaymentOrderRepository}.
+ * JPA entity: one statement writes the table, and its readers are native queries - the staff alert
+ * look-back and the staff orders view in {@link PaymentOrderRepository}, and {@link
+ * PaymentEventLedger#attemptsFor}.
  *
  * <p>{@link #of} makes every string storable before the write, so a gateway value the payment
  * record could not hold does not also lose the ledger row, and computes {@link #attemptKey} from

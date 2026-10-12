@@ -122,7 +122,7 @@ recorded here rather than rediscovered.
 | # | Message | Trigger | Per party? | Carries |
 |---|---|---|---|---|
 | 1 | **The draft** | saving contacts (`PATCH /api/agreements/{id}/contacts`) | No | the draft document |
-| 2 | **The recovery link** | payment confirming | No -- one URL for everyone | a link only, no attachment |
+| 2 | **The recovery link** | payment being settled (gateway, staff confirm or waiver) | No -- one URL for everyone | a link only, no attachment |
 | 3 | **Signing invitations** | staff attaching the stamp, which starts signing | **Yes** -- one `sign_url` per signer | that signer's own signing URL |
 
 Three things people get wrong about this:
@@ -158,7 +158,9 @@ change `staff-paid-order-alert`).
   transaction, no outbound call on the webhook thread. An alert cannot roll a payment back, and a
   crash cannot lose one, because the paid order is the durable trigger.
 - **Gateway-paid only, one paid-order alert per agreement.** A manual staff confirmation or a waiver
-  creates no payment order and raises nothing.
+  creates no payment order and raises no staff alert. It does send the recovery link: the link is
+  sent once per agreement, on its first transition out of `UNPAID`, by whichever path makes it
+  (`PaymentSettledEvent`, published by `AgreementService`), and never for an owned agreement.
 - **A second payment raises a different alert.** A gateway payment confirmed for an agreement that
   already holds one under another reference is still marked `PAID` (the money was captured) but is
   marked **surplus** on its `payment_order` row: the agreement's first payment record is kept and no
@@ -168,7 +170,7 @@ change `staff-paid-order-alert`).
   refunding". `staff_alert` is keyed by the alert's subject and its kind: the subject is the
   agreement for `ORDER_PAID` and the payment order for every other kind, so one order can hold one
   alert of each kind. A gateway payment after a waiver is the agreement's one
-  payment, not a surplus. The system refunds nothing itself; the runbook is in `docs/DEPLOYMENT.md`.
+  payment, not a surplus; it sends no second recovery link, because the waiver sent it. The system refunds nothing itself; the runbook is in `docs/DEPLOYMENT.md`.
 - **A captured payment that was refused or not recorded raises its own alert.** The same sweep
   reads the payment event ledger (below) and raises one alert per payment order and kind. That
   look-back and its insert run first and on their own, in their own transaction: a fault in them is
@@ -181,8 +183,8 @@ change `staff-paid-order-alert`).
   timeout, a 429 or a 5xx is retried; a redirect or any other 4xx fails the alert at once; an alert
   still pending after 24 hours is failed unsent. `FAILED` is terminal and is reported only as an
   ERROR log line -- the console queue remains the source of truth for what is waiting. That does
-  not hold for the three unrecorded-payment kinds: no console queue lists those orders yet, so
-  the runbook's stuck-order query in `docs/DEPLOYMENT.md` is.
+  not hold for the three unrecorded-payment kinds, which are not on that queue: the staff console's
+  Orders tab lists those orders, read from the ledger and not from `staff_alert`.
 - **What the message may contain:** a fixed lead naming the kind of alert, the tracking reference, a
   two-letter state code and a link to the public site. Never the agreement id (a bearer credential), a party name, a contact, an
   address, an amount, or any user-entered text -- which is why there is no city.
@@ -198,7 +200,7 @@ Every gateway payment confirmation attempt is recorded in `payment_event` (chang
 `payment-event-ledger`), so "what did the gateway send and what did we do with it" is answered
 from the database and not from the server log beside the gateway dashboard.
 
-**One reader today: the staff alert sweep** (change `payment-recording-failure-staff-alert`). Every
+**Two readers.** The first is **the staff alert sweep** (change `payment-recording-failure-staff-alert`). Every
 sweep it reads the attempts last received in the past 24 hours whose outcome is `RECORDING_FAILED`,
 `DUPLICATE_REFERENCE` or `AMOUNT_MISMATCH`, joined to `payment_order`, and raises one alert per
 payment order and kind (`PAYMENT_NOT_RECORDED`, `PAYMENT_ID_REUSED`, `PAYMENT_AMOUNT_MISMATCH`)
@@ -208,7 +210,25 @@ agreement's payment state: an expired order whose customer paid again is still a
 is a possible double charge. The three outcomes are listed once, in
 `PaymentOrderQueryAdapter.UNRECORDED_OUTCOMES`. "Already handled" is the `staff_alert` row itself,
 so a failure that recurs raises nothing more. An order whose attempts only ever end `ERRORED`
-raises no alert. The staff console panel for these payments does not exist yet and reads nothing.
+raises no alert.
+
+The second is **the staff orders view** (change `staff-orders-view`): `GET /api/staff/payment-orders`,
+STAFF only, behind the console's Orders tab. It lists orders whose status is `CREATED`, `EXPIRED` or
+`FAILED` in two groups. *Paid but stuck*, with no date limit, is an order with an attempt that
+carries a gateway payment id and ended with one of `PaymentOrderQueryAdapter.ATTENTION_OUTCOMES` -
+the alert's three plus `ERRORED`, derived from `UNRECORDED_OUTCOMES` so the two cannot drift. *Not
+paid* is every other such order created in the last 30 days. Each entry carries all of the order's
+attempts, how its agreement stands on payment, and for a reused payment id the tracking reference
+of the agreement that holds it. It never carries the agreement id, the receipt, the gateway order
+id or the agreement's recorded reference. It is a read: it holds no state, so the watermark and
+handled-at rules below do not apply to it, and it acts on nothing.
+
+Its reads run in one read-only `REPEATABLE READ` transaction (`PaymentOrderOverview.overview`),
+because the ledger commits on its own: at the default level an attempt committed between the two
+group reads would leave its order in neither. The stuck read scans the whole ledger (there is no
+index on `outcome`) and each group is capped at 200. The ledger grows with distinct attempts, not
+with traffic, so that is cheap today; if the endpoint passes about 500 ms, a partial index on the
+attention outcomes is the fix, as a migration in its own change.
 
 - **What a row is.** One **distinct** attempt that reached `PaymentOrderService.applyConfirmation`
   - from the webhook, the browser callback or the reconciliation job - and a count of its repeats.

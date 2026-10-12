@@ -2,6 +2,7 @@ package in.agreementmitra.signing.agreement;
 
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +61,34 @@ interface AgreementRepository extends JpaRepository<Agreement, UUID> {
       value = "SELECT * FROM agreement WHERE id = :id FOR UPDATE SKIP LOCKED",
       nativeQuery = true)
   Optional<Agreement> findByIdForPurge(@Param("id") UUID id);
+
+  /**
+   * {@code (id, trackingReference, paymentState, paymentReference)} of each agreement in {@code
+   * ids} - the payment standing read. A projection: no entity is loaded. {@code ids} must not be
+   * empty.
+   */
+  @Query(
+      "select a.id, a.trackingReference, a.paymentState, a.paymentReference"
+          + " from Agreement a where a.id in :ids")
+  List<Object[]> findPaymentStandings(@Param("ids") Collection<UUID> ids);
+
+  /**
+   * {@code (normalised reference, tracking reference)} of each agreement whose recorded payment
+   * reference is one of {@code references}. Native, to match the expression of {@code
+   * uq_agreement_payment_reference} exactly: that index is the rule that refuses a reused
+   * reference, so its expression is what "holds it" means, and the lookup is by that index.
+   *
+   * @param references upper-cased and trimmed by the caller; must not be empty
+   */
+  @Query(
+      value =
+          """
+          SELECT UPPER(BTRIM(a.payment_reference)), a.tracking_reference FROM agreement a
+          WHERE a.payment_reference IS NOT NULL
+            AND UPPER(BTRIM(a.payment_reference)) IN (:references)
+          """,
+      nativeQuery = true)
+  List<Object[]> findTrackingReferencesHolding(@Param("references") Collection<String> references);
 
   /**
    * One keyset page of retention-purge candidates: {@code (id, last_edited_at)} of unpaid open

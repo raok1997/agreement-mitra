@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
-import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,7 +23,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -57,15 +56,16 @@ class RazorpayClientWireMockTest {
   }
 
   private RazorpayClient clientWith(String keyId, String keySecret) {
+    return clientWith(keyId, keySecret, RazorpayConfig.READ_TIMEOUT);
+  }
+
+  /** Built by the production wiring, so the timeouts under test are the ones that ship. */
+  private RazorpayClient clientWith(String keyId, String keySecret, Duration readTimeout) {
     RazorpayProperties properties =
         new RazorpayProperties(server.baseUrl() + "/", keyId, keySecret, "wh-mac-1");
-    HttpClient httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     RestClient rest =
-        RestClient.builder()
-            .baseUrl(properties.baseUrl())
-            .defaultHeader(HttpHeaders.AUTHORIZATION, basic(keyId, keySecret))
-            .requestFactory(new JdkClientHttpRequestFactory(httpClient))
-            .build();
+        RazorpayConfig.restClient(
+            RestClient.builder(), properties, RazorpayConfig.CONNECT_TIMEOUT, readTimeout);
     return new RazorpayClient(rest, properties);
   }
 
@@ -125,6 +125,61 @@ class RazorpayClientWireMockTest {
     assertThatThrownBy(() -> client.createOrder("receipt-1", new Money(49_900L, "INR")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageNotContaining("leak me");
+  }
+
+  // --- a provider that does not answer ---------------------------------------
+
+  private static final Duration SHORT_READ_TIMEOUT = Duration.ofMillis(200);
+  private static final int LONGER_THAN_THE_TIMEOUT_MS = 3_000;
+
+  @Test
+  void anOrderReadTheProviderNeverAnswersGivesUpAndIsNotReadAsUnpaid() {
+    server.stubFor(
+        get(urlPathEqualTo(ORDERS_URL + "/order_SLOW"))
+            .willReturn(
+                okJson("{\"id\":\"order_SLOW\",\"status\":\"paid\"}")
+                    .withFixedDelay(LONGER_THAN_THE_TIMEOUT_MS)));
+    RazorpayClient impatient = clientWith(KEY_ID, API_KEY, SHORT_READ_TIMEOUT);
+
+    long started = System.nanoTime();
+    Optional<RazorpayClient.ProviderOrder> order = impatient.fetchOrder("order_SLOW");
+
+    assertThat(order).isEmpty();
+    assertThat(Duration.ofNanos(System.nanoTime() - started))
+        .isLessThan(Duration.ofMillis(LONGER_THAN_THE_TIMEOUT_MS));
+  }
+
+  @Test
+  void aPaymentsReadTheProviderNeverAnswersGivesUp() {
+    server.stubFor(
+        get(urlPathEqualTo(ORDERS_URL + "/order_SLOW/payments"))
+            .willReturn(okJson("{\"items\":[]}").withFixedDelay(LONGER_THAN_THE_TIMEOUT_MS)));
+    RazorpayClient impatient = clientWith(KEY_ID, API_KEY, SHORT_READ_TIMEOUT);
+
+    assertThat(impatient.capturedPaymentFor("order_SLOW")).isEmpty();
+  }
+
+  @Test
+  void anOrderCreationTheProviderNeverAnswersFailsLikeAnyOtherProviderError() {
+    server.stubFor(
+        post(urlEqualTo(ORDERS_URL))
+            .willReturn(
+                okJson("{\"id\":\"order_SLOW\",\"status\":\"created\"}")
+                    .withFixedDelay(LONGER_THAN_THE_TIMEOUT_MS)));
+    RazorpayClient impatient = clientWith(KEY_ID, API_KEY, SHORT_READ_TIMEOUT);
+
+    assertThatThrownBy(() -> impatient.createOrder("receipt-1", new Money(49_900L, "INR")))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void theShippedClientHasBoundedTimeouts() {
+    assertThat(RazorpayConfig.CONNECT_TIMEOUT)
+        .isPositive()
+        .isLessThanOrEqualTo(Duration.ofSeconds(5));
+    assertThat(RazorpayConfig.READ_TIMEOUT)
+        .isPositive()
+        .isLessThanOrEqualTo(Duration.ofSeconds(15));
   }
 
   @Test

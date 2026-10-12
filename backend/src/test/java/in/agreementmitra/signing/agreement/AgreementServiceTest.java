@@ -36,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -55,6 +56,7 @@ class AgreementServiceTest {
   @Mock private TemplateCatalogApi templateCatalog;
   @Mock private SigningRequestQuery signingRequestQuery;
   @Mock private PaymentOrderQuery paymentOrderQuery;
+  @Mock private ApplicationEventPublisher events;
 
   @InjectMocks private AgreementService service;
 
@@ -475,6 +477,154 @@ class AgreementServiceTest {
                     new PaymentConfirmation(
                         unknown, new BigDecimal("499.00"), "INR", "pay_x", Instant.now())))
         .isInstanceOf(ResourceNotFoundException.class);
+  }
+
+  // --- the settlement event (recovery-link-on-manual-settlement D1, D2) ---------------------
+  // Published once per agreement, on the first transition out of UNPAID, whichever path makes it.
+
+  private Agreement lockedAndSaved(Agreement agreement) {
+    when(repository.save(agreement)).thenReturn(agreement);
+    return lockedForUpdate(agreement);
+  }
+
+  private void verifyOneSettlementPublishedFor(Agreement agreement) {
+    verify(events).publishEvent(new PaymentSettledEvent(agreement.getId()));
+  }
+
+  @Test
+  void aStaffPaymentOnAnUnpaidAgreementPublishesOneSettlement() {
+    Agreement agreement = lockedAndSaved(anUnownedAgreement());
+
+    service.recordPayment(
+        agreement.getId(), gatewayConfirmation(agreement, "NEFT-1"), UUID.randomUUID());
+
+    assertThat(agreement.paymentState()).isEqualTo(PaymentState.PAID);
+    verifyOneSettlementPublishedFor(agreement);
+  }
+
+  @Test
+  void aWaiverOfAnUnpaidAgreementPublishesOneSettlement() {
+    Agreement agreement = lockedAndSaved(anUnownedAgreement());
+
+    service.waivePayment(agreement.getId(), UUID.randomUUID());
+
+    assertThat(agreement.paymentState()).isEqualTo(PaymentState.WAIVED);
+    verifyOneSettlementPublishedFor(agreement);
+  }
+
+  @Test
+  void aGatewayPaymentOnAnUnpaidAgreementPublishesOneSettlement() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+
+    service.recordGatewayPayment(agreement.getId(), gatewayConfirmation(agreement, "pay_first"));
+
+    verifyOneSettlementPublishedFor(agreement);
+  }
+
+  @Test
+  void correctingTheReferenceOfAPaidAgreementStoresItAndPublishesNothing() {
+    Agreement agreement = lockedAndSaved(anUnownedAgreement());
+    UUID staff = UUID.randomUUID();
+    agreement.recordPayment(gatewayConfirmation(agreement, "NEFT-MISTYPED"), staff);
+
+    service.recordPayment(agreement.getId(), gatewayConfirmation(agreement, "NEFT-RIGHT"), staff);
+
+    assertThat(agreement.paymentReference()).isEqualTo("NEFT-RIGHT");
+    verifyNoInteractions(events);
+  }
+
+  @Test
+  void aStaffPaymentOnAWaivedAgreementIsRecordedAndPublishesNothing() {
+    Agreement agreement = lockedAndSaved(anUnownedAgreement());
+    agreement.waivePayment(UUID.randomUUID(), Instant.now());
+
+    service.recordPayment(
+        agreement.getId(), gatewayConfirmation(agreement, "NEFT-2"), UUID.randomUUID());
+
+    assertThat(agreement.paymentState()).isEqualTo(PaymentState.PAID);
+    assertThat(agreement.paymentReference()).isEqualTo("NEFT-2");
+    verifyNoInteractions(events);
+  }
+
+  @Test
+  void aGatewayPaymentOnAWaivedAgreementIsStillRecordedAndPublishesNothing() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+    agreement.waivePayment(UUID.randomUUID(), Instant.now());
+
+    PaymentRecording result =
+        service.recordGatewayPayment(
+            agreement.getId(), gatewayConfirmation(agreement, "pay_after_waiver"));
+
+    // Recording and announcing are separate questions: the waiver already announced.
+    assertThat(result).isEqualTo(PaymentRecording.RECORDED);
+    assertThat(agreement.paymentState()).isEqualTo(PaymentState.PAID);
+    verifyNoInteractions(events);
+  }
+
+  @Test
+  void aGatewayPaymentStaffAlreadyRecordedPublishesNothing() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+    agreement.recordPayment(gatewayConfirmation(agreement, "PAY_SAME"), UUID.randomUUID());
+
+    assertThat(
+            service.recordGatewayPayment(
+                agreement.getId(), gatewayConfirmation(agreement, "pay_Same")))
+        .isEqualTo(PaymentRecording.ALREADY_RECORDED);
+    verifyNoInteractions(events);
+  }
+
+  @Test
+  void aSurplusGatewayPaymentPublishesNothing() {
+    Agreement agreement = lockedForUpdate(anUnownedAgreement());
+    agreement.recordPayment(gatewayConfirmation(agreement, "NEFT-FIRST"), UUID.randomUUID());
+
+    assertThat(
+            service.recordGatewayPayment(
+                agreement.getId(), gatewayConfirmation(agreement, "pay_second")))
+        .isEqualTo(PaymentRecording.SURPLUS);
+    verifyNoInteractions(events);
+  }
+
+  @Test
+  void aWaiverOfAPaidAgreementPublishesNothing() {
+    Agreement agreement = lockedAndSaved(anUnownedAgreement());
+    agreement.recordPayment(gatewayConfirmation(agreement, "NEFT-PAID"), UUID.randomUUID());
+
+    service.waivePayment(agreement.getId(), UUID.randomUUID());
+
+    verifyNoInteractions(events);
+  }
+
+  // --- findRecoverableById (D6): settled and unowned, the reference-entry path's own rule ------
+
+  private Optional<AgreementResponse> recoverableById(Agreement agreement) {
+    when(repository.findById(agreement.getId())).thenReturn(Optional.of(agreement));
+    return service.findRecoverableById(agreement.getId());
+  }
+
+  @Test
+  void anUnpaidAgreementIsNotRecoverableById() {
+    assertThat(recoverableById(anUnownedAgreement())).isEmpty();
+  }
+
+  @Test
+  void aSettledAgreementThatIsOwnedIsNotRecoverableById() {
+    Agreement agreement = anUnownedAgreement();
+    agreement.claimBy(UUID.randomUUID());
+    agreement.waivePayment(UUID.randomUUID(), Instant.now());
+
+    assertThat(recoverableById(agreement)).isEmpty();
+  }
+
+  @Test
+  void aSettledUnownedAgreementIsRecoverableByIdWhetherPaidOrWaived() {
+    Agreement waived = anUnownedAgreement();
+    waived.waivePayment(UUID.randomUUID(), Instant.now());
+    Agreement paid = anUnownedAgreement();
+    paid.recordPayment(gatewayConfirmation(paid, "pay_recoverable"), null);
+
+    assertThat(recoverableById(waived)).map(AgreementResponse::id).contains(waived.getId());
+    assertThat(recoverableById(paid)).map(AgreementResponse::id).contains(paid.getId());
   }
 
   private static Agreement anUnownedAgreement() {
